@@ -1,0 +1,35 @@
+# cat=MCP/enable; type=boolean; label=Enable MCP Server:Enable the MCP endpoint at /aisuite-mcp for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients
+enableMcp = 0
+
+# cat=MCP/settings; type=int+; label=MCP Token Lifetime (days):How long OAuth tokens remain valid
+mcpTokenLifetimeDays = 30
+
+# cat=MCP/settings; type=string; label=MCP Allowed Origins:Comma-separated list of allowed CORS origins (empty = Development: all allowed, Production: none)
+mcpAllowedOrigins =
+
+# cat=MCP/settings; type=string; label=MCP Allowed Client IDs:Comma-separated list of allowed OAuth client IDs (empty = all allowed)
+mcpAllowedClientIds =
+
+# cat=MCP/security; type=boolean; label=Allow HTTP (development only):Allow MCP over unencrypted HTTP. NEVER enable in production!
+mcpAllowHttp = 0
+
+# cat=MCP/settings; type=options[auto=auto,workspace=workspace,live=live]; label=MCP Write Mode:How MCP tools write data. auto = workspace if available, otherwise live. workspace = always workspace. live = always direct.
+mcpWriteMode = auto
+
+# cat=MCP/performance; type=int+; label=MCP Session Timeout (seconds):Drop idle MCP sessions after this many seconds. Lower values free PHP workers and reduce session-store bloat. 0 = SDK default (3600s).
+mcpSessionTimeoutSeconds = 1800
+
+# cat=MCP/security; type=string; label=MCP Allowed Redirect URIs:Comma-separated list of allowed external redirect URIs for OAuth (localhost is always allowed)
+mcpAllowedRedirectUris =
+
+# cat=MCP/security; type=string; label=MCP Excluded Tables:Comma-separated list of tables that MCP tools must NOT read or write. TYPO3 backend permissions still apply additionally. Use to hide sensitive tables (e.g. be_users, fe_users) even from admins via MCP.
+mcpExcludedTables =
+
+# cat=MCP/security; type=string; label=MCP Trusted Proxies:Comma-separated list of trusted reverse-proxy IPs/CIDRs (e.g. 10.0.0.0/8,192.168.0.0/16). When set, audit-log entries resolve the real client IP from X-Forwarded-For instead of the proxy peer IP. Empty = X-Forwarded-For is ignored.
+mcpTrustedProxies =
+
+# cat=MCP/logging; type=boolean; label=Verbose INFO log:Write the verbose INFO trace to var/log/aisuite_mcp.log. The WARNING+ alert log (var/log/aisuite_mcp_warnings.log) stays active either way. Disable in production once monitoring is mature to reduce I/O and PII surface.
+mcpLogVerbose = 1
+
+# cat=MCP/logging; type=string; label=MCP Log Redaction Patterns:Comma-separated additional regex patterns (without delimiters) whose matches are replaced with [REDACTED] in MCP log entries. Built-in defaults (Bearer tokens, 64-char hex hashes, email addresses) are always applied — these patterns are added on top.
+mcpLogRedactionPatterns =

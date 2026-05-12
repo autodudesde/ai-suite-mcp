@@ -1,0 +1,303 @@
+<html xmlns:f="http://typo3.org/ns/TYPO3/CMS/Fluid/ViewHelpers">
+<head>
+    <title>{siteName} — MCP Authorize</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <f:if condition="{faviconUrl}">
+        <link rel="icon" href="{faviconUrl}" />
+    </f:if>
+    <style>
+        :root {
+            --typo3-login-highlight: #ff8800;
+            --typo3-login-bg: #f5f5f5;
+            --typo3-login-card-bg: #fff;
+            --typo3-login-text: #1a1a1a;
+            --typo3-login-text-muted: #6c6c6c;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--typo3-login-bg);
+            background-size: cover;
+            background-position: center;
+            color: var(--typo3-login-text);
+        }
+
+        .typo3-login-wrap {
+            width: 100%;
+            max-width: 460px;
+            padding: 1rem;
+        }
+
+        .typo3-login-logo {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .typo3-login-logo img,
+        .typo3-login-logo svg {
+            display: block;
+            margin: 0 auto;
+            max-width: 220px;
+            height: auto;
+        }
+
+        .typo3-login-logo svg .highlight {
+            color: var(--typo3-login-highlight);
+            fill: var(--typo3-login-highlight);
+        }
+
+        .card-login {
+            background: var(--typo3-login-card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08), 0 2px 12px rgba(0,0,0,.06);
+        }
+
+        .card-login .card-heading {
+            padding: 2.5rem 2.5rem 0;
+        }
+
+        .card-login .card-body {
+            padding: 1.75rem 2.5rem 2.5rem;
+        }
+
+        .card-login .card-footer {
+            padding: .75rem 2.5rem;
+            border-top: 3px solid var(--typo3-login-highlight);
+            text-align: center;
+        }
+
+        .client-info {
+            background: var(--typo3-login-card-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08), 0 2px 12px rgba(0,0,0,.06);
+            padding: .75rem 1rem;
+            text-align: center;
+            margin-bottom: 1rem;
+            font-size: .95rem;
+            color: var(--typo3-login-text-muted);
+        }
+
+        .client-info strong {
+            color: var(--typo3-login-highlight);
+            font-size: 1.05rem;
+        }
+
+        .localhost-badge {
+            display: inline-block;
+            background: #ecfdf5;
+            color: #166534;
+            padding: .15rem .5rem;
+            border-radius: 4px;
+            font-size: .8rem;
+            margin-top: .35rem;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: .7rem;
+            border: none;
+            border-radius: 4px;
+            font-size: .95rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: .5rem;
+            transition: filter .15s ease;
+        }
+
+        .btn-primary {
+            background: var(--typo3-login-highlight);
+            color: #fff;
+        }
+
+        .btn-primary:hover { filter: brightness(1.08); }
+
+        .btn-secondary {
+            background: #e8e8e8;
+            color: var(--typo3-login-text);
+        }
+
+        .btn-secondary:hover { background: #ddd; }
+
+        .btn-deny {
+            background: transparent;
+            color: var(--typo3-login-text-muted);
+            border: 1px solid #ddd;
+        }
+
+        .btn-deny:hover { background: #fafafa; }
+
+        .scopes {
+            margin-bottom: 1rem;
+        }
+
+        .scope-item {
+            display: flex;
+            align-items: center;
+            padding: .5rem 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .scope-item:last-child { border-bottom: none; }
+
+        .scope-item input[type="checkbox"] {
+            margin-right: .75rem;
+            accent-color: var(--typo3-login-highlight);
+        }
+
+        .scope-item label {
+            flex: 1;
+            color: var(--typo3-login-text);
+            font-size: .9rem;
+            cursor: pointer;
+        }
+
+        .scope-key {
+            font-size: .75rem;
+            color: var(--typo3-login-text-muted);
+            font-family: monospace;
+        }
+
+        details {
+            margin-bottom: .75rem;
+        }
+
+        summary {
+            cursor: pointer;
+            color: var(--typo3-login-text-muted);
+            font-size: .875rem;
+            padding: .35rem 0;
+        }
+
+        summary:hover { color: var(--typo3-login-text); }
+
+        .footer-note {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            color: var(--typo3-login-text-muted);
+            font-size: .8rem;
+        }
+
+        .footer-note img {
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+        }
+    </style>
+    <f:if condition="{highlightColorStyles}">
+        <style>{highlightColorStyles -> f:format.raw()}</style>
+    </f:if>
+    <f:if condition="{backgroundImageStyles}">
+        <style>{backgroundImageStyles -> f:format.raw()}</style>
+    </f:if>
+</head>
+<body class="typo3-login">
+    <div class="typo3-login-wrap">
+        <div class="client-info">
+            <p><strong>{clientId}</strong></p> <p>requests access to AI Suite MCP</p>
+            <f:if condition="{isLocalhost}">
+                <p><span class="localhost-badge">&#10003; Local connection</span></p>
+            </f:if>
+        </div>
+
+        <div class="card-login">
+            <header class="card-heading">
+                <div class="typo3-login-logo">
+                    <f:if condition="{hasCustomLogo}">
+                        <f:then>
+                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: 'Logo')}" />
+                        </f:then>
+                        <f:else>
+                            <svg viewBox="0 0 150 42" width="150" height="52" aria-hidden="true">
+                                <path fill="currentColor" d="M60.2,14.4v27h-3.8v-27h-6.7v-3.3h17.1v3.3H60.2z M80.4,27.3v14h-3.9v-14l-7.7-16.2h4.1l5.7,12.2l5.7-12.2h3.9L80.4,27.3z M99.9,29.9h-3.6v11.4h-3.8V11.1c0,0,3.7-0.3,7.3-0.3c6.6,0,8.5,4.1,8.5,9.4C108.3,26.7,106,29.9,99.9,29.9 M100.3,13.9c-2.4,0-4.1,0.3-4.1,0.3v12.6h4.1c2.4,0,4.1-1.6,4.1-6.3C104.4,16.1,103.4,13.9,100.3,13.9 M121.8,41.6c-7.1,0-9-5.2-9-15.8c0-10.2,1.9-15.1,9-15.1s9,4.9,9,15.1C130.9,36.4,129,41.6,121.8,41.6 M121.8,13.9c-3.9,0-5.2,2.6-5.2,12.1c0,9.3,1.3,12.4,5.2,12.4c3.9,0,5.2-3.1,5.2-12.4C127,16.6,125.7,13.9,121.8,13.9 M141.7,41.6c-2.1,0-5.3-0.6-5.7-0.7v-3.1c1,0.2,3.7,0.7,5.6,0.7c2.2,0,3.6-1.9,3.6-5.2c0-3.9-0.6-6-3.7-6H138V24h3.1c3.5,0,3.7-3.6,3.7-5.3c0-3.4-1.1-4.8-3.2-4.8c-1.9,0-4.1,0.5-5.3,0.7v-3.2c0.5-0.1,3-0.7,5.2-0.7c4.4,0,7,1.9,7,8.3c0,2.9-1,5.5-3.3,6.3c2.6,0.2,3.8,3.1,3.8,7.3C149,39.2,146.5,41.6,141.7,41.6" />
+                                <path class="highlight" fill="#FF8700" d="M31.7,28.8c-0.6,0.2-1.1,0.2-1.7,0.2c-5.2,0-12.9-18.2-12.9-24.3c0-2.2,0.5-3,1.3-3.6C12,1.9,4.3,4.2,1.9,7.2C1.3,8,1,9.1,1,10.6c0,9.5,10.1,31,17.3,31C21.6,41.6,27.1,36.2,31.7,28.8" />
+                                <path class="highlight" fill="#FF8700" d="M28.4,0.5c6.6,0,13.2,1.1,13.2,4.8c0,7.6-4.8,16.7-7.2,16.7C30,22,24.5,9.9,24.5,3.8C24.5,1,25.6,0.5,28.4,0.5" />
+                            </svg>
+                        </f:else>
+                    </f:if>
+                </div>
+            </header>
+            <div class="card-body">
+
+                <form method="post" action="/aisuite-mcp/oauth/authorize">
+                    <input type="hidden" name="client_id" value="{clientId}" />
+                    <input type="hidden" name="redirect_uri" value="{redirectUri}" />
+                    <input type="hidden" name="code_challenge" value="{codeChallenge}" />
+                    <input type="hidden" name="state" value="{state}" />
+                    <input type="hidden" name="resource" value="{resource}" />
+                    <input type="hidden" name="be_user_uid" value="{beUserUid}" />
+
+                    <f:if condition="{availableWorkspaces}">
+                        <div class="scopes" style="border-bottom: 1px solid #f0f0f0; padding-bottom: .75rem; margin-bottom: 1rem;">
+                            <label for="workspace_uid" style="display: block; font-size: .85rem; color: var(--typo3-login-text-muted); margin-bottom: .35rem;">
+                                Bind token to workspace
+                            </label>
+                            <select name="workspace_uid" id="workspace_uid" style="width: 100%; padding: .5rem; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="0">{defaultWorkspaceLabel}</option>
+                                <f:for each="{availableWorkspaces}" as="ws">
+                                    <option value="{ws.uid}">Workspace {ws.uid}: {ws.title}</option>
+                                </f:for>
+                            </select>
+                        </div>
+                    </f:if>
+
+                    <button type="submit" name="consent" value="all" class="btn btn-primary">
+                        Grant full access
+                    </button>
+
+                    <details>
+                        <summary>Customize permissions</summary>
+
+                        <div class="scopes">
+                            <f:for each="{scopes}" as="scope" key="scopeKey">
+                                <div class="scope-item">
+                                    <input type="checkbox" name="scopes[]" value="{scopeKey}" id="scope-{scopeKey}" checked="checked" />
+                                    <label for="scope-{scopeKey}">
+                                        {scope.label}
+                                        <br /><span class="scope-key">{scopeKey}</span>
+                                    </label>
+                                </div>
+                            </f:for>
+                        </div>
+
+                        <button type="submit" name="consent" value="custom" class="btn btn-secondary">
+                            Grant selected permissions
+                        </button>
+                    </details>
+
+                    <button type="submit" name="consent" value="deny" class="btn btn-deny">
+                        Deny access
+                    </button>
+                </form>
+            </div>
+
+            <div class="card-footer">
+                <f:if condition="{footerNote}">
+                    <f:then>
+                        <span class="footer-note">{footerNote}</span>
+                    </f:then>
+                    <f:else>
+                        <span class="footer-note">
+                            Powered by
+                            <f:if condition="{aiSuiteIconUrl}">
+                                <img src="{aiSuiteIconUrl}" alt="" />
+                            </f:if>
+                            AI Suite for TYPO3
+                        </span>
+                    </f:else>
+                </f:if>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

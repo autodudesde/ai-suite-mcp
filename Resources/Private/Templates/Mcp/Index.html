@@ -1,0 +1,236 @@
+<html xmlns:f="http://typo3.org/ns/TYPO3/CMS/Fluid/ViewHelpers"
+      xmlns:core="http://typo3.org/ns/TYPO3/CMS/Core/ViewHelpers"
+      data-namespace-typo3-fluid="true">
+
+<f:layout name="Module" />
+
+<f:section name="Content">
+    <h1 class="mb-3 fw-semibold">
+        <core:icon identifier="tx-aisuite-extension" size="medium" />
+        <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.module.header" default="MCP Server" />
+    </h1>
+
+    <f:if condition="{mcpEnabled}">
+        <f:then>
+            <!-- Connect Panel & Status -->
+            <div class="row d-flex align-items-stretch mb-3">
+                <div class="col-lg-6 d-flex">
+                    <div class="panel panel-default flex-fill">
+                        <div class="panel-heading">
+                            <label class="panel-title fw-bold">
+                                <core:icon identifier="actions-link" />
+                                <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connectClaudeDesktop" />
+                            </label>
+                        </div>
+                        <div class="panel-body">
+                            <p><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connectDescription" /></p>
+
+                            <div class="form-group mb-3">
+                                <label for="clientName" class="form-label"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.clientName" /></label>
+                                <input type="text" id="clientName" class="form-control" value="Claude Desktop" style="max-width: 300px;" />
+                            </div>
+
+                            <f:if condition="{availableWorkspaces}">
+                                <div class="form-group mb-3">
+                                    <label for="workspaceUid" class="form-label">Workspace</label>
+                                    <select id="workspaceUid" class="form-select" style="max-width: 300px;">
+                                        <option value="0">{defaultWorkspaceLabel}</option>
+                                        <f:for each="{availableWorkspaces}" as="ws">
+                                            <option value="{ws.uid}">Workspace {ws.uid}: {ws.title}</option>
+                                        </f:for>
+                                    </select>
+                                </div>
+                            </f:if>
+
+                            <button type="button" id="createTokenBtn" class="btn btn-primary">
+                                <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.createToken" />
+                            </button>
+
+                            <div id="tokenResult" class="mt-3" style="display: none;">
+                                <div class="alert alert-success">
+                                    <strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.tokenCreated" /></strong> <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.tokenCreatedDescription" />
+                                    <br /><small><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.tokenShownOnce" /></small>
+                                </div>
+
+                                <div class="panel panel-default p-3 mb-3">
+                                    <pre id="claudeConfig" style="margin: 0; white-space: pre-wrap; font-size: 0.85rem;"></pre>
+                                </div>
+
+                                <button type="button" id="copyConfigBtn" class="btn btn-sm btn-default">
+                                    <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.copyToClipboard" />
+                                </button>
+
+                                <div class="mt-2 text-muted small">
+                                    <strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configFileLocation" /></strong><br />
+                                    macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br />
+                                    Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code><br />
+                                    Linux: <code>~/.config/claude/claude_desktop_config.json</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6 d-flex">
+                    <div class="panel panel-default flex-fill">
+                        <div class="panel-heading">
+                            <label class="panel-title fw-bold">
+                                <core:icon identifier="actions-check-circle" />
+                                <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.status" />
+                            </label>
+                        </div>
+                        <div class="panel-body">
+                            <div class="request-state d-flex gap-5 my-1 mb-3">
+                                <span class="badge badge-warning">
+                                    <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.serverEnabled" />
+                                </span>
+                            </div>
+                            <ul class="list-unstyled mb-0">
+                                <li class="mb-2">
+                                    <strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.endpoint" />:</strong>
+                                    <code>{mcpEndpointUrl}</code>
+                                </li>
+                                <li>
+                                    <strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.availableScopes" />:</strong>
+                                    <f:for each="{availableScopes}" as="scope">
+                                        <span class="badge badge-default">{scope}</span>
+                                    </f:for>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Tokens -->
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <label class="panel-title fw-bold">
+                                <core:icon identifier="actions-key" />
+                                <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.activeTokens" />
+                            </label>
+                        </div>
+                        <div class="panel-body">
+                            <f:if condition="{tokens}">
+                                <f:then>
+                                    <div class="table-responsive">
+                                        <table class="table table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.client" /></th>
+                                                    <th>Workspace</th>
+                                                    <th><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.created" /></th>
+                                                    <th><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.lastUsed" /></th>
+                                                    <th><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.ip" /></th>
+                                                    <th><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.sessionCredits" /></th>
+                                                    <th><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.expires" /></th>
+                                                    <th></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <f:for each="{tokens}" as="token">
+                                                    <tr id="token-row-{token.uid}">
+                                                        <td><strong>{token.client_id}</strong></td>
+                                                        <td>
+                                                            <f:if condition="{token.workspace_uid} > 0">
+                                                                <f:then>{token.workspaceTitle}</f:then>
+                                                                <f:else><span class="text-muted">User default</span></f:else>
+                                                            </f:if>
+                                                        </td>
+                                                        <td><f:format.date format="Y-m-d H:i">{token.created_at}</f:format.date></td>
+                                                        <td>
+                                                            <f:if condition="{token.last_used_at}">
+                                                                <f:then><f:format.date format="Y-m-d H:i">{token.last_used_at}</f:format.date></f:then>
+                                                                <f:else><span class="text-muted"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.never" /></span></f:else>
+                                                            </f:if>
+                                                        </td>
+                                                        <td>{token.last_used_ip}</td>
+                                                        <td>{token.session_credits_used}</td>
+                                                        <td><f:format.date format="Y-m-d">{token.expires_at}</f:format.date></td>
+                                                        <td>
+                                                            <button type="button" class="btn btn-sm btn-danger btn-revoke-token"
+                                                                    data-token-uid="{token.uid}">
+                                                                <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.revoke" />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                </f:for>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </f:then>
+                                <f:else>
+                                    <p class="text-muted"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.noActiveTokens" /></p>
+                                </f:else>
+                            </f:if>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- External Connectors -->
+            <div class="row">
+                <div class="col-12">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <label class="panel-title fw-bold">
+                                <core:icon identifier="actions-share-alt" />
+                                <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.externalConnectors" />
+                            </label>
+                        </div>
+                        <div class="panel-body">
+                            <p><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.externalConnectorsDescription" /></p>
+                            <ul>
+                                <li><strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.connectorUrl" />:</strong> <code>{mcpEndpointUrl}</code></li>
+                            </ul>
+
+                            <h5 class="mt-3"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.connectorConfigRequired" /></h5>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <td><strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.allowedOrigins" /></strong></td>
+                                        <td>
+                                            <f:if condition="{allowedOrigins}">
+                                                <f:then><span class="badge badge-warning"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.configuredValue" /></span> <code>{allowedOrigins}</code></f:then>
+                                                <f:else><span class="badge badge-default"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.notConfigured" /></span></f:else>
+                                            </f:if>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.allowedRedirectUris" /></strong></td>
+                                        <td>
+                                            <f:if condition="{allowedRedirectUris}">
+                                                <f:then><span class="badge badge-warning"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.configuredValue" /></span> <code>{allowedRedirectUris}</code></f:then>
+                                                <f:else><span class="badge badge-default"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.notConfigured" /></span></f:else>
+                                            </f:if>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <f:if condition="{allowedOrigins} || {allowedRedirectUris}">
+                                <f:else>
+                                    <div class="alert alert-warning mt-2">
+                                        <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.externalConnectorWarning" />
+                                    </div>
+                                </f:else>
+                            </f:if>
+
+                            <p class="text-muted small mt-2"><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.connect.externalConnectorHint" /></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </f:then>
+        <f:else>
+            <div class="alert alert-info">
+                <h4><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.notEnabled" /></h4>
+                <p><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.notEnabledDescription" /></p>
+                <p><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.notEnabledClients" /></p>
+            </div>
+        </f:else>
+    </f:if>
+</f:section>
+</html>

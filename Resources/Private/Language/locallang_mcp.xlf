@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+    <file source-language="en" datatype="plaintext" original="messages" date="2026-03-21T12:00:00Z" product-name="ai_suite">
+        <header/>
+        <body>
+            <!-- Hints: Scope / Permission / Access -->
+            <trans-unit id="aiSuite.mcp.hint.scope_required">
+                <source>To use this feature, your API token needs the "%s" scope. You can request a new token with the required scope through the OAuth flow.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.permission_required">
+                <source>Your user group needs the "%s" permission to use this tool. Please contact your administrator to enable it.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.credits_needed">
+                <source>This action requires approximately %d credits. You currently have %d credits available. Top up your credits in the AI Suite Dashboard.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.model_not_available">
+                <source>The AI model "%s" is not available for your user group. Available models: %s</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.page_access">
+                <source>Page %d is outside your accessible page tree. You can work with pages in your assigned web mounts.</source>
+            </trans-unit>
+
+            <!-- Hints: Server / System -->
+            <trans-unit id="aiSuite.mcp.hint.server_temporarily_unavailable">
+                <source>The AI Suite Server is temporarily unavailable. Please try again in a few moments. Read-only tools (page tree, content, audit) continue to work.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.save_issue">
+                <source>The changes could not be saved. This may be due to missing write permissions on the target page. Details: %s</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.invalid_input">
+                <source>Please check the parameter "%s": %s</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.session_budget_reached">
+                <source>You've used %d credits in this session — great productivity! Your session budget of %d credits has been reached. Start a new session or contact your administrator for a higher budget.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.internal_issue">
+                <source>Something unexpected happened while running "%s". Our team has been notified. Please try again or contact your administrator if the issue persists.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.page_excluded_from_ai">
+                <source>Page %d has been excluded from AI processing by its administrator. This page's content will not be sent to AI providers.</source>
+            </trans-unit>
+
+            <!-- Hints: Permissions (Page / Record / File / Folder / Language / Workspace) -->
+            <trans-unit id="aiSuite.mcp.hint.no_page_access">
+                <source>You do not have permission to access page %d.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.no_record_access">
+                <source>You do not have permission to access record %s:%d.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.no_file_access">
+                <source>You do not have permission to access file UID %d.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.no_folder_access">
+                <source>You do not have permission to access folder "%s".</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.no_language_access">
+                <source>You do not have permission to use language UID %d.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.no_be_user_context">
+                <source>No backend user context available.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.workspace_access_denied">
+                <source>Backend user has no access to workspace %d. Contact a TYPO3 administrator or adjust the MCP write mode.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.token_workspace_revoked">
+                <source>Token is bound to workspace %d, but the backend user no longer has access to it. Generate a new MCP token via the AI Suite backend module.</source>
+            </trans-unit>
+
+            <!-- Success Messages -->
+            <trans-unit id="aiSuite.mcp.success.metadata_applied">
+                <source>SEO metadata successfully updated for page %d.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.success.translation_created">
+                <source>Translation for page %d (%s) successfully created.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.success.mass_action_started">
+                <source>Mass action started for %d pages. Task ID: %s. You can check the progress anytime.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.success.partial">
+                <source>%d of %d items successfully processed. %d items need manual review.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.success.written_to_workspace">
+                <source>Changes saved to workspace %d. They are ready for review and can be published when approved.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.success.instruction_created">
+                <source>Content guidelines for page %d successfully created. They will automatically apply to all AI operations on this page.</source>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
