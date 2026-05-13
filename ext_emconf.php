@@ -1,6 +1,6 @@
 <?php
 
-$EM_CONF[$_EXTKEY] = [
+$EM_CONF['ai_suite_mcp'] = [
     'title' => 'AI Suite MCP',
     'description' => 'MCP (Model Context Protocol) server integration for TYPO3 and compatibility to EXT:ai_suite. Provies AI-powered tools for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients.',
     'category' => 'backend',
