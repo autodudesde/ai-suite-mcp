@@ -1,4 +1,4 @@
-# AI Suite MCP
+# TYPO3 + AI Suite MCP
 
 > 🚧 **Under active development.** This extension is in `beta` state and evolving fast. Tool signatures, settings keys, and the upcoming `AbstractCustomTool` API may still change between minor versions. Production deployments are possible (and encouraged for early feedback), but pin a version and review the changelog before upgrading. Join us on Slack — [#ai-suite on TYPO3 Slack](https://typo3.slack.com/archives/C05QAN1KNVD) — to follow development, raise issues, or shape the roadmap.
 
@@ -22,6 +22,7 @@ Once connected, your MCP client can drive the TYPO3 backend the same way an edit
 - 🧩 **Works with EXT:container and your custom records** — container children, third-party tables (news, products, custom CTypes) are first-class.
 - ⏱️ **Background batch jobs** — long-running translations / metadata generation get an async task ID; results come back as suggestions you approve.
 - 🔐 **Production-grade auth** — OAuth 2.1 + PKCE with dynamic client registration, per-token rate limiting, full HTTPS enforcement, password-change revocation.
+- 👤 **Respects TYPO3 BE-user permissions** — every tool call runs as the linked backend user; page mounts, file mounts, table/field access rights and AI Suite per-feature/per-model BE-group flags are enforced on every request.
 - 📊 **Reports + dedicated logs** — TYPO3 Reports module flags misconfigurations; two log streams (verbose + WARNING-only) keep ops monitoring simple.
 
 ## AI capabilities & available models
@@ -43,7 +44,7 @@ The exact model list available to a given BE user depends on the AI-model permis
 
 ## Requirements
 
-- TYPO3 12.4.11 – 14.3.0
+- TYPO3 12.4.11 – 14.3.1
 - PHP 8.2+
 - `autodudes/ai-suite` `^12.19 | ^13.13 | ^14.1`
 - `typo3/cms-reports`
@@ -108,29 +109,6 @@ Resolution order (see `AiSuiteMcpEndpoint`):
 5. Otherwise → live.
 
 Read tools transparently follow whatever workspace the request resolved to — so previews show what the model would see after the write lands.
-
-## Endpoints
-
-The MCP middleware intercepts these paths (both frontend and backend contexts):
-
-| Path | Description |
-|---|---|
-| `GET/POST /aisuite-mcp` | Streamable HTTP MCP endpoint (Bearer-authenticated, rate-limited: 100 req/min per token, 1 MB body cap) |
-| `GET /aisuite-mcp/health` | Health check (no auth) |
-| `POST /aisuite-mcp/oauth/register` | Dynamic Client Registration (RFC 7591) |
-| `GET /aisuite-mcp/oauth/authorize` | OAuth 2.1 Authorization endpoint (renders consent UI) |
-| `POST /aisuite-mcp/oauth/token` | OAuth Token endpoint (authorization_code, refresh_token) |
-| `POST /aisuite-mcp/oauth/revoke` | Token revocation |
-| `GET /.well-known/oauth-authorization-server` | OAuth 2.1 metadata (RFC 8414) |
-| `GET /.well-known/oauth-protected-resource` | Protected Resource Metadata (RFC 9728) |
-
-Backend-only (TYPO3 session, for the dashboard UI):
-
-| Route | Target |
-|---|---|
-| `/typo3/module/ai_suite/mcp` | MCP dashboard (token management, health, wizard) |
-| `/typo3/ajax/mcp/create-token` | Create token for current BE user |
-| `/typo3/ajax/mcp/revoke-token` | Revoke a token by UID |
 
 ## Connectors
 
@@ -435,9 +413,9 @@ We're actively shaping this extension and the upcoming public custom-tool API. I
 - 🐛 **Bugs / regressions** → please file an issue with the relevant `aisuite_mcp_warnings.log` excerpt and the connector you used.
 - 💡 **Tool gaps** → if you reached for a tool that doesn't exist (a third-party table you'd like discoverable, a workflow not covered by the built-ins), tell us what the LLM should have been able to do. This is the most valuable feedback for the `AbstractCustomTool` API design.
 - 🔌 **New connectors** → if your favourite MCP client isn't in `Connectors/`, share the redirect URI / origin / auth flow it expects and we'll add a guide.
-- 🔒 **Security findings** → please contact AutoDudes directly via the [official channels](https://www.autodudes.de/) rather than opening a public issue.
+- 🔒 **Security findings** → please contact us directly rather than opening a public issue.
 
-The fastest way to reach us is the [#ai-suite channel on TYPO3 Slack](https://typo3.slack.com/archives/C05QAN1KNVD). You can also reach us via the [AutoDudes website](https://www.autodudes.de/).
+The fastest way to reach us is the [#ai-suite channel on TYPO3 Slack](https://typo3.slack.com/archives/C05QAN1KNVD). You can also reach us via [service@autodudes.de](mailto:service@autodudes.de).
 
 ## License
 
