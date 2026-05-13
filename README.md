@@ -2,7 +2,7 @@
 
 > 🚧 **Under active development.** This extension is in `beta` state and evolving fast. Tool signatures, settings keys, and the upcoming `AbstractCustomTool` API may still change between minor versions. Production deployments are possible (and encouraged for early feedback), but pin a version and review the changelog before upgrading. Join us on Slack — [#ai-suite on TYPO3 Slack](https://typo3.slack.com/archives/C05QAN1KNVD) — to follow development, raise issues, or shape the roadmap.
 
-MCP (Model Context Protocol) server integration for TYPO3's [AI Suite](https://www.autodudes.de/) extension. Connects Claude Desktop, Claude.ai, ChatGPT, MCP Inspector and other MCP-compatible clients directly to your TYPO3 backend — and lets the model drive the same AI providers (Anthropic, OpenAI, Mistral, DeepL, Midjourney, Flux, …) that AI Suite already integrates.
+MCP (Model Context Protocol) server integration for TYPO3's [AI Suite](https://www.autodudes.de/) extension. Connects Claude Desktop, Claude.ai, ChatGPT, MCP Inspector and other MCP-compatible clients directly to your TYPO3 backend — and lets the model drive the same AI providers (Anthropic, OpenAI, Mittwald AI, DeepL, Midjourney, Flux, …) that AI Suite already integrates.
 
 - **Extension key:** `ai_suite_mcp`
 - **Composer package:** `autodudes/ai-suite-mcp`
@@ -30,12 +30,12 @@ MCP tools delegate the actual generation / translation work to the parent AI Sui
 
 | Capability | MCP tools | Models available via AI Suite |
 |---|---|---|
-| **Page metadata** (SEO, OG, Twitter) | `generateMetadata`, `batchGenerateMetadata` | ChatGPT, Anthropic, Mistral (Mittwald AI Model Hub), AI Suite Text Ultimate |
-| **File metadata** (alt, title, description) | `generateFileMetadata`, `batchGenerateFileMetadata`, `batchGenerateFolderMetadata` | ChatGPT Vision, Mistral Vision (Mittwald), AI Suite Text Ultimate |
-| **Content generation** (tt_content) | `generateContent`, `optimizeContent` | ChatGPT, Anthropic, Mistral, AI Suite Text Ultimate |
-| **Page-tree / landing pages** | `generatePageTree`, `generateLandingPage`, `savePageTree` | ChatGPT, Anthropic, Mistral, AI Suite Text Ultimate |
-| **Translation** (records, pages, file metadata) | `translateRecord`, `translatePage`, `translateFileMetadata`, `batchTranslatePage`, `batchTranslate*Metadata` | DeepL, Google Translate, ChatGPT, Anthropic, Mistral |
-| **Easy Language** (accessibility rewrites) | exposed via `optimizeContent` / translation tools | ChatGPT, Anthropic, AI Suite Text Ultimate |
+| **Page metadata** (SEO, OG, Twitter) | `generateMetadata`, `batchGenerateMetadata` | ChatGPT, Anthropic, Mittwald AI, Meta Llama-3.3 (70B-Instruct) |
+| **File metadata** (alt, title, description) | `generateFileMetadata`, `batchGenerateFileMetadata`, `batchGenerateFolderMetadata` | ChatGPT Vision, Mittwald AI Vision, Meta Llama-3.3 (70B-Instruct) |
+| **Content generation** (tt_content) | `generateContent`, `optimizeContent` | ChatGPT, Anthropic, Mittwald AI, Meta Llama-3.3 (70B-Instruct) |
+| **Page-tree / landing pages** | `generatePageTree`, `generateLandingPage`, `savePageTree` | ChatGPT, Anthropic, Mittwald AI, Meta Llama-3.3 (70B-Instruct) |
+| **Translation** (records, pages, file metadata) | `translateRecord`, `translatePage`, `translateFileMetadata`, `batchTranslatePage`, `batchTranslate*Metadata` | DeepL, Google Translate, ChatGPT, Anthropic, Mittwald AI |
+| **Easy Language** (accessibility rewrites) | exposed via `optimizeContent` / translation tools | ChatGPT, Anthropic, Meta Llama-3.3 (70B-Instruct) |
 | **DeepL glossary sync** | (via AI Suite — gated by `mcp:glossary` scope) | DeepL |
 | **Image generation** | `generateImage` | DALL·E / GPT-Image (OpenAI), Midjourney, Flux |
 
@@ -423,7 +423,7 @@ What gets logged:
 
 MCP tools that call AI providers (`generate*`, `translate*`, `optimize*`, `generateImage`) inherit the network configuration of the parent `autodudes/ai-suite` extension. Outbound HTTPS is required to:
 
-- the API host(s) of every provider you have enabled in AI Suite (Anthropic, OpenAI, Mistral, Midjourney, Flux, DeepL, …)
+- the API host(s) of every provider you have enabled in AI Suite (Anthropic, OpenAI, Mittwald AI, Midjourney, Flux, DeepL, …)
 - the AutoDudes credit-accounting backend, if licensed via AutoDudes
 
 In hardened environments with strict egress firewalls, allowlist the provider hosts that are actually configured in your AI Suite settings. The MCP endpoint itself does not introduce additional outbound destinations beyond what AI Suite already uses.
