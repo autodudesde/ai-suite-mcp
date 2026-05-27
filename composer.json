@@ -11,7 +11,7 @@
     "MCP",
     "Model Context Protocol"
   ],
-  "version": "0.3.2",
+  "version": "0.3.3",
   "require": {
     "autodudes/ai-suite": "*",
     "typo3/cms-reports": "^12.4.11 | ^13.4.1 || ^14.3.0",

@@ -4,10 +4,6 @@
 
 MCP (Model Context Protocol) server integration for TYPO3's [AI Suite](https://www.autodudes.de/) extension. Connects Claude Desktop, Claude.ai, ChatGPT, MCP Inspector and other MCP-compatible clients directly to your TYPO3 backend — and lets the model drive the same AI providers (Anthropic, OpenAI, Mittwald AI, DeepL, Midjourney, Flux, …) that AI Suite already integrates.
 
-- **Extension key:** `ai_suite_mcp`
-- **Composer package:** `autodudes/ai-suite-mcp`
-- **PSR-4 namespace:** `AutoDudes\AiSuiteMcp\` → `Classes/`
-
 ## What you can do with it
 
 Once connected, your MCP client can drive the TYPO3 backend the same way an editor would — but without leaving the chat.
