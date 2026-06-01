@@ -6,8 +6,8 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuite\Domain\Repository\PagesRepository;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -19,7 +19,7 @@ class SearchContentTool extends AbstractTool
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly PagesRepository $pagesRepository,
         private readonly ContentRepository $contentRepository,
     ) {
@@ -65,12 +65,10 @@ class SearchContentTool extends AbstractTool
             $includeFullContent = false;
         }
 
-        // Permission scope: admin → null = no filter; non-admin → webmount whitelist (pid IN …).
-        // Empty list short-circuits the repository to an empty result.
         $beUser = $this->getBackendUser();
         $allowedPageIds = (null === $beUser || $beUser->isAdmin())
             ? null
-            : $this->getReadablePageIds(0, 99);
+            : $this->recordAccess->getReadablePageIds();
 
         $results = [];
 

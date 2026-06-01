@@ -11,21 +11,12 @@ use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\ProcessedFile;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Generates MCP ImageContent previews (base64 PNG/JPEG) from FAL files.
- * Returns null on any failure — previews are a nice-to-have and must never
- * break the surrounding tool response.
- */
 class FilePreviewService
 {
     public function __construct(
         private readonly LoggerInterface $logger,
     ) {}
 
-    /**
-     * Build an MCP ImageContent block with a scaled-down preview of the given file.
-     * Width/height use TYPO3's "maximum" semantic ("m" suffix) so the aspect ratio is preserved.
-     */
     public function generate(File $file, int $width = 128, int $height = 128): ?ImageContent
     {
         if (!str_starts_with($file->getMimeType(), 'image/')) {
@@ -69,12 +60,6 @@ class FilePreviewService
         }
     }
 
-    /**
-     * Build an absolute public URL for the given file so MCP clients can link to it.
-     * Returns null for files without a public URL (e.g. private storages) or when the
-     * request host is unavailable. The URL is not guaranteed to be publicly reachable —
-     * it reflects whatever the FAL storage exposes.
-     */
     public function getAbsolutePublicUrl(File $file): ?string
     {
         try {
@@ -92,7 +77,6 @@ class FilePreviewService
             return null;
         }
 
-        // Already absolute (e.g. CDN-backed storage) — pass through.
         if (1 === preg_match('#^https?://#i', $publicUrl)) {
             return $publicUrl;
         }

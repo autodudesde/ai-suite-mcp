@@ -8,11 +8,10 @@ use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
@@ -22,7 +21,7 @@ class GeneratePageTreeTool extends AbstractAiTool
     protected ?string $requiredScope = 'mcp:generate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
     ) {
@@ -37,7 +36,7 @@ class GeneratePageTreeTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Generate a page tree structure from a description. Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A
+            .DescriptionSnippets::APPROACH_A
             .'Approach A returns a preview directly in the response — display it to the user (no additional tool call needed). '
             .'After explicit user approval, persist via savePageTree (not writeRecords). '
             .'(B) Plan the tree yourself → savePageTree (requires user confirmation before calling) — no credits.';
@@ -87,7 +86,7 @@ class GeneratePageTreeTool extends AbstractAiTool
         $text .= sprintf('Page tree created under page %d.', $parentPageId);
         $text .= $this->getWorkspaceInfo();
 
-        return $this->appendCreditInfo(new CallToolResult([new TextContent($text)]), $result);
+        return $this->appendCreditInfo($this->textResult($text), $result);
     }
 
     private function listModels(): CallToolResult

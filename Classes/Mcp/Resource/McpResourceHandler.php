@@ -6,6 +6,9 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Resource;
 
 use AutoDudes\AiSuite\Domain\Repository\GlobalInstructionsRepository;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
+use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Mcp\Server\Server;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
@@ -21,17 +24,30 @@ use TYPO3\CMS\Core\Site\SiteFinder;
  */
 class McpResourceHandler
 {
+    /**
+     * Resources are passive reads gated by the same base read scope as read tools (plus its mapped
+     * be_group permission, which is empty for mcp:read → scope alone suffices).
+     */
+    private const REQUIRED_SCOPE = 'mcp:read';
+
     public function __construct(
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly SiteFinder $siteFinder,
         private readonly GlobalInstructionsRepository $globalInstructionsRepository,
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly McpUserContext $userContext,
+        private readonly PermissionService $permissionService,
     ) {}
 
     public function registerHandlers(Server $server): void
     {
         $server->registerHandler('resources/list', $this->handleList(...));
         $server->registerHandler('resources/read', $this->handleRead(...));
+    }
+
+    private function canReadResources(): bool
+    {
+        return $this->permissionService->isScopeGranted(self::REQUIRED_SCOPE, $this->userContext->getScopes());
     }
 
     /**
@@ -41,6 +57,11 @@ class McpResourceHandler
      */
     private function handleList(?array $params): array
     {
+        // Scope gate: a session without mcp:read sees no resources (mirrors tools/list filtering).
+        if (!$this->canReadResources()) {
+            return ['resources' => []];
+        }
+
         $resources = [];
 
         // Global Instructions per page
@@ -87,6 +108,11 @@ class McpResourceHandler
      */
     private function handleRead(?array $params): array
     {
+        // Scope gate: reading any resource requires mcp:read (the SDK turns this into a JSON-RPC error).
+        if (!$this->canReadResources()) {
+            throw new InsufficientScopeException('Reading AI Suite resources requires the "mcp:read" scope.');
+        }
+
         $uri = $params['uri'] ?? '';
 
         // Global Instructions
@@ -143,7 +169,7 @@ class McpResourceHandler
                     'id' => $lang->getLanguageId(),
                     'title' => $lang->getTitle(),
                     'locale' => $lang->getLocale()->posixFormatted(),
-                    'twoLetterIsoCode' => $lang->getTwoLetterIsoCode(),
+                    'twoLetterIsoCode' => $lang->getLocale()->getLanguageCode(),
                 ];
             }
             $sites[] = [

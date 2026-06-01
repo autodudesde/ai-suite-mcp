@@ -10,9 +10,9 @@ use AutoDudes\AiSuite\Service\FileNameSanitizerService;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FilePreviewService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
@@ -29,7 +29,7 @@ class GenerateImageTool extends AbstractAiTool
     protected ?string $requiredScope = 'mcp:image';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
@@ -84,10 +84,8 @@ class GenerateImageTool extends AbstractAiTool
         $pageId = (int) ($params['pageId'] ?? 0);
         $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $pageId > 0 ? $pageId : 1);
 
-        // Page context is optional — only verify permission when actually bound to a page.
-        // pageId=0 is the storage-only mode (FAL is storage-, not page-scoped).
         if ($pageId > 0) {
-            $this->assertPagePerm($pageId, Permission::PAGE_SHOW);
+            $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
             if ($this->isPageExcludedFromAi($pageId)) {
                 return new CallToolResult(
                     [new TextContent($this->translateOrFallback('hint.page_excluded_from_ai', [$pageId], "Page {$pageId} excluded from AI processing."))],
@@ -100,8 +98,7 @@ class GenerateImageTool extends AbstractAiTool
         $targetFolder = (string) ($params['targetFolder'] ?? '1:/user_upload/');
         $prompt = (string) ($params['prompt'] ?? '');
 
-        // Filemount-aware write check on the target folder.
-        $this->assertFolderWriteAccess($targetFolder);
+        $this->recordAccess->assertFolderWriteAccess($targetFolder);
 
         if ($pageId > 0) {
             $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('pages', 'imageWizard', $pageId);
@@ -109,7 +106,6 @@ class GenerateImageTool extends AbstractAiTool
             $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('files', 'imageWizard', null, $targetFolder);
         }
 
-        // Step 1: prepare — returns proposal URLs (images[]) and imageTitles[].
         // For Flux/GPTImage these URLs point to the final image; Midjourney would
         // additionally require a progress=finish step (not yet supported here).
         $result = $this->sendAiRequest('createImage', [

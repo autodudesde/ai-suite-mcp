@@ -2,11 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp;
+namespace AutoDudes\AiSuiteMcp\Mcp\Utility;
 
 /**
- * Central source for MCP operating guidelines.
- *
  * Used by:
  * - getOperatingGuidelines tool (automatic, via initialize instruction)
  * - operating-guidelines prompt (manual fallback)
@@ -19,7 +17,7 @@ class OperatingGuidelines
             ## Two approaches for creating/modifying content
 
             ### Approach A: External AI-powered (costs credits)
-            Use generate*, translate*, simplify*, optimize* tools when the user wants external AI-generated content.
+            Use generate*, translate*, optimize* tools when the user wants external AI-generated content.
             1. Call the tool WITHOUT `model` parameter → returns list of available models.
             2. Call the tool again WITH chosen `model` → returns a **preview directly in the response** (no additional tool call needed).
             3. Display the preview to the user and wait for explicit user approval.
@@ -44,6 +42,10 @@ class OperatingGuidelines
             - Never guess CTypes, field names, or colPos values — always discover them first.
             - Never delete records without explicit user confirmation.
             - If the user says "just create it", still display the preview. It is fast and prevents mistakes.
+            - When EDITING an existing record's bodytext or another rich-text (RTE) field, first read it with readRecords(raw: true) and edit that raw HTML. A normal read strips tags to a plain-text preview; writing that flattened text back would destroy the stored <h2>/<p>/<a>/<ul> markup.
+
+            ## Working in a non-live workspace
+            If this session is bound to a workspace (check getServerInfo for the active workspace), use compareWithLive to see what your draft changes against the live site — a per-record field-level diff (changed/added/removed). Other read tools show the workspace-overlaid state, not the diff.
 
             ## When to use batch vs. single tools
             - 1 page/file → use the single tool (generateMetadata, translatePage, etc.).

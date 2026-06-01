@@ -6,9 +6,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp;
 
 use Psr\Http\Message\ServerRequestInterface;
 
-/**
- * Holds the context of the current MCP session: backend user + OAuth scopes.
- */
 class McpUserContext
 {
     private int $beUserUid = 0;
@@ -20,18 +17,18 @@ class McpUserContext
 
     private string $tokenId = '';
 
+    private string $issuedVersion = '';
+
     private bool $initialized = false;
 
     private ?ServerRequestInterface $serverRequest = null;
 
     /**
-     * Initialize the context. May only be called once per request.
-     *
      * @param list<string> $scopes
      *
      * @throws \LogicException If called more than once
      */
-    public function initialize(int $beUserUid, array $scopes, string $clientId, string $tokenId): void
+    public function initialize(int $beUserUid, array $scopes, string $clientId, string $tokenId, string $issuedVersion = ''): void
     {
         if ($this->initialized) {
             throw new \LogicException(
@@ -43,6 +40,7 @@ class McpUserContext
         $this->scopes = $scopes;
         $this->clientId = $clientId;
         $this->tokenId = $tokenId;
+        $this->issuedVersion = $issuedVersion;
         $this->initialized = true;
     }
 
@@ -77,6 +75,11 @@ class McpUserContext
     public function getTokenId(): string
     {
         return $this->tokenId;
+    }
+
+    public function getIssuedVersion(): string
+    {
+        return $this->issuedVersion;
     }
 
     public function setServerRequest(ServerRequestInterface $request): void

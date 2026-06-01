@@ -7,7 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Resource;
 use AutoDudes\AiSuite\Domain\Repository\CustomPromptTemplateRepository;
 use AutoDudes\AiSuite\Domain\Repository\ServerPromptTemplateRepository;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
-use AutoDudes\AiSuiteMcp\Mcp\OperatingGuidelines;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use Mcp\Server\Server;
 use Psr\Log\LoggerInterface;
 
@@ -42,14 +42,13 @@ class McpPromptHandler
     {
         $prompts = [];
 
-        // Operating guidelines prompt (fallback for clients that miss the initialize instruction)
+        // fallback for clients that miss the initialize instruction
         $prompts[] = [
             'name' => 'operating-guidelines',
             'description' => 'Load mandatory workflow rules for this MCP server (write workflow, model selection, batch operations)',
             'arguments' => [],
         ];
 
-        // Content guidelines prompt
         $prompts[] = [
             'name' => 'content-guidelines',
             'description' => 'Get content guidelines (tone, audience, style) for a specific page or section',
@@ -156,8 +155,6 @@ class McpPromptHandler
     }
 
     /**
-     * Custom templates expose the full prompt text; server templates only metadata (IP protection).
-     *
      * @param null|array<string, mixed> $template
      *
      * @return array<string, mixed>

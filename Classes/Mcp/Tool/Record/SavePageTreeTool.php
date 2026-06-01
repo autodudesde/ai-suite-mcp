@@ -51,28 +51,24 @@ class SavePageTreeTool extends AbstractDataTool
         $pages = $params['pages'] ?? [];
 
         if (!is_array($pages) || empty($pages)) {
-            return new CallToolResult([new TextContent('pages must be a non-empty array.')], isError: true);
+            return $this->textError('pages must be a non-empty array.');
         }
 
-        $this->validateTableWriteAccess('pages');
-        $this->assertPagePerm($parentPageId, Permission::PAGE_NEW);
+        $this->recordAccess->validateTableWriteAccess('pages');
+        $this->recordAccess->assertPagePerm($parentPageId, Permission::PAGE_NEW);
 
         if ($parentPageId > 0) {
             $parent = BackendUtility::getRecordWSOL('pages', $parentPageId);
             if (null === $parent) {
-                return new CallToolResult([new TextContent(sprintf('Parent page %d not found.', $parentPageId))], isError: true);
+                return $this->textError(sprintf('Parent page %d not found.', $parentPageId));
             }
         }
 
-        // Build a flat datamap with NEW-id refs so DataHandler resolves the parent/child
-        // hierarchy in a single pass. DataHandler then handles slug generation, permission
-        // checks, AND workspace versioning automatically — which the legacy
-        // PageStructureFactory path bypassed (raw INSERT without workspace awareness).
         $datamap = ['pages' => []];
         $count = $this->collectPagesIntoDatamap($pages, $parentPageId, $datamap);
 
         if (0 === $count) {
-            return new CallToolResult([new TextContent('No valid pages to create (every entry was missing a title).')], isError: true);
+            return $this->textError('No valid pages to create (every entry was missing a title).');
         }
 
         $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
@@ -92,9 +88,6 @@ class SavePageTreeTool extends AbstractDataTool
     }
 
     /**
-     * Recursively flattens the nested page tree into a DataHandler datamap.
-     * Returns the number of valid (titled) pages added.
-     *
      * @param array<int, array<string, mixed>> $pages
      * @param int|string                       $parentRef parent page UID (int) or NEW-id reference (string) for nested children
      * @param array<string, mixed>             $datamap   accumulator passed by reference
@@ -126,10 +119,6 @@ class SavePageTreeTool extends AbstractDataTool
         return $count;
     }
 
-    /**
-     * Generate a DataHandler NEW-id placeholder. 24-char hex suffix avoids collisions
-     * within a single batch (DataHandler validates uniqueness across the datamap).
-     */
     private function generateNewId(): string
     {
         return 'NEW'.substr(md5((string) microtime(true).random_int(0, 99999999)), 0, 22);

@@ -12,7 +12,6 @@ use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 /**
- * Health check endpoint — accessible without authentication.
  * GET /aisuite-mcp/health.
  */
 class HealthCheckEndpoint

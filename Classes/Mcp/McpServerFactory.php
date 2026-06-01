@@ -7,19 +7,16 @@ namespace AutoDudes\AiSuiteMcp\Mcp;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpPromptHandler;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpResourceHandler;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolInterface;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolRegistry;
 use Mcp\Server\Server;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
+use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
-/**
- * Factory that creates and configures the MCP Server instance.
- *
- * Registers JSON-RPC handlers for tools/list and tools/call.
- * Tools are filtered by the current token's scopes.
- */
 class McpServerFactory
 {
     public function __construct(
@@ -35,7 +32,7 @@ class McpServerFactory
 
     public function createServer(): Server
     {
-        $server = new Server('ai-suite');
+        $server = new Server('ai-suite', $this->logger, ExtensionManagementUtility::getExtensionVersion('ai_suite_mcp') ?: '0.0.0');
         $this->registerToolHandlers($server);
 
         return $server;
@@ -52,9 +49,6 @@ class McpServerFactory
     }
 
     /**
-     * Handler for tools/list — returns all tools the current token has access to.
-     * AI tools are marked as unavailable when the AI Suite Server is unreachable.
-     *
      * @return array<string, mixed>
      */
     private function handleToolsList(mixed $params): array
@@ -66,14 +60,12 @@ class McpServerFactory
         foreach ($this->toolRegistry->getTools() as $tool) {
             $requiredScope = $tool->getRequiredScope();
 
-            // Filter by token scopes
             if (null !== $requiredScope && !in_array($requiredScope, $tokenScopes, true)) {
                 continue;
             }
 
             $description = $tool->getDescription();
 
-            // Mark AI tools as unavailable when server is down
             if (!$serverAvailable && $this->isAiTool($tool)) {
                 $description .= ' [Currently unavailable — AI Suite Server is temporarily unreachable]';
             }
@@ -88,9 +80,6 @@ class McpServerFactory
         return ['tools' => $tools];
     }
 
-    /**
-     * Handler for tools/call — executes a tool by name.
-     */
     private function handleToolsCall(mixed $params): CallToolResult
     {
         $params = $this->normalizeParams($params);
@@ -135,9 +124,6 @@ class McpServerFactory
         return $result;
     }
 
-    /**
-     * Check if the AI Suite Server is reachable.
-     */
     private function checkServerAvailability(): bool
     {
         $cacheKey = 'aisuite_mcp_server_available';
@@ -153,9 +139,6 @@ class McpServerFactory
         return $available;
     }
 
-    /**
-     * Determine if a tool requires the AI Suite Server.
-     */
     private function isAiTool(ToolInterface $tool): bool
     {
         $scope = $tool->getRequiredScope();
@@ -164,8 +147,6 @@ class McpServerFactory
     }
 
     /**
-     * Convert SDK typed params to a plain array for uniform access.
-     *
      * @return array<string, mixed>
      */
     private function normalizeParams(mixed $params): array

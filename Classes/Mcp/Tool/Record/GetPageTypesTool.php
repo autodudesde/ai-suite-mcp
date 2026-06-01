@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
@@ -34,9 +33,6 @@ class GetPageTypesTool extends AbstractDataTool
         $beUser = $this->getBackendUser();
         $result = [];
 
-        // Read doktype options from TCA via the same path GetContentTypesTool uses for CType
-        // — doktype is a TCA `select` field with `items`, no need for a sub-schema enumeration
-        // helper on the service.
         $items = $this->tcaCompatibilityService->getFieldConfiguration('pages', 'doktype')['items'] ?? [];
 
         foreach ($items as $item) {
@@ -52,7 +48,7 @@ class GetPageTypesTool extends AbstractDataTool
                 continue;
             }
 
-            $label = $this->resolveLabel((string) ($item['label'] ?? $doktype));
+            $label = $this->tcaLabel->resolveLabel((string) ($item['label'] ?? $doktype));
             $result[] = ['doktype' => $doktype, 'label' => $label ?: (string) $doktype];
         }
 
@@ -61,6 +57,6 @@ class GetPageTypesTool extends AbstractDataTool
             $text .= sprintf("- **%s** (doktype: %d)\n", $t['label'], $t['doktype']);
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

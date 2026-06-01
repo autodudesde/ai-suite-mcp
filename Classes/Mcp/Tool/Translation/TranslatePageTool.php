@@ -12,9 +12,9 @@ use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -22,19 +22,13 @@ use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Translate a complete TYPO3 page (metadata + content elements) to another language.
- *
- * Reuses TranslationService::collectPageTranslatableContent() to collect fields
- * in the same format as the TranslationHook, then sends to the AI Suite Server.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class TranslatePageTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:translate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
         private readonly TranslationService $translationService,
@@ -52,9 +46,9 @@ class TranslatePageTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Translate a complete TYPO3 page (metadata + all content elements) to another language. Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A
-            .'(B) Use localizeRecord to create translation shells → translate manually '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A
+            .'(B) Use localizeRecord to create translation shells → translate manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A_TRANSLATE_DIRECT_PERSIST;
     }
 
     public function getSchema(): array
@@ -107,16 +101,16 @@ class TranslatePageTool extends AbstractAiTool
             $sourceLanguage = $this->resolveLanguageIsoCode('', $pageId);
         }
 
-        $srcLangUid = $this->resolveLanguageUid($sourceLanguage, $pageId);
-        $destLangUid = $this->resolveLanguageUid($targetLanguage, $pageId);
+        $srcLangUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $pageId);
+        $destLangUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageId);
 
         if (0 === $destLangUid) {
-            return new CallToolResult([new TextContent("Language \"{$targetLanguage}\" is not configured for this site.")], isError: true);
+            return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
         }
 
-        $this->assertLanguageAccess($destLangUid);
+        $this->recordAccess->assertLanguageAccess($destLangUid);
 
-        // Step 1: Collect translatable fields with correct translation UID mapping
+        // Collect translatable fields with correct translation UID mapping
         $request = $this->userContext->getServerRequest();
 
         try {
@@ -135,13 +129,13 @@ class TranslatePageTool extends AbstractAiTool
                 'reason' => $e->getMessage(),
             ]);
 
-            return new CallToolResult([new TextContent($e->getMessage())], isError: true);
+            return $this->textError($e->getMessage());
         }
 
         $elementsCount = $this->countElements($translateFields);
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
-        // Step 2: Load glossary
+        // Load glossary
         $site = $this->siteFinder->getSiteByPageId($pageId);
         $rootPageId = $site->getRootPageId();
         $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid);
@@ -150,7 +144,7 @@ class TranslatePageTool extends AbstractAiTool
         $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('pages', 'translation', $pageId);
         $uuid = $this->uuidService->generateUuid();
 
-        // Step 3: Send request in the same format as TranslationHook
+        // Send request in the same format as TranslationHook
         $result = $this->sendAiRequest('translate', [
             'translate_fields' => $translateFieldsJson,
             'translate_fields_count' => $elementsCount,
@@ -164,18 +158,16 @@ class TranslatePageTool extends AbstractAiTool
             'global_instructions' => $globalInstructions,
         ], ['translate' => $model], strtoupper($targetLanguage));
 
-        // Step 4: Apply translation results via DataHandler
+        // Apply translation results via DataHandler
         $translationResults = $result['translationResults'] ?? [];
         if (\is_string($translationResults)) {
             $translationResults = json_decode($translationResults, true) ?? [];
         }
 
         if (empty($translationResults)) {
-            return new CallToolResult([new TextContent('No translation results returned by the server.')], isError: true);
+            return $this->textError('No translation results returned by the server.');
         }
 
-        // Validate structure: DataHandler expects [table => [uid => [field => value]]]
-        // Filter out malformed entries where field values are not arrays
         $cleanedResults = [];
         foreach ($translationResults as $table => $records) {
             if (!\is_array($records)) {
@@ -189,7 +181,7 @@ class TranslatePageTool extends AbstractAiTool
         }
 
         if (empty($cleanedResults)) {
-            return new CallToolResult([new TextContent('Translation results could not be processed (invalid format).')], isError: true);
+            return $this->textError('Translation results could not be processed (invalid format).');
         }
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
@@ -203,7 +195,6 @@ class TranslatePageTool extends AbstractAiTool
             );
         }
 
-        // Build response with preview of translated fields
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: Page %d → %s\n\n", $pageId, $targetLanguage);
         $text .= sprintf("**Scope:** %s | **Elements:** %d\n\n", $translationScope, $elementsCount);
@@ -224,7 +215,7 @@ class TranslatePageTool extends AbstractAiTool
 
         $text .= "**Note:** Translated records are hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to verify.\n";
 
-        return $this->appendCreditInfo(new CallToolResult([new TextContent($text)]), $result);
+        return $this->appendCreditInfo($this->textResult($text), $result);
     }
 
     /**

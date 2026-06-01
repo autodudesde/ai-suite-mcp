@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Backend\View\BackendLayoutView;
@@ -19,7 +18,7 @@ class GetColumnPositionsTool extends AbstractDataTool
     protected ?string $requiredScope = null;
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly BackendLayoutView $backendLayoutView,
         private readonly ContentRepository $contentRepository,
     ) {
@@ -55,11 +54,11 @@ class GetColumnPositionsTool extends AbstractDataTool
     {
         $pageId = (int) $params['pageId'];
         $languageUid = (int) ($params['languageUid'] ?? 0);
-        $this->assertPagePerm($pageId, Permission::PAGE_SHOW);
+        $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page) {
-            return new CallToolResult([new TextContent("Page {$pageId} not found.")], isError: true);
+            return $this->textError("Page {$pageId} not found.");
         }
 
         $backendLayout = $this->backendLayoutView->getBackendLayoutForPage($pageId);
@@ -72,7 +71,7 @@ class GetColumnPositionsTool extends AbstractDataTool
                 foreach ($row['columns.'] ?? [] as $col) {
                     $colPos = (int) ($col['colPos'] ?? -1);
                     if ($colPos >= 0) {
-                        $columns[$colPos] = $this->resolveLabel($col['name'] ?? 'Column '.$colPos);
+                        $columns[$colPos] = $this->tcaLabel->resolveLabel($col['name'] ?? 'Column '.$colPos);
                     }
                 }
             }
@@ -90,16 +89,12 @@ class GetColumnPositionsTool extends AbstractDataTool
 
         $text .= $this->renderContainerInstances($pageId, $languageUid);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
-    /**
-     * Render existing container instances on a page with their inner slots.
-     * Empty when EXT:container is not loaded or no containers exist on the page.
-     */
     private function renderContainerInstances(int $pageId, int $languageUid): string
     {
-        $registry = $this->getContainerRegistry();
+        $registry = $this->tcaLabel->getContainerRegistry();
         if (null === $registry) {
             return '';
         }
@@ -120,11 +115,11 @@ class GetColumnPositionsTool extends AbstractDataTool
             $headerLabel = '' !== (string) ($container['header'] ?? '')
                 ? (string) $container['header']
                 : sprintf('Container UID %d', (int) $container['uid']);
-            $text .= sprintf("\n- **%s** (`%s`, UID: %d)\n", $headerLabel, $cType, (int) $container['uid']);
+            $text .= sprintf("\n- **%s** (%s, UID: %d)\n", $headerLabel, $this->tcaLabel->resolveCTypeLabel($cType), (int) $container['uid']);
             foreach ($registry->getAvailableColumns($cType) as $col) {
                 $text .= sprintf(
                     "    - %s → tx_container_parent: %d, colPos: %d\n",
-                    $this->resolveLabel((string) ($col['name'] ?? '')),
+                    $this->tcaLabel->resolveLabel((string) ($col['name'] ?? '')),
                     (int) $container['uid'],
                     (int) ($col['colPos'] ?? 0),
                 );

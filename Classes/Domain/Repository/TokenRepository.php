@@ -7,9 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Domain\Repository;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 
-/**
- * Repository for OAuth authorization codes, access tokens, and consents.
- */
 class TokenRepository
 {
     private const CODE_TABLE = 'tx_aisuite_oauth_codes';
@@ -20,11 +17,7 @@ class TokenRepository
         private readonly ConnectionPool $connectionPool,
     ) {}
 
-    // ── Authorization Codes ──
-
     /**
-     * Store an authorization code (hashed).
-     *
      * @param array<string, mixed> $data
      */
     public function createCode(array $data): void
@@ -36,8 +29,6 @@ class TokenRepository
     }
 
     /**
-     * Find a code record by its hash.
-     *
      * @return null|array<string, mixed>
      */
     public function findCodeByHash(string $codeHash): ?array
@@ -54,10 +45,6 @@ class TokenRepository
         return $result ?: null;
     }
 
-    /**
-     * Atomically mark a code as used. Returns true if successful (code was unused).
-     * If another request already used the code, this returns false (race condition safe).
-     */
     public function markCodeUsed(string $codeHash): bool
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::CODE_TABLE);
@@ -74,9 +61,6 @@ class TokenRepository
         return $affectedRows > 0;
     }
 
-    /**
-     * Delete expired authorization codes.
-     */
     public function deleteExpiredCodes(): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::CODE_TABLE);
@@ -88,11 +72,7 @@ class TokenRepository
         ;
     }
 
-    // ── Access Tokens ──
-
     /**
-     * Create an access token record.
-     *
      * @param array<string, mixed> $data
      */
     public function createToken(array $data): int
@@ -104,8 +84,6 @@ class TokenRepository
     }
 
     /**
-     * Find a token record by its hash.
-     *
      * @return null|array<string, mixed>
      */
     public function findByTokenHash(string $tokenHash): ?array
@@ -123,8 +101,6 @@ class TokenRepository
     }
 
     /**
-     * Find a token record by its refresh token hash.
-     *
      * @return null|array<string, mixed>
      */
     public function findByRefreshTokenHash(string $refreshTokenHash): ?array
@@ -141,9 +117,6 @@ class TokenRepository
         return $result ?: null;
     }
 
-    /**
-     * Update last_used_at and last_used_ip for a token.
-     */
     public function updateLastUsed(int $uid, string $ip = ''): void
     {
         $this->connectionPool
@@ -156,9 +129,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Soft-delete a token by UID.
-     */
     public function markDeleted(int $uid): void
     {
         $this->connectionPool
@@ -171,9 +141,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Soft-delete a token by its hash.
-     */
     public function markDeletedByHash(string $tokenHash): void
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -184,10 +151,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Revoke ALL active tokens for a user.
-     * Used for password change hook (S15).
-     */
     public function revokeAllTokensForUser(int $beUserUid): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -203,10 +166,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Revoke ALL active tokens for a user+client combination.
-     * Used for theft detection (S24).
-     */
     public function revokeAllTokensForUserAndClient(int $beUserUid, string $clientId): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -224,8 +183,6 @@ class TokenRepository
     }
 
     /**
-     * Find active (non-deleted, non-expired) tokens for a user, newest first.
-     *
      * @return list<array<string, mixed>>
      */
     public function findActiveTokensForUser(int $beUserUid): array
@@ -247,9 +204,6 @@ class TokenRepository
         return array_values($rows);
     }
 
-    /**
-     * Count active (non-deleted, non-expired) tokens for a user.
-     */
     public function countActiveTokensForUser(int $beUserUid): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -268,9 +222,6 @@ class TokenRepository
         return (int) $result;
     }
 
-    /**
-     * Revoke the oldest active token for a user (FIFO eviction when limit reached).
-     */
     public function revokeOldestTokenForUser(int $beUserUid): void
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -294,13 +245,6 @@ class TokenRepository
     }
 
     /**
-     * Atomically increment session credits used for a token.
-     *
-     * Replaces the historical read-modify-write pattern (load value into PHP, add delta,
-     * UPDATE absolute value), which lost concurrent increments when two requests for the
-     * same token executed in parallel. The arithmetic now happens at the DB layer, so
-     * concurrent calls accumulate correctly.
-     *
      * @return int the new total credits used after this increment
      */
     public function incrementSessionCreditsUsed(int $uid, int $delta): int
@@ -317,9 +261,6 @@ class TokenRepository
         return $this->getSessionCreditsUsed($uid);
     }
 
-    /**
-     * Get session credits used for a token.
-     */
     public function getSessionCreditsUsed(int $uid): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -334,19 +275,6 @@ class TokenRepository
         return (int) ($result ?: 0);
     }
 
-    /**
-     * Hard-delete soft-deleted (revoked) tokens older than the given retention window.
-     *
-     * Revocation soft-deletes (`deleted = 1`) so that refresh-token theft detection (S24)
-     * can still recognise a reused refresh token after rotation. After the retention
-     * window the theft-detection signal is no longer useful (legitimate refresh windows
-     * are minutes to hours, not weeks), and GDPR right-to-erasure expects revoked tokens
-     * to actually leave the database.
-     *
-     * Soft-deleted tokens whose natural `expires_at` is already in the past are picked
-     * up by {@see self::deleteExpiredTokens()}; this method covers tokens revoked before
-     * their natural expiry.
-     */
     public function deleteRevokedTokensOlderThan(int $days = 30): int
     {
         $cutoff = time() - ($days * 86400);
@@ -362,9 +290,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Delete expired tokens (older than given days past expiry).
-     */
     public function deleteExpiredTokens(int $days = 37): int
     {
         $cutoff = time() - ($days * 86400);
@@ -377,11 +302,7 @@ class TokenRepository
         ;
     }
 
-    // ── Consents ──
-
     /**
-     * Find existing consent for a user+client.
-     *
      * @return null|array<string, mixed>
      */
     public function findConsent(int $beUserUid, string $clientId): ?array
@@ -402,8 +323,6 @@ class TokenRepository
     }
 
     /**
-     * Store or update a consent record.
-     *
      * @param list<string> $scopes
      */
     public function saveConsent(int $beUserUid, string $clientId, array $scopes): void

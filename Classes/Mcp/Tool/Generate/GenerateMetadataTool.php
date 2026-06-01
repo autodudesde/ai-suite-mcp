@@ -9,25 +9,20 @@ use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ContentFetchService;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Generate metadata suggestions for pages using AI.
- * Returns suggestions — saving is done via writeRecords.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class GenerateMetadataTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:generate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
@@ -44,9 +39,9 @@ class GenerateMetadataTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Generate SEO metadata for pages (seo_title, description, og_*, twitter_*). Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A
-            .'(B) Read content via getPageContent, compose metadata yourself '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A
+            .'(B) Read content via getPageContent, compose metadata yourself '.DescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
     }
 
     public function getSchema(): array
@@ -71,7 +66,6 @@ class GenerateMetadataTool extends AbstractAiTool
     {
         $model = (string) ($params['model'] ?? '');
 
-        // No model → list available models
         if ('' === $model) {
             return $this->listAvailableModels(
                 $this->libraryService,
@@ -95,7 +89,7 @@ class GenerateMetadataTool extends AbstractAiTool
     {
         $pageId = (int) ($params['pageId'] ?? 0);
         if (0 === $pageId) {
-            return new CallToolResult([new TextContent('pageId is required.')], isError: true);
+            return $this->textError('pageId is required.');
         }
 
         $fields = $params['fields'] ?? ['seo_title', 'description'];
@@ -114,8 +108,6 @@ class GenerateMetadataTool extends AbstractAiTool
     }
 
     /**
-     * Shared generation loop: one AI request per field, returns numbered suggestions.
-     *
      * @param array<string, mixed> $fields
      */
     private function generateSuggestions(
@@ -153,7 +145,7 @@ class GenerateMetadataTool extends AbstractAiTool
         if (empty($allSuggestions)) {
             $text .= 'No suggestions could be generated.';
 
-            return new CallToolResult([new TextContent($text)]);
+            return $this->textResult($text);
         }
 
         $text .= sprintf("## Suggestions (Model: %s)\n\n", $model);
@@ -171,6 +163,6 @@ class GenerateMetadataTool extends AbstractAiTool
         $text .= "Ask the user to pick ONE number per field.\n";
         $text .= 'After the user chooses, call `previewRecords` with the selected values, then `writeRecords` after confirmation.';
 
-        return $this->appendCreditInfo(new CallToolResult([new TextContent($text)]), $lastResult);
+        return $this->appendCreditInfo($this->textResult($text), $lastResult);
     }
 }

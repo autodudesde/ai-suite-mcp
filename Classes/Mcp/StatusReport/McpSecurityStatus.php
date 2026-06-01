@@ -10,11 +10,6 @@ use TYPO3\CMS\Core\Type\ContextualFeedbackSeverity;
 use TYPO3\CMS\Reports\Status;
 use TYPO3\CMS\Reports\StatusProviderInterface;
 
-/**
- * TYPO3 Status Report for MCP security configuration (S16).
- *
- * Reports warnings when MCP is configured insecurely in production.
- */
 class McpSecurityStatus implements StatusProviderInterface
 {
     public function __construct(
@@ -35,7 +30,7 @@ class McpSecurityStatus implements StatusProviderInterface
         $statuses = [];
         $isProduction = Environment::getContext()->isProduction();
 
-        // S2: HTTP allowed in production
+        // HTTP allowed in production
         if ((bool) ($extConf['mcpAllowHttp'] ?? false)) {
             $statuses[] = new Status(
                 'MCP HTTP Security',
@@ -47,7 +42,7 @@ class McpSecurityStatus implements StatusProviderInterface
             );
         }
 
-        // Q1: Empty CORS allowlist in production
+        // Empty CORS allowlist in production
         if ($isProduction && empty(trim((string) ($extConf['mcpAllowedOrigins'] ?? '')))) {
             $statuses[] = new Status(
                 'MCP CORS Configuration',
@@ -58,7 +53,7 @@ class McpSecurityStatus implements StatusProviderInterface
             );
         }
 
-        // Q3: Empty redirect URI allowlist in production
+        // Empty redirect URI allowlist in production
         if ($isProduction && empty(trim((string) ($extConf['mcpAllowedRedirectUris'] ?? '')))) {
             $statuses[] = new Status(
                 'MCP Redirect URI Security',

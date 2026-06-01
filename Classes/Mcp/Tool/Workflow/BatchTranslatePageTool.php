@@ -10,27 +10,22 @@ use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuite\Service\WorkflowProcessingService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Batch-translate multiple pages using an external AI model.
- * Delegates to WorkflowProcessingService for payload building and background task creation.
- * Use getTaskStatus to check progress.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslatePageTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:translate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
@@ -47,7 +42,7 @@ class BatchTranslatePageTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Translate multiple pages using an external AI model — costs credits per page. '
-            .ToolDescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC_FLOW;
     }
 
     public function getSchema(): array
@@ -82,7 +77,7 @@ class BatchTranslatePageTool extends AbstractAiTool
         $translationScope = (string) ($params['translationScope'] ?? 'all');
 
         if (empty($pageIds)) {
-            return new CallToolResult([new TextContent('pageIds must be a non-empty array.')], isError: true);
+            return $this->textError('pageIds must be a non-empty array.');
         }
 
         if ('' === $model) {
@@ -116,7 +111,7 @@ class BatchTranslatePageTool extends AbstractAiTool
             }
             $text .= "\n\nPresent both options to the user and ask which approach they prefer.";
 
-            return new CallToolResult([new TextContent($text)]);
+            return $this->textResult($text);
         }
 
         $this->permissionService->validateModelAccess($model);
@@ -126,11 +121,11 @@ class BatchTranslatePageTool extends AbstractAiTool
             $sourceLanguage = $this->resolveLanguageIsoCode('', $pageIds[0] ?? 1);
         }
 
-        $sourceLanguageUid = $this->resolveLanguageUid($sourceLanguage, $pageIds[0] ?? 1);
-        $targetLanguageUid = $this->resolveLanguageUid($targetLanguage, $pageIds[0] ?? 1);
+        $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $pageIds[0] ?? 1);
+        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageIds[0] ?? 1);
 
         // assertLanguageAccess once (target language is tool-global, fail-fast)
-        $this->assertLanguageAccess($targetLanguageUid);
+        $this->recordAccess->assertLanguageAccess($targetLanguageUid);
 
         // Filter valid pages (exists + not excluded + CONTENT_EDIT permission, skip-and-report).
         $pages = [];
@@ -160,7 +155,7 @@ class BatchTranslatePageTool extends AbstractAiTool
         }
 
         if (empty($pages)) {
-            return new CallToolResult([new TextContent('No valid pages found to translate.')], isError: true);
+            return $this->textError('No valid pages found to translate.');
         }
 
         $parentUuid = $this->uuidService->generateUuid();
@@ -184,7 +179,7 @@ class BatchTranslatePageTool extends AbstractAiTool
         $failedPages = $result['failedPages'];
 
         if (empty($payload)) {
-            return new CallToolResult([new TextContent('No translatable content found for the given pages.')], isError: true);
+            return $this->textError('No translatable content found for the given pages.');
         }
 
         $serverResult = $this->sendRequestService->sendDataRequest(
@@ -223,6 +218,6 @@ class BatchTranslatePageTool extends AbstractAiTool
 
         $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

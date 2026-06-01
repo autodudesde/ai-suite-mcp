@@ -11,10 +11,6 @@ use TYPO3\CMS\Core\Http\JsonResponse;
 /**
  * Dynamic Client Registration (RFC 7591).
  * POST /aisuite-mcp/oauth/register.
- *
- * MCP clients (Claude.ai, ChatGPT, etc.) call this endpoint to obtain
- * a client_id before starting the OAuth 2.1 authorization flow.
- * Since MCP uses public clients with PKCE, no client_secret is issued.
  */
 class RegistrationEndpoint
 {
@@ -29,10 +25,8 @@ class RegistrationEndpoint
         $clientName = (string) ($body['client_name'] ?? 'MCP Client');
         $redirectUris = (array) ($body['redirect_uris'] ?? []);
 
-        // Generate a unique client_id
         $clientId = 'mcp-'.bin2hex(random_bytes(16));
 
-        // MCP uses public clients with PKCE — no client_secret
         $response = [
             'client_id' => $clientId,
             'client_name' => $clientName,

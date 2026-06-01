@@ -10,24 +10,18 @@ use AutoDudes\AiSuite\Service\GlossarService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Translate file metadata (alt text, title, description) to a target language.
- * Resolves fileUid → sys_file_metadata UID, then delegates to AbstractTranslateTool::translateSingleRecord().
- * Use batchTranslateFileMetadata for translating metadata of multiple files at once.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class TranslateFileMetadataTool extends AbstractTranslateTool
 {
     protected ?string $requiredScope = 'mcp:translate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         LibraryService $libraryService,
         UuidService $uuidService,
         TranslationService $translationService,
@@ -46,9 +40,9 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
     public function getDescription(): string
     {
         return 'Translate file metadata (alt text, title, description) to a target language. Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A
-            .'(B) Use localizeRecord to create a translation shell → translate manually '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A
+            .'(B) Use localizeRecord to create a translation shell → translate manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A_TRANSLATE_DIRECT_PERSIST;
     }
 
     public function getSchema(): array
@@ -75,16 +69,15 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
 
         $fileUid = (int) $params['fileUid'];
 
-        // Validate file existence + filemount permission
         try {
-            $this->assertFileReadAccess($fileUid);
+            $this->recordAccess->assertFileReadAccess($fileUid);
         } catch (\RuntimeException $e) {
             $this->logger->warning('TranslateFileMetadata: file not found', [
                 'fileUid' => $fileUid,
                 'reason' => $e->getMessage(),
             ]);
 
-            return new CallToolResult([new TextContent(sprintf('File UID %d not found.', $fileUid))], isError: true);
+            return $this->textError(sprintf('File UID %d not found.', $fileUid));
         }
 
         // Resolve fileUid → sys_file_metadata UID (default language)
@@ -92,7 +85,7 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
         $metadataUid = $metadataUids[$fileUid] ?? null;
 
         if (null === $metadataUid) {
-            return new CallToolResult([new TextContent(sprintf('No metadata record found for file UID %d.', $fileUid))], isError: true);
+            return $this->textError(sprintf('No metadata record found for file UID %d.', $fileUid));
         }
 
         return $this->translateSingleRecord(
@@ -105,11 +98,6 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
     }
 
     /**
-     * Collect translatable fields directly from the record.
-     *
-     * sys_file_metadata has pid=0, which breaks FormDataCompiler (Clipboard requires BE module context).
-     * Instead, read the translatable field values directly — same approach as BatchTranslateFileMetadataTool.
-     *
      * @param array<string, mixed> $record
      */
     protected function collectTranslatableFields(string $table, int $uid, array $record): array

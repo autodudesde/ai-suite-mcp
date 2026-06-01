@@ -27,6 +27,7 @@ CREATE TABLE tx_aisuite_oauth_tokens (
     scopes text,
     audience varchar(512) NOT NULL DEFAULT '',
     workspace_uid int(11) NOT NULL DEFAULT '0',
+    issued_version varchar(20) DEFAULT '',
     created_at int(11) unsigned NOT NULL DEFAULT '0',
     expires_at int(11) unsigned NOT NULL DEFAULT '0',
     last_used_at int(11) unsigned DEFAULT '0',

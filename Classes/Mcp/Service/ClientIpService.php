@@ -9,12 +9,6 @@ use Symfony\Component\HttpFoundation\IpUtils;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\SingletonInterface;
 
-/**
- * Resolve the real client IP for audit logging when the MCP server runs behind a reverse proxy.
- * Trusted proxies are configured via `mcpTrustedProxies` (comma-separated CIDRs) in the
- * extension configuration. With an empty allowlist, X-Forwarded-For is ignored and the
- * peer IP is returned as before.
- */
 class ClientIpService implements SingletonInterface
 {
     /**
@@ -32,9 +26,6 @@ class ClientIpService implements SingletonInterface
         ));
     }
 
-    /**
-     * Return the best-effort real client IP for the given request.
-     */
     public function resolve(ServerRequestInterface $request): string
     {
         $remote = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? '');
@@ -44,8 +35,6 @@ class ClientIpService implements SingletonInterface
         }
 
         if (!IpUtils::checkIp($remote, $this->trustedProxies)) {
-            // Direct peer is NOT in the trusted-proxy list — its X-Forwarded-For
-            // header is untrusted (potentially spoofed). Fall back to peer IP.
             return $remote;
         }
 
@@ -54,10 +43,6 @@ class ClientIpService implements SingletonInterface
             return $remote;
         }
 
-        // Walk right to left through the forwarded chain. The right-most entry was
-        // added by the immediate (trusted) proxy; entries further left were added
-        // by upstream proxies and are themselves trustworthy if they appear in our
-        // trusted list. The first non-trusted IP is the real client.
         $chain = array_reverse(array_map('trim', explode(',', $xff)));
         foreach ($chain as $candidate) {
             if ('' === $candidate) {
@@ -68,8 +53,6 @@ class ClientIpService implements SingletonInterface
             }
         }
 
-        // Entire chain was trusted proxies — return the left-most entry as the
-        // best-guess client (it is the original ingress IP into the trusted zone).
         $leftMost = end($chain);
 
         return false !== $leftMost && '' !== $leftMost ? $leftMost : $remote;

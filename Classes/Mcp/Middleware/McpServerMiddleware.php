@@ -25,9 +25,6 @@ use TYPO3\CMS\Core\Http\Response;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 /**
- * PSR-15 Middleware that routes MCP-related requests.
- *
- * Routes:
  *   /aisuite-mcp                             → AiSuiteMcpEndpoint (MCP protocol)
  *   /aisuite-mcp/oauth/register              → RegistrationEndpoint (RFC 7591)
  *   /aisuite-mcp/oauth/authorize             → AuthorizationEndpoint
@@ -35,7 +32,7 @@ use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
  *   /aisuite-mcp/oauth/revoke                → RevocationEndpoint
  *   /.well-known/oauth-authorization-server  → MetadataEndpoint
  *   /.well-known/oauth-protected-resource    → ProtectedResourceMetadataEndpoint (RFC 9728)
- *   /aisuite-mcp/health                      → HealthCheckEndpoint
+ *   /aisuite-mcp/health                      → HealthCheckEndpoint.
  */
 class McpServerMiddleware implements MiddlewareInterface
 {
@@ -62,19 +59,16 @@ class McpServerMiddleware implements MiddlewareInterface
     {
         $path = $request->getUri()->getPath();
 
-        // Serve favicon for MCP server branding (before other checks)
         if ('/favicon.ico' === $path) {
             return $this->serveFavicon();
         }
 
-        // Only handle MCP-related paths
         if (!str_starts_with($path, self::MCP_PATH) && self::WELL_KNOWN_PATH !== $path && self::PROTECTED_RESOURCE_PATH !== $path) {
             return $handler->handle($request);
         }
 
         $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
 
-        // Feature toggle: MCP disabled
         if (!((bool) ($extConf['enableMcp'] ?? false))) {
             return new JsonResponse([
                 'error' => 'mcp_disabled',
@@ -174,9 +168,6 @@ class McpServerMiddleware implements MiddlewareInterface
         return new JsonResponse(['error' => 'not_found'], 404);
     }
 
-    /**
-     * Serve the AI Suite Extension.svg as favicon for MCP server branding.
-     */
     private function serveFavicon(): ResponseInterface
     {
         $svgPath = ExtensionManagementUtility::extPath('ai_suite', 'Resources/Public/Icons/Extension.svg');
@@ -194,8 +185,6 @@ class McpServerMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Enforce HTTPS. Localhost and *.ddev.site are exempted.
-     *
      * @param array<string, mixed> $extConf
      */
     private function enforceHttps(ServerRequestInterface $request, array $extConf): ?ResponseInterface
@@ -219,15 +208,7 @@ class McpServerMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Validate the Origin header to prevent DNS rebinding attacks.
-     *
-     * Spec (MCP 2025-11-25, Transports §Security Warning):
-     *   Servers MUST validate the Origin header on all incoming connections.
-     *   If the Origin header is present and invalid, servers MUST respond 403.
-     *
-     * Headless connectors (e.g. Claude Desktop) don't send Origin — those
-     * pass through. Browser-originated requests must come from localhost,
-     * a *.ddev.site host, or a host explicitly listed in mcpAllowedOrigins.
+     * Spec (MCP 2025-11-25, Transports §Security Warning).
      *
      * @param array<string, mixed> $extConf
      */
@@ -244,6 +225,15 @@ class McpServerMiddleware implements MiddlewareInterface
 
         // Local development hosts always accepted (parity with HTTPS exemption).
         if (in_array($originHost, ['localhost', '127.0.0.1', '[::1]'], true) || str_ends_with($originHost, '.ddev.site')) {
+            return null;
+        }
+
+        if (Environment::getContext()->isDevelopment()) {
+            $this->logger->warning('MCP middleware accepted cross-origin request (Development context bypass)', [
+                'origin' => $origin,
+                'path' => $request->getUri()->getPath(),
+            ]);
+
             return null;
         }
 
@@ -270,9 +260,6 @@ class McpServerMiddleware implements MiddlewareInterface
         ], 403);
     }
 
-    /**
-     * Enforce request body size limit.
-     */
     private function enforceBodySizeLimit(ServerRequestInterface $request): ?ResponseInterface
     {
         $contentLength = (int) $request->getHeaderLine('Content-Length');
@@ -287,9 +274,6 @@ class McpServerMiddleware implements MiddlewareInterface
         return null;
     }
 
-    /**
-     * Enforce rate limit per token.
-     */
     private function enforceRateLimit(ServerRequestInterface $request): ?ResponseInterface
     {
         $authHeader = $request->getHeaderLine('Authorization');
@@ -320,8 +304,6 @@ class McpServerMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Add CORS headers based on configuration.
-     *
      * @param array<string, mixed> $extConf
      */
     private function addCorsHeaders(ResponseInterface $response, string $origin, array $extConf): ResponseInterface
@@ -330,14 +312,13 @@ class McpServerMiddleware implements MiddlewareInterface
             array_map('trim', explode(',', (string) ($extConf['mcpAllowedOrigins'] ?? ''))),
         );
 
-        // Production + empty config = no CORS headers (same-origin only)
-        if (empty($allowedOrigins)) {
-            if (Environment::getContext()->isProduction()) {
+        if (!Environment::getContext()->isDevelopment()) {
+            if (empty($allowedOrigins) && Environment::getContext()->isProduction()) {
                 return $response;
             }
-        // Development: all origins allowed
-        } elseif ('' !== $origin && !in_array($origin, $allowedOrigins, true)) {
-            return $response; // Origin not in allowlist
+            if (!empty($allowedOrigins) && '' !== $origin && !in_array($origin, $allowedOrigins, true)) {
+                return $response;
+            }
         }
 
         $effectiveOrigin = $origin ?: '*';

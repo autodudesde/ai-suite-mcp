@@ -6,25 +6,21 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuite\Domain\Repository\PagesRepository;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Find records that have not been modified within a given time period.
- * For pages, optionally includes content element timestamps to detect truly stale pages.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class FindStaleContentTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly PagesRepository $pagesRepository,
         private readonly ContentRepository $contentRepository,
     ) {
@@ -92,24 +88,22 @@ class FindStaleContentTool extends AbstractTool
         $limit = (int) ($params['limit'] ?? 50);
         $offset = (int) ($params['offset'] ?? 0);
 
-        $this->validateTableReadAccess($table);
+        $this->recordAccess->validateTableReadAccess($table);
 
         $cutoff = time() - ($olderThanDays * 86400);
         $restrictToPageIds = null;
 
         if (null !== $rootPageId) {
-            $this->assertPagePerm((int) $rootPageId, Permission::PAGE_SHOW);
+            $this->recordAccess->assertPagePerm((int) $rootPageId, Permission::PAGE_SHOW);
             $restrictToPageIds = $this->pagesRepository->getSubtreePageIds((int) $rootPageId);
             if (empty($restrictToPageIds)) {
-                return new CallToolResult([new TextContent('No pages found in the specified subtree.')]);
+                return $this->textResult('No pages found in the specified subtree.');
             }
         } else {
-            // No rootPageId → for non-admin, scope to the user's webmount whitelist.
-            // If the whitelist exceeds MAX_FILTERABLE_PAGES, ask the user to specify rootPageId.
             $beUser = $this->getBackendUser();
             if (null !== $beUser && !$beUser->isAdmin()) {
                 try {
-                    $restrictToPageIds = $this->getReadablePageIds(0, 99);
+                    $restrictToPageIds = $this->recordAccess->getReadablePageIds(0, 99);
                 } catch (InsufficientPermissionException $e) {
                     $this->logger->warning('FindStaleContentTool: webmount too large for global scan, asking user to scope by rootPageId', [
                         'beUserUid' => $this->getBackendUser()?->user['uid'] ?? null,
@@ -122,7 +116,7 @@ class FindStaleContentTool extends AbstractTool
                     );
                 }
                 if ([] === $restrictToPageIds) {
-                    return new CallToolResult([new TextContent('No accessible pages found in your webmounts.')]);
+                    return $this->textResult('No accessible pages found in your webmounts.');
                 }
             }
         }
@@ -205,6 +199,6 @@ class FindStaleContentTool extends AbstractTool
 
         $text .= sprintf("\n_Showing %d results (offset: %d)._", count($rows), $offset);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

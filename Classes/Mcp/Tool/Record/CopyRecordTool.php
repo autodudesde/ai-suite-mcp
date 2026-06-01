@@ -4,30 +4,37 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
+use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Copy a record (with relations) to a target page via DataHandler.
- * No AI, no credits.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class CopyRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
 
+    public function __construct(
+        ToolContext $mcpToolContext,
+        private readonly BatchResultBuilderService $batchResultBuilder,
+    ) {
+        parent::__construct($mcpToolContext);
+    }
+
     public function getName(): string
     {
-        return 'copyRecord';
+        return 'copyRecords';
     }
 
     public function getDescription(): string
     {
-        return 'Copy a record (including relations and child records) to a target page.';
+        return 'Copy one or more records (including relations and child records) to a target page. '
+            .'For a single copy pass table, uid and targetPid. '
+            .'To copy several records in one call, pass a "copies" array — each item is {table, uid, targetPid}.';
     }
 
     public function getSchema(): array
@@ -35,28 +42,63 @@ class CopyRecordTool extends AbstractDataTool
         return [
             'type' => 'object',
             'properties' => [
-                'table' => ['type' => 'string', 'description' => 'TCA table name'],
-                'uid' => ['type' => 'integer', 'description' => 'UID of the record to copy'],
-                'targetPid' => ['type' => 'integer', 'description' => 'Target page UID where the copy will be placed'],
+                'copies' => [
+                    'type' => 'array',
+                    'description' => 'Batch mode: array of copies. Each item: {table, uid, targetPid}. '
+                        .'When provided, the top-level table/uid/targetPid are ignored.',
+                    'items' => ['type' => 'object'],
+                ],
+                'table' => ['type' => 'string', 'description' => 'TCA table name (single copy).'],
+                'uid' => ['type' => 'integer', 'description' => 'UID of the record to copy (single copy).'],
+                'targetPid' => ['type' => 'integer', 'description' => 'Target page UID where the copy will be placed.'],
             ],
-            'required' => ['table', 'uid', 'targetPid'],
         ];
     }
 
     protected function doExecute(array $params): CallToolResult
     {
-        $table = (string) $params['table'];
-        $uid = (int) $params['uid'];
-        $targetPid = (int) $params['targetPid'];
+        $copies = $params['copies'] ?? null;
 
-        $this->validateTableWriteAccess($table);
+        if (is_array($copies)) {
+            if (empty($copies)) {
+                return $this->textError('copies must be a non-empty array.');
+            }
 
-        $record = $this->assertRecordReadAccess($table, $uid);
-        $this->assertRecordCreateAccess($table, $targetPid);
+            return $this->batchResultBuilder->run($copies, 'copy/copies', function (mixed $copy): array {
+                if (!is_array($copy)) {
+                    throw new InvalidParameterException('Skipped (not an object).');
+                }
+
+                return $this->performCopy($copy);
+            });
+        }
+
+        return $this->textResult($this->performCopy($params)['message']);
+    }
+
+    /**
+     * @param array<string, mixed> $copy
+     *
+     * @return array{message: string, uid: null|int}
+     */
+    private function performCopy(array $copy): array
+    {
+        $table = (string) ($copy['table'] ?? '');
+        $uid = (int) ($copy['uid'] ?? 0);
+        $targetPid = isset($copy['targetPid']) ? (int) $copy['targetPid'] : null;
+
+        if ('' === $table || $uid <= 0 || null === $targetPid) {
+            throw new \RuntimeException('Provide table, uid and targetPid.');
+        }
+
+        $this->recordAccess->validateTableWriteAccess($table);
+
+        $record = $this->recordAccess->assertRecordReadAccess($table, $uid);
+        $this->recordAccess->assertRecordCreateAccess($table, $targetPid);
 
         $targetPage = BackendUtility::getRecordWSOL('pages', $targetPid);
         if (null === $targetPage) {
-            return new CallToolResult([new TextContent(sprintf('Target page %d not found.', $targetPid))], isError: true);
+            throw new \RuntimeException(sprintf('Target page %d not found.', $targetPid));
         }
 
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
@@ -74,7 +116,7 @@ class CopyRecordTool extends AbstractDataTool
 
         $text = sprintf(
             '%s "%s" (UID: %d) copied to page %d.',
-            $this->getTableLabel($table),
+            $this->tcaLabel->getTableLabel($table),
             $recordLabel,
             $uid,
             $targetPid,
@@ -84,6 +126,6 @@ class CopyRecordTool extends AbstractDataTool
             $text .= sprintf(' New record UID: %d.', $newUid);
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return ['message' => $text, 'uid' => null !== $newUid ? (int) $newUid : null];
     }
 }

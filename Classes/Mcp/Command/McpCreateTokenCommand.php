@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Command;
 
-use AutoDudes\AiSuiteMcp\Mcp\McpPermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -17,20 +17,14 @@ use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
- * Console command: ai-suite-mcp:create-token.
- *
- * Creates an MCP access token for testing (e.g. with MCP Inspector).
- * Bypasses the full OAuth flow — for development use only.
- *
- * Usage:
  *   vendor/bin/typo3 ai-suite-mcp:create-token --user=1
- *   vendor/bin/typo3 ai-suite-mcp:create-token --user=admin --scopes="mcp:read mcp:write mcp:generate"
+ *   vendor/bin/typo3 ai-suite-mcp:create-token --user=admin --scopes="mcp:read mcp:write mcp:generate".
  */
 class McpCreateTokenCommand extends Command
 {
     public function __construct(
         private readonly OAuthService $oauthService,
-        private readonly McpPermissionService $permissionService,
+        private readonly PermissionService $permissionService,
     ) {
         parent::__construct();
     }
@@ -53,10 +47,6 @@ class McpCreateTokenCommand extends Command
         $userInput = (string) $input->getOption('user');
         $clientId = (string) $input->getOption('client');
 
-        // Resolve user (UID or username) via the BE_USER auth API — applies user
-        // enable-fields (deleted/disable/starttime/endtime) natively. Initializes BE_USER
-        // in the same step so the workspace check below works (workspace_perms is only
-        // populated after fetchGroupData()).
         $backendUser = GeneralUtility::makeInstance(BackendUserAuthentication::class);
         if (ctype_digit($userInput)) {
             $backendUser->setBeUserByUid((int) $userInput);
@@ -72,9 +62,6 @@ class McpCreateTokenCommand extends Command
         $backendUser->fetchGroupData();
         $GLOBALS['BE_USER'] = $backendUser;
 
-        // Resolve --workspace flag.
-        // ext:workspaces not loaded + --workspace > 0 → silent fallback with warning (consistent with
-        // the consent-form behaviour where the dropdown is hidden in that case).
         $workspaceUid = (int) $input->getOption('workspace');
         if ($workspaceUid > 0 && !ExtensionManagementUtility::isLoaded('workspaces')) {
             $output->writeln('<warning>Workspace flag ignored — ext:workspaces is not loaded; token created with workspace_uid=0.</warning>');
@@ -86,7 +73,6 @@ class McpCreateTokenCommand extends Command
             return Command::FAILURE;
         }
 
-        // Determine scopes
         $scopeInput = $input->getOption('scopes');
         if (null !== $scopeInput && '' !== $scopeInput) {
             $scopes = array_filter(explode(' ', (string) $scopeInput));
@@ -100,12 +86,9 @@ class McpCreateTokenCommand extends Command
             return Command::FAILURE;
         }
 
-        // Resolve audience for RFC 8707 binding. CLI may not have a real request host,
-        // so we let the user override with --audience.
+        // Resolve audience for RFC 8707 binding.
         $audienceInput = (string) ($input->getOption('audience') ?? '');
         $audience = '' !== $audienceInput ? $audienceInput : CanonicalResource::get();
-        // CLI without TYPO3_REQUEST_HOST yields a path-only string like "/aisuite-mcp" — that
-        // would never match validateToken() at request time. Reject early with a useful hint.
         if ('' === $audience || !preg_match('#^https?://#', $audience)) {
             $io->error(sprintf(
                 'Could not derive a canonical resource URI from the CLI environment (got "%s"). '
@@ -116,7 +99,6 @@ class McpCreateTokenCommand extends Command
             return Command::FAILURE;
         }
 
-        // Create token
         $result = $this->oauthService->createAccessToken(
             $beUserUid,
             $clientId,

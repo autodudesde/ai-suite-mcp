@@ -4,20 +4,15 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizer;
+use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 
-/**
- * Base class for record-based MCP tools that need XSS sanitization via DataHandler.
- *
- * Table/field validation, permission checks, and label resolution are in AbstractTool.
- */
 abstract class AbstractDataTool extends AbstractTool
 {
-    protected readonly DataHandlerSanitizer $dataHandlerSanitizer;
+    protected readonly DataHandlerSanitizerService $dataHandlerSanitizer;
 
-    public function __construct(McpToolContext $mcpToolContext)
+    public function __construct(ToolContext $mcpToolContext)
     {
         parent::__construct($mcpToolContext);
         $this->dataHandlerSanitizer = $mcpToolContext->dataHandlerSanitizer;

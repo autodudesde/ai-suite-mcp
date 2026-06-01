@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
@@ -38,15 +37,15 @@ class GetTablesTool extends AbstractDataTool
         $tables = [];
         foreach (array_keys($GLOBALS['TCA'] ?? []) as $table) {
             $table = (string) $table;
-            if (!$this->hasTableReadAccess($table)) {
+            if (!$this->recordAccess->hasTableReadAccess($table)) {
                 continue;
             }
             $ext = str_starts_with($table, 'tx_') ? explode('_', $table, 3)[1] ?? 'Other' : 'TYPO3 Core';
 
             $tables[$ext][] = [
                 'table' => $table,
-                'label' => $this->getTableLabel($table),
-                'readOnly' => !$this->hasTableWriteAccess($table),
+                'label' => $this->tcaLabel->getTableLabel($table),
+                'readOnly' => !$this->recordAccess->hasTableWriteAccess($table),
                 'hasLanguage' => $this->tcaCompatibilityService->isLanguageAware($table),
             ];
         }
@@ -69,6 +68,6 @@ class GetTablesTool extends AbstractDataTool
             $text .= "\n";
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

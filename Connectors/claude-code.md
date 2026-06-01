@@ -17,6 +17,7 @@ For background on Claude Code and MCP refer to the official docs:
 - **Authentication paths:** Claude Code supports two ways to authenticate with the AI Suite MCP server:
   - **Path A — Static bearer token** (simplest, no browser): create a token via the AI Suite backend, register it on the CLI with a single command. Best for CI, scripted setups, headless machines.
   - **Path B — OAuth 2.1 with localhost callback** (browser-based): Claude Code opens a browser the first time the MCP server is contacted, runs the full OAuth dance against an ephemeral localhost port. Best for interactive desktops where you want short-lived tokens with refresh.
+  - **Path C — Local stdio** (no HTTP at all): when TYPO3 runs on the **same machine** as Claude Code, register the `ai-suite-mcp:server` console command instead of an HTTP URL. Claude Code launches it and speaks JSON-RPC over the pipe — no token, no OAuth, no reachable URL needed. See [README → Local stdio transport](../README.md#local-stdio-transport) for the config snippet and its security model (local-only; OAuth/HTTPS/rate-limit are bypassed, the scope + BE-group gate still applies).
 
 ## Service URLs
 

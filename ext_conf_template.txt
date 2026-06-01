@@ -33,3 +33,18 @@ mcpLogVerbose = 1
 
 # cat=MCP/logging; type=string; label=MCP Log Redaction Patterns:Comma-separated additional regex patterns (without delimiters) whose matches are replaced with [REDACTED] in MCP log entries. Built-in defaults (Bearer tokens, 64-char hex hashes, email addresses) are always applied — these patterns are added on top.
 mcpLogRedactionPatterns =
+
+# cat=MCP/media; type=string; label=Media Upload Default Folder:FAL combined identifier for the uploadMedia tool when no targetFolder is given (e.g. 1:/user_upload/).
+mcpMediaDefaultFolder = 1:/user_upload/
+
+# cat=MCP/media; type=int+; label=Media Upload Max Size (MB):Maximum size for a single uploaded/downloaded media file. Applies to URL downloads and base64 uploads. 0 = no explicit limit (PHP/storage limits still apply).
+mcpMediaMaxSizeMb = 50
+
+# cat=MCP/media; type=string; label=Media Allowed Extensions:Comma-separated lowercase file extensions the uploadMedia tool may store (URL download / base64). SVG is intentionally excluded by default (XSS). Online-media links (YouTube/Vimeo) are governed by TYPO3's online media helpers, not this list.
+mcpMediaAllowedExtensions = jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg
+
+# cat=MCP/media; type=boolean; label=Allow Media URL Fetch:Allow the uploadMedia tool to download files from remote http(s) URLs. When disabled, only base64 upload and online-media links (YouTube/Vimeo) are accepted. URL fetching is SSRF-guarded (private/loopback/link-local targets are always blocked), but you can disable it entirely here.
+mcpMediaAllowUrlFetch = 1
+
+# cat=MCP/media; type=string; label=Media URL Host Denylist:Comma-separated additional hostnames or IP/CIDR ranges that uploadMedia must never fetch from (on top of the always-on private/loopback/link-local block). Example: metadata.internal,10.0.0.0/8
+mcpMediaHostDenylist =

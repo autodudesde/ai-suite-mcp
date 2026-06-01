@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -14,18 +15,15 @@ use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Backend\View\BackendLayoutView;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Returns content elements of a page, grouped by column position.
- * Always includes full bodytext content.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class GetPageContentTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly ContentRepository $contentRepository,
+        private readonly RecordRepository $recordRepository,
         private readonly BackendLayoutView $backendLayoutView,
     ) {
         parent::__construct($mcpToolContext);
@@ -82,12 +80,12 @@ class GetPageContentTool extends AbstractTool
     protected function doExecute(array $params): CallToolResult
     {
         $pageId = (int) $params['pageId'];
-        $languageUid = $this->resolveLanguageUid($params['language'] ?? null, $pageId);
+        $languageUid = $this->recordAccess->resolveLanguageUid($params['language'] ?? null, $pageId);
         $includeHidden = (bool) ($params['includeHidden'] ?? false);
         $limit = (int) ($params['limit'] ?? 50);
         $offset = (int) ($params['offset'] ?? 0);
 
-        $this->assertPagePerm($pageId, Permission::PAGE_SHOW);
+        $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page) {
@@ -100,17 +98,15 @@ class GetPageContentTool extends AbstractTool
         $total = $this->contentRepository->countByPage($pageId, $languageUid, $includeHidden);
         $rows = $this->contentRepository->findByPage($pageId, $languageUid, $includeHidden, $limit, $offset);
 
-        // Group by colPos
         $grouped = [];
         foreach ($rows as $row) {
             $colPos = (int) $row['colPos'];
             if (!isset($grouped[$colPos])) {
                 $grouped[$colPos] = [];
             }
-            $grouped[$colPos][] = $this->formatElement($row);
+            $grouped[$colPos][] = $this->formatElement($row, $languageUid);
         }
 
-        // Build human-readable output
         $text = sprintf("## Page %d: %s\n\n", $pageId, $page['title']);
 
         if (empty($grouped)) {
@@ -122,15 +118,33 @@ class GetPageContentTool extends AbstractTool
                 foreach ($elements as $idx => $el) {
                     $pos = $idx + 1;
                     $hiddenMark = $el['hidden'] ? ' [HIDDEN]' : '';
-                    $preview = $el['bodytext_preview'] ?? mb_substr($el['bodytext'] ?? '', 0, 100);
+                    $preview = $el['bodytext_preview'] ?? $this->outputFormatter->truncate($el['bodytext'] ?? '', 100);
+
+                    $metaParts = [];
+                    if ('' !== ($el['child_summary'] ?? '')) {
+                        $metaParts[] = $el['child_summary'];
+                    }
+                    if (($el['image_count'] ?? 0) > 0) {
+                        $metaParts[] = sprintf('%d image(s)', $el['image_count']);
+                    }
+                    $meta = implode(' · ', $metaParts);
+
+                    if ('' !== $preview) {
+                        $line = $preview;
+                    } elseif ('' !== $meta) {
+                        $line = $meta;
+                    } else {
+                        $line = '_(empty)_';
+                    }
+
                     $text .= sprintf(
                         "%d. **%s** (UID: %d, CType: %s)%s\n   %s\n\n",
                         $pos,
                         $el['header'] ?: '_(no header)_',
                         $el['uid'],
-                        $el['CType'],
+                        $this->tcaLabel->resolveCTypeLabel($el['CType']),
                         $hiddenMark,
-                        '' !== $preview ? $preview : '_(empty)_',
+                        $line,
                     );
                 }
                 $text .= sprintf(
@@ -144,7 +158,7 @@ class GetPageContentTool extends AbstractTool
 
         $text .= sprintf("\n_Showing %d of %d elements (offset: %d)._", count($rows), $total, $offset);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
     /**
@@ -152,7 +166,7 @@ class GetPageContentTool extends AbstractTool
      *
      * @return array<string, mixed>
      */
-    private function formatElement(array $row): array
+    private function formatElement(array $row, int $languageUid): array
     {
         $bodytext = strip_tags((string) ($row['bodytext'] ?? ''));
         $imageCount = $this->contentRepository->countFileReferences((int) $row['uid']);
@@ -167,7 +181,55 @@ class GetPageContentTool extends AbstractTool
             'bodytext' => $bodytext,
             'has_images' => $imageCount > 0,
             'image_count' => $imageCount,
+            'child_summary' => $this->describeChildren($row, $languageUid),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function describeChildren(array $row, int $languageUid): string
+    {
+        $uid = (int) $row['uid'];
+        $cType = (string) $row['CType'];
+
+        $registry = $this->tcaLabel->getContainerRegistry();
+        if (null !== $registry && $registry->isContainerElement($cType)) {
+            $childCount = count($this->contentRepository->findContainerChildren($uid, $languageUid));
+
+            return $childCount > 0 ? sprintf('%d child element(s) in container slots', $childCount) : '';
+        }
+
+        $parts = [];
+
+        try {
+            foreach ($this->tcaCompatibilityService->getFieldNamesForType('tt_content', $cType) as $fieldName) {
+                $config = $this->tcaCompatibilityService->getEffectiveFieldConfiguration('tt_content', $cType, $fieldName);
+                if ('inline' !== ($config['type'] ?? '')
+                    || empty($config['foreign_table'])
+                    || empty($config['foreign_field'])
+                    || 'sys_file_reference' === $config['foreign_table'] // assets are reported as image count
+                ) {
+                    continue;
+                }
+
+                $count = $this->recordRepository->countByCriteria(
+                    (string) $config['foreign_table'],
+                    [(string) $config['foreign_field'] => $uid],
+                );
+                if ($count > 0) {
+                    $parts[] = sprintf('%d %s', $count, $this->tcaLabel->getFieldLabel('tt_content', $fieldName));
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('GetPageContentTool: child-count introspection failed', [
+                'uid' => $uid,
+                'cType' => $cType,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return implode(', ', $parts);
     }
 
     private function resolveColPosLabel(int $pageId, int $colPos): string
@@ -196,6 +258,11 @@ class GetPageContentTool extends AbstractTool
                 'colPos' => $colPos,
                 'error' => $e->getMessage(),
             ]);
+        }
+
+        $containerLabel = $this->tcaLabel->resolveContainerColumnLabel($colPos);
+        if (null !== $containerLabel) {
+            return $containerLabel;
         }
 
         return 'Column '.$colPos;

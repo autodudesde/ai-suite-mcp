@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Server\Server;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
@@ -23,7 +22,7 @@ class GetServerInfoTool extends AbstractTool
     protected ?string $requiredScope = null;
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly Typo3Version $typo3Version,
     ) {
@@ -53,20 +52,30 @@ class GetServerInfoTool extends AbstractTool
     {
         $beUser = $this->getBackendUser();
         $isAdmin = null !== $beUser && $beUser->isAdmin();
-        $version = ExtensionManagementUtility::getExtensionVersion('ai_suite') ?: 'unknown';
+        $mcpVersion = ExtensionManagementUtility::getExtensionVersion('ai_suite_mcp') ?: 'unknown';
+        $aiSuiteVersion = ExtensionManagementUtility::getExtensionVersion('ai_suite') ?: 'unknown';
 
         $lines = [];
 
-        // Version (always shown)
         $lines[] = '## AI Suite MCP Server';
-        $lines[] = sprintf('- **Version:** %s', $version);
+        $lines[] = sprintf('- **Version:** %s', $mcpVersion);
         if ($isAdmin) {
+            $lines[] = sprintf('- **AI Suite core:** %s', $aiSuiteVersion);
             $lines[] = sprintf('- **PHP:** %s', PHP_VERSION);
             $lines[] = sprintf('- **TYPO3:** %s', $this->typo3Version->getVersion());
         }
+
+        $issuedVersion = $this->userContext->getIssuedVersion();
+        if ('' !== $issuedVersion && 'unknown' !== $mcpVersion && version_compare($mcpVersion, $issuedVersion, '>')) {
+            $lines[] = sprintf(
+                '- **⚠ Server updated:** your token was issued under v%s, the server now runs v%s. '
+                .'Reconnect / obtain a new token to pick up new tools, scopes and behaviour.',
+                $issuedVersion,
+                $mcpVersion,
+            );
+        }
         $lines[] = '';
 
-        // Configuration, Dependencies, Diagnostics, Warnings: admins only
         $extConf = $isAdmin ? (array) $this->extensionConfiguration->get('ai_suite_mcp') : [];
         $mcpEnabled = (bool) ($extConf['enableMcp'] ?? false);
         $sdkInstalled = class_exists(Server::class);
@@ -83,8 +92,6 @@ class GetServerInfoTool extends AbstractTool
             $lines[] = sprintf('- **MCP SDK (logiscape/mcp-sdk-php):** %s', $sdkInstalled ? 'installed' : 'MISSING');
             $lines[] = '';
         }
-
-        // Sites — filtered by user's webmounts for non-admins
         $lines[] = '## Sites';
         $sites = $this->getAccessibleSites($beUser, $isAdmin);
         if (empty($sites)) {
@@ -133,13 +140,10 @@ class GetServerInfoTool extends AbstractTool
             }
         }
 
-        return new CallToolResult([new TextContent(implode("\n", $lines))]);
+        return $this->textResult(implode("\n", $lines));
     }
 
     /**
-     * Returns sites the current user may see. Admins see all sites;
-     * non-admins only sites whose root page lies inside one of their webmounts.
-     *
      * @return array<string, Site>
      */
     private function getAccessibleSites(?BackendUserAuthentication $beUser, bool $isAdmin): array

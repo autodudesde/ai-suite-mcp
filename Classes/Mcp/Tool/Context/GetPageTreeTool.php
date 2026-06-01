@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\PagesRepository;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -19,7 +19,7 @@ class GetPageTreeTool extends AbstractTool
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly PagesRepository $pagesRepository,
     ) {
         parent::__construct($mcpToolContext);
@@ -65,7 +65,7 @@ class GetPageTreeTool extends AbstractTool
     {
         $rootPageId = $params['rootPageId'] ?? 0;
         $depth = $params['depth'] ?? 3;
-        $languageUid = $this->resolveLanguageUid($params['language'] ?? null, (int) $rootPageId);
+        $languageUid = $this->recordAccess->resolveLanguageUid($params['language'] ?? null, (int) $rootPageId);
 
         if (0 === $rootPageId) {
             $tree = $this->getAllAccessibleTrees($depth, $languageUid);

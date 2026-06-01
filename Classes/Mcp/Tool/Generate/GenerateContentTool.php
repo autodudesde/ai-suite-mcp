@@ -10,9 +10,9 @@ use AutoDudes\AiSuite\Service\ContentService;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\ImageContent;
 use Mcp\Types\TextContent;
@@ -25,7 +25,7 @@ class GenerateContentTool extends AbstractAiTool
     protected ?string $requiredScope = 'mcp:generate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly ContentService $contentService,
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
@@ -44,10 +44,10 @@ class GenerateContentTool extends AbstractAiTool
         return 'Create content elements on a page. '
             .'Call getContentTypes(pageId) + getColumnPositions(pageId) first to discover valid CTypes and colPos values. '
             .'Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A.'Supports AI-generated images. '
-            .'(B) Compose content yourself '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A.'Supports AI-generated images. '
+            .'(B) Compose content yourself '.DescriptionSnippets::APPROACH_B_PERSIST.' '
             .'If the user names a model or requests AI images → use A. '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
     }
 
     public function getSchema(): array
@@ -84,7 +84,6 @@ class GenerateContentTool extends AbstractAiTool
         $cType = (string) ($params['contentType'] ?? 'textmedia');
         $colPos = (int) ($params['colPos'] ?? 0);
 
-        // Step 1: No model → list available models
         if ('' === $model) {
             return $this->listModels();
         }
@@ -101,12 +100,11 @@ class GenerateContentTool extends AbstractAiTool
             $this->permissionService->validateModelAccess($imageModel);
         }
 
-        // Fetch all available fields for this CType
         $table = 'tt_content';
         $defVals = [$table => ['CType' => $cType, 'colPos' => $colPos, 'pid' => $pageId]];
         $serverRequest = $this->userContext->getServerRequest();
         if (null === $serverRequest) {
-            return new CallToolResult([new TextContent($this->translate('hint.no_request') ?? 'No server request available.')], isError: true);
+            return $this->textError($this->translate('hint.no_request') ?? 'No server request available.');
         }
         $allRequestFields = $this->contentService->fetchRequestFields(
             $serverRequest,
@@ -116,7 +114,6 @@ class GenerateContentTool extends AbstractAiTool
             $table,
         );
 
-        // Clean up empty text/image arrays
         foreach ($allRequestFields as $tableName => &$tableFields) {
             if (isset($tableFields['text']) && empty($tableFields['text'])) {
                 unset($tableFields['text']);
@@ -127,7 +124,6 @@ class GenerateContentTool extends AbstractAiTool
         }
         unset($tableFields);
 
-        // Apply field selection FIRST, then check models
         $textFields = $params['textFields'] ?? null;
         $imageFields = $params['imageFields'] ?? null;
 
@@ -141,7 +137,6 @@ class GenerateContentTool extends AbstractAiTool
             $requestFields = $allRequestFields;
         }
 
-        // No imageModel provided → strip all image fields (no image generation)
         if ('' === $imageModel) {
             foreach ($requestFields as $tblName => &$tblFields) {
                 unset($tblFields['image']);
@@ -149,7 +144,6 @@ class GenerateContentTool extends AbstractAiTool
             unset($tblFields);
         }
 
-        // Check which models are needed after field filtering
         $models = $this->contentService->checkRequestModels($requestFields, ['text' => $model, 'image' => $imageModel]);
 
         $prompt = (string) $params['prompt'];
@@ -165,12 +159,10 @@ class GenerateContentTool extends AbstractAiTool
             'additional_image_settings' => '',
         ], $models, strtoupper($langIsoCode), $prompt);
 
-        // Parse server response into structured preview format
         $contentElementData = json_decode($result['contentElementData'] ?? '[]', true);
-        $sysLanguageUid = $this->resolveLanguageUid($langIsoCode, $pageId);
+        $sysLanguageUid = $this->recordAccess->resolveLanguageUid($langIsoCode, $pageId);
         $contentData = $this->buildContentData($contentElementData, $requestFields, $pageId, $colPos, $cType, $sysLanguageUid);
 
-        // Build response content: text preview + inline images
         $content = [];
 
         $preview = $this->buildPreviewText($contentData);
@@ -182,16 +174,12 @@ class GenerateContentTool extends AbstractAiTool
         $preview .= "```json\n".json_encode($contentData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n```";
         $content[] = new TextContent($preview);
 
-        // Embed generated images as ImageContent so the MCP client can display them
         $content = array_merge($content, $this->extractImageContent($contentElementData));
 
         return $this->appendCreditInfo(new CallToolResult($content), $result);
     }
 
     /**
-     * Build the structured contentData object from the server response.
-     * This is the format passed to saveContent.
-     *
      * @param array<string, mixed> $contentElementData
      * @param array<string, mixed> $requestFields
      *
@@ -207,7 +195,7 @@ class GenerateContentTool extends AbstractAiTool
                 }
                 if (isset($field['text'])) {
                     foreach ($field['text'] as $fieldName => $fieldConfig) {
-                        $label = $this->getFieldLabel($tableName, $fieldName);
+                        $label = $this->tcaLabel->getFieldLabel($tableName, $fieldName);
                         $tables[$tableName][$key]['text'][$fieldName] = [
                             'label' => $label,
                             'value' => $fieldConfig['content'] ?? '',
@@ -219,7 +207,7 @@ class GenerateContentTool extends AbstractAiTool
                         $urls = $fieldConfig['urls'] ?? [];
                         $imageTitles = $fieldConfig['imageTitles'] ?? [];
                         if (!empty($urls[0]['url'])) {
-                            $label = $this->getFieldLabel($tableName, $fieldName);
+                            $label = $this->tcaLabel->getFieldLabel($tableName, $fieldName);
                             $tables[$tableName][$key]['image'][$fieldName] = [
                                 'label' => $label,
                                 'imageUrl' => $urls[0]['url'],
@@ -232,7 +220,6 @@ class GenerateContentTool extends AbstractAiTool
             }
         }
 
-        // Build IRRE field mapping
         $irreFields = [];
         foreach ($requestFields as $tableName => $fields) {
             if (isset($fields['foreignField'])) {
@@ -252,8 +239,6 @@ class GenerateContentTool extends AbstractAiTool
     }
 
     /**
-     * Build a human-readable preview of the generated content.
-     *
      * @param array<string, mixed> $contentData
      */
     private function buildPreviewText(array $contentData): string
@@ -264,7 +249,7 @@ class GenerateContentTool extends AbstractAiTool
         foreach ($contentData['tables'] as $tableName => $records) {
             foreach ($records as $key => $field) {
                 if ('tt_content' !== $tableName) {
-                    $preview .= sprintf("### %s (#%s)\n\n", $this->getTableLabel($tableName), $key);
+                    $preview .= sprintf("### %s (#%s)\n\n", $this->tcaLabel->getTableLabel($tableName), $key);
                 }
                 if (isset($field['text'])) {
                     foreach ($field['text'] as $fieldName => $fieldData) {
@@ -297,8 +282,6 @@ class GenerateContentTool extends AbstractAiTool
     }
 
     /**
-     * Extract base64-encoded images from contentElementData and return as ImageContent objects.
-     *
      * @param array<string, mixed> $contentElementData
      *
      * @return ImageContent[]
@@ -328,9 +311,6 @@ class GenerateContentTool extends AbstractAiTool
         return $images;
     }
 
-    /**
-     * Detect image MIME type from base64 data signature.
-     */
     private function detectMimeFromBase64(string $b64): string
     {
         // Base64 signatures: /9j/ = JPEG, iVBOR = PNG, R0lGO = GIF, UklGR = WebP
@@ -344,9 +324,6 @@ class GenerateContentTool extends AbstractAiTool
     }
 
     /**
-     * Filter requestFields to only include user-selected text/image fields.
-     * Uses flat arrays of field names (not grouped by table).
-     *
      * @param string[]             $textFields       selected text field names
      * @param string[]             $imageFields      selected image field names
      * @param array<string, mixed> $allRequestFields
@@ -391,7 +368,6 @@ class GenerateContentTool extends AbstractAiTool
             }
         }
 
-        // If no fields matched (e.g. all fields are in child tables), include tables with IRRE children
         if (empty($filtered)) {
             foreach ($allRequestFields as $tableName => $tableData) {
                 if (isset($tableData['foreignField'])) {
@@ -403,9 +379,6 @@ class GenerateContentTool extends AbstractAiTool
         return $filtered;
     }
 
-    /**
-     * Return available text + image models so the user can pick one.
-     */
     private function listModels(): CallToolResult
     {
         return $this->listAvailableModels(

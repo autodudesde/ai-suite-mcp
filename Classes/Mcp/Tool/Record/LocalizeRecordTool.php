@@ -10,10 +10,6 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Create a translation shell for a record using TYPO3's built-in localization.
- * No AI, no credits — the record is created with empty/copied fields ready to be translated.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class LocalizeRecordTool extends AbstractDataTool
 {
@@ -57,7 +53,7 @@ class LocalizeRecordTool extends AbstractDataTool
         $targetLanguage = (string) $params['targetLanguage'];
         $mode = (string) ($params['mode'] ?? 'localize');
 
-        $this->validateTableWriteAccess($table);
+        $this->recordAccess->validateTableWriteAccess($table);
 
         if (!$this->tcaCompatibilityService->isLanguageAware($table)) {
             return new CallToolResult(
@@ -66,10 +62,10 @@ class LocalizeRecordTool extends AbstractDataTool
             );
         }
 
-        $record = $this->assertRecordReadAccess($table, $uid);
+        $record = $this->recordAccess->assertRecordReadAccess($table, $uid);
 
         $pageId = 'pages' === $table ? $uid : (int) ($record['pid'] ?? 0);
-        $targetLanguageUid = $this->resolveLanguageUid($targetLanguage, $pageId);
+        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageId);
 
         if (0 === $targetLanguageUid) {
             return new CallToolResult(
@@ -78,7 +74,7 @@ class LocalizeRecordTool extends AbstractDataTool
             );
         }
 
-        $this->assertLanguageAccess($targetLanguageUid);
+        $this->recordAccess->assertLanguageAccess($targetLanguageUid);
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
         $dh->start([], [$table => [$uid => [$mode => $targetLanguageUid]]]);
@@ -94,7 +90,7 @@ class LocalizeRecordTool extends AbstractDataTool
 
         $text = sprintf(
             '%s "%s" (UID: %d) translated to %s via %s.',
-            $this->getTableLabel($table),
+            $this->tcaLabel->getTableLabel($table),
             $recordLabel,
             $uid,
             $targetLanguage,
@@ -107,6 +103,6 @@ class LocalizeRecordTool extends AbstractDataTool
             $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to see it.");
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

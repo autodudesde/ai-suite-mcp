@@ -11,27 +11,22 @@ use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuite\Service\WorkflowProcessingService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
 
-/**
- * Batch-translate file metadata (alt text, title, description) for multiple files.
- * Delegates to WorkflowProcessingService for payload building and background task creation.
- * Use getTaskStatus to check progress.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslateFileMetadataTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:translate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
@@ -50,7 +45,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
     {
         return 'Translate file metadata (alt text, title, description) for specific files using an external AI model — costs credits per file. '
             .'For processing all files in a folder, use batchTranslateFolderMetadata instead. '
-            .ToolDescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC_FLOW;
     }
 
     public function getSchema(): array
@@ -85,7 +80,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
         $fields = $params['fields'] ?? ['alternative', 'title', 'description'];
 
         if (empty($fileUids)) {
-            return new CallToolResult([new TextContent('fileUids must be a non-empty array.')], isError: true);
+            return $this->textError('fileUids must be a non-empty array.');
         }
 
         if ('' === $model) {
@@ -118,7 +113,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             }
             $text .= "\n\nPresent both options to the user and ask which approach they prefer.";
 
-            return new CallToolResult([new TextContent($text)]);
+            return $this->textResult($text);
         }
 
         $this->permissionService->validateModelAccess($model);
@@ -128,12 +123,11 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             $sourceLanguage = $this->resolveLanguageIsoCode('', 1);
         }
 
-        $sourceLanguageUid = $this->resolveLanguageUid($sourceLanguage, 1);
-        $targetLanguageUid = $this->resolveLanguageUid($targetLanguage, 1);
-        $this->assertLanguageAccess($targetLanguageUid);
+        $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, 1);
+        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, 1);
+        $this->recordAccess->assertLanguageAccess($targetLanguageUid);
         $column = count($fields) > 1 ? 'all' : ($fields[0] ?? 'alternative');
 
-        // Resolve source metadata and build files map for WorkflowProcessingService
         $sourceMetadataList = $this->sysFileMetadataRepository->findByLangUidAndFileIdList(
             $fileUids,
             $column,
@@ -158,7 +152,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             $fileUid = (int) $fileUid;
 
             try {
-                $file = $this->assertFileReadAccess($fileUid);
+                $file = $this->recordAccess->assertFileReadAccess($fileUid);
             } catch (InsufficientPermissionException $e) {
                 $this->logger->warning('BatchTranslateFileMetadata: skipping file — insufficient permission', [
                     'fileUid' => $fileUid,
@@ -233,7 +227,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
         }
 
         if (empty($files)) {
-            return new CallToolResult([new TextContent('No valid files found to translate.')], isError: true);
+            return $this->textError('No valid files found to translate.');
         }
 
         $parentUuid = $this->uuidService->generateUuid();
@@ -253,7 +247,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
         $failedFilesMetadata = $result['failedFilesMetadata'];
 
         if (empty($payload)) {
-            return new CallToolResult([new TextContent('No translatable content found for the given files.')], isError: true);
+            return $this->textError('No translatable content found for the given files.');
         }
 
         $serverResult = $this->sendRequestService->sendDataRequest(
@@ -291,6 +285,6 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
 
         $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

@@ -4,16 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Translation;
 
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Translate a single database record to another language.
- *
- * Reuses TranslationService::fetchTranslationFields() to collect fields
- * in the same format as the TranslationHook, then sends to the AI Suite Server.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class TranslateRecordTool extends AbstractTranslateTool
 {
@@ -27,9 +21,9 @@ class TranslateRecordTool extends AbstractTranslateTool
     public function getDescription(): string
     {
         return 'Translate a single database record to another language. Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A.'Supports any TCA table with language support. '
-            .'(B) Use localizeRecord to create a translation shell → translate manually '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A.'Supports any TCA table with language support. '
+            .'(B) Use localizeRecord to create a translation shell → translate manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A_TRANSLATE_DIRECT_PERSIST;
     }
 
     public function getSchema(): array

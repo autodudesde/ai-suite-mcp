@@ -1,3 +1,5 @@
 .idea
+.env
+.runs
 TODOS
 TODOS.md

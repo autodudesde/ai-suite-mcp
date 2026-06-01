@@ -11,11 +11,12 @@
     "MCP",
     "Model Context Protocol"
   ],
-  "version": "0.3.3",
+  "version": "0.4.0",
   "require": {
-    "autodudes/ai-suite": "*",
+    "autodudes/ai-suite": "^12.19.2 || ^13.13.2 || ^14.1.2",
     "typo3/cms-reports": "^12.4.11 | ^13.4.1 || ^14.3.0",
-    "logiscape/mcp-sdk-php": "^1.2"
+    "logiscape/mcp-sdk-php": "^1.7",
+    "symfony/clock": "^6.4 || ^7.0 || ^8.0"
   },
   "suggest": {
     "typo3/cms-workspaces": "^12.4.11 | ^13.4.1 || ^14.0.0"

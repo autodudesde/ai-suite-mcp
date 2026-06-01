@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
@@ -40,11 +39,11 @@ class GetContentTypesTool extends AbstractDataTool
     protected function doExecute(array $params): CallToolResult
     {
         $pageId = (int) $params['pageId'];
-        $this->assertPagePerm($pageId, Permission::PAGE_SHOW);
+        $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page) {
-            return new CallToolResult([new TextContent("Page {$pageId} not found.")], isError: true);
+            return $this->textError("Page {$pageId} not found.");
         }
 
         $items = $this->tcaCompatibilityService->getFieldConfiguration('tt_content', 'CType')['items'] ?? [];
@@ -65,7 +64,7 @@ class GetContentTypesTool extends AbstractDataTool
 
             $entry = [
                 'ctype' => $ctype,
-                'label' => $this->resolveLabel($item['label'] ?? $ctype),
+                'label' => $this->tcaLabel->resolveLabel($item['label'] ?? $ctype),
                 'textFields' => $fieldCategories['text'],
                 'richTextFields' => $fieldCategories['richtext'],
                 'fileFields' => $fieldCategories['file'],
@@ -74,13 +73,13 @@ class GetContentTypesTool extends AbstractDataTool
                 'containerColumns' => [],
             ];
 
-            $registry = $this->getContainerRegistry();
+            $registry = $this->tcaLabel->getContainerRegistry();
             if (null !== $registry && $registry->isContainerElement($ctype)) {
                 $entry['isContainer'] = true;
                 foreach ($registry->getAvailableColumns($ctype) as $column) {
                     $entry['containerColumns'][] = [
                         'colPos' => (int) ($column['colPos'] ?? 0),
-                        'name' => $this->resolveLabel((string) ($column['name'] ?? '')),
+                        'name' => $this->tcaLabel->resolveLabel((string) ($column['name'] ?? '')),
                     ];
                 }
             }
@@ -115,14 +114,10 @@ class GetContentTypesTool extends AbstractDataTool
             }
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
     /**
-     * Categorize fields for a CType using TcaCompatibilityService.
-     * `getEffectiveFieldConfiguration` applies columnsOverrides so e.g. `enableRichtext`
-     * set only on the 'text' CType's bodytext override is respected.
-     *
      * @return array{text: list<string>, richtext: list<string>, file: list<string>, relation: list<string>}
      */
     private function categorizeFieldsForCType(string $cType): array

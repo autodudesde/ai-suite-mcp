@@ -12,23 +12,17 @@ use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Shared base for single-record translation tools.
- *
- * Provides listTranslationModels() and translateSingleRecord() so that
- * TranslateRecordTool and TranslateFileMetadataTool share the same logic.
- */
 abstract class AbstractTranslateTool extends AbstractAiTool
 {
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         protected readonly LibraryService $libraryService,
         protected readonly UuidService $uuidService,
         protected readonly TranslationService $translationService,
@@ -50,12 +44,6 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         );
     }
 
-    /**
-     * Translate a single record: localize → collect fields → AI request → apply via DataHandler.
-     *
-     * Reuses TranslationService::fetchTranslationFields() and the same server payload format
-     * as TranslationHook, so it works for any TCA table with language support.
-     */
     protected function translateSingleRecord(
         string $table,
         int $uid,
@@ -63,10 +51,8 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         string $model,
         string $sourceLanguage = '',
     ): CallToolResult {
-        // Permission + WSOL: assertRecordEditAccess returns the workspace-overlaid row and throws
-        // InsufficientPermissionException if the user cannot edit it. Missing record → \RuntimeException → 404.
         try {
-            $record = $this->assertRecordEditAccess($table, $uid);
+            $record = $this->recordAccess->assertRecordEditAccess($table, $uid);
         } catch (\RuntimeException $e) {
             $this->logger->warning('TranslateSingleRecord: record not found', [
                 'table' => $table,
@@ -74,11 +60,11 @@ abstract class AbstractTranslateTool extends AbstractAiTool
                 'reason' => $e->getMessage(),
             ]);
 
-            return new CallToolResult([new TextContent(sprintf('%s:%d not found.', $table, $uid))], isError: true);
+            return $this->textError(sprintf('%s:%d not found.', $table, $uid));
         }
 
-        // Records with pid=0 (e.g. sys_file_metadata) have no page context —
-        // use pageId=1 as fallback for language resolution (same convention as BatchTranslateFileMetadataTool).
+        // Records with pid=0 (e.g. sys_file_metadata) have no page context
+        // use pageId=1 as fallback for language resolution
         $pageId = (int) ($record['pid'] ?: 1);
 
         $this->permissionService->validateModelAccess($model);
@@ -87,33 +73,33 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             $sourceLanguage = $this->resolveLanguageIsoCode('', $pageId);
         }
 
-        $srcLangUid = $this->resolveLanguageUid($sourceLanguage, $pageId);
-        $destLangUid = $this->resolveLanguageUid($targetLanguage, $pageId);
+        $srcLangUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $pageId);
+        $destLangUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageId);
 
         if (0 === $destLangUid) {
-            return new CallToolResult([new TextContent("Language \"{$targetLanguage}\" is not configured for this site.")], isError: true);
+            return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
         }
 
-        $this->assertLanguageAccess($destLangUid);
+        $this->recordAccess->assertLanguageAccess($destLangUid);
 
-        // Step 1: Ensure localization record exists (find existing or create via DataHandler)
+        // Ensure localization record exists (find existing or create via DataHandler)
         $translatedUid = $this->translationService->findOrCreateLocalization($table, $uid, $destLangUid);
 
         if (null === $translatedUid) {
-            return new CallToolResult([new TextContent('Could not create or find localization record.')], isError: true);
+            return $this->textError('Could not create or find localization record.');
         }
 
-        // Step 2: Collect translatable fields (overridable for tables like sys_file_metadata)
+        // Collect translatable fields (overridable for tables like sys_file_metadata)
         $fields = $this->collectTranslatableFields($table, $uid, $record);
 
         if (empty($fields)) {
-            return new CallToolResult([new TextContent('No translatable fields found in this record.')], isError: true);
+            return $this->textError('No translatable fields found in this record.');
         }
 
         $translateFields = [$table => [(int) $translatedUid => $fields]];
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
-        // Step 3: Load glossary
+        // Load glossary
         $site = $this->siteFinder->getSiteByPageId($pageId);
         $rootPageId = $site->getRootPageId();
         $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid);
@@ -122,7 +108,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         $globalInstructions = $this->globalInstructionService->buildGlobalInstruction($table, 'translation', $pageId);
         $uuid = $this->uuidService->generateUuid();
 
-        // Step 4: Send in same format as TranslationHook
+        // Send in same format as TranslationHook
         $result = $this->sendAiRequest('translate', [
             'translate_fields' => $translateFieldsJson,
             'translate_fields_count' => 1,
@@ -134,14 +120,14 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             'global_instructions' => $globalInstructions,
         ], ['translate' => $model], strtoupper($targetLanguage));
 
-        // Step 5: Apply translation results
+        //  Apply translation results
         $translationResults = $result['translationResults'] ?? [];
         if (\is_string($translationResults)) {
             $translationResults = json_decode($translationResults, true) ?? [];
         }
 
         if (empty($translationResults)) {
-            return new CallToolResult([new TextContent('No translation results returned by the server.')], isError: true);
+            return $this->textError('No translation results returned by the server.');
         }
 
         $cleanedResults = [];
@@ -157,7 +143,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         }
 
         if (empty($cleanedResults)) {
-            return new CallToolResult([new TextContent('Translation results could not be processed (invalid format).')], isError: true);
+            return $this->textError('Translation results could not be processed (invalid format).');
         }
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
@@ -171,7 +157,6 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             );
         }
 
-        // Build response
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: %s:%d → %s\n\n", $table, $uid, $targetLanguage);
 
@@ -195,15 +180,10 @@ abstract class AbstractTranslateTool extends AbstractAiTool
 
         $text .= "\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to verify.\n";
 
-        return $this->appendCreditInfo(new CallToolResult([new TextContent($text)]), $result);
+        return $this->appendCreditInfo($this->textResult($text), $result);
     }
 
     /**
-     * Collect translatable fields for a record.
-     *
-     * Default implementation uses TranslationService::fetchTranslationFields() (FormDataCompiler-based).
-     * Override for tables where FormDataCompiler doesn't work (e.g. sys_file_metadata with pid=0).
-     *
      * @param array<string, mixed> $record
      *
      * @return array<string, mixed> field name => field value

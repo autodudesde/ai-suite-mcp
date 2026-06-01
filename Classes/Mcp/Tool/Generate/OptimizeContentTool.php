@@ -12,10 +12,10 @@ use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -24,13 +24,6 @@ use TYPO3\CMS\Backend\Form\FormDataGroup\TcaDatabaseRecord;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Optimize content elements using AI with a free-text prompt.
- *
- * Uses TYPO3 FormDataCompiler to resolve available fields and current values per CType.
- *
- * < 5 field-tasks: synchronous. >= 5: async via Workflow queue.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class OptimizeContentTool extends AbstractAiTool
 {
@@ -40,15 +33,12 @@ class OptimizeContentTool extends AbstractAiTool
     protected ?string $requiredScope = 'mcp:generate';
 
     /**
-     * Per-call buffer for items skipped due to missing edit-permission. Filled in
-     * resolveContentElements(); flushed into the result text via formatPermissionSkips().
-     *
      * @var list<string>
      */
     private array $permissionSkips = [];
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
@@ -66,9 +56,9 @@ class OptimizeContentTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Optimize existing content elements with a free-text prompt (e.g. rewrite tone, shorten, simplify). Requires either pageIds or contentUids — at least one must be provided. Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A
-            .'(B) Read content via readRecords, rewrite it yourself '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A
+            .'(B) Read content via readRecords, rewrite it yourself '.DescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
     }
 
     public function getSchema(): array
@@ -83,12 +73,12 @@ class OptimizeContentTool extends AbstractAiTool
                 'pageIds' => [
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
-                    'description' => 'Process all content elements on these pages.',
+                    'description' => 'Process all content elements on these pages. Provide either pageIds or contentUids — at least one is required.',
                 ],
                 'contentUids' => [
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
-                    'description' => 'Process specific tt_content UIDs.',
+                    'description' => 'Process specific tt_content UIDs. Provide either pageIds or contentUids — at least one is required.',
                 ],
                 'fields' => [
                     'type' => 'array',
@@ -103,10 +93,9 @@ class OptimizeContentTool extends AbstractAiTool
                 'language' => ['type' => 'string', 'description' => 'ISO language code (e.g. de, en). Defaults to the site default language.'],
             ],
             'required' => ['prompt'],
-            'anyOf' => [
-                ['required' => ['pageIds']],
-                ['required' => ['contentUids']],
-            ],
+            // NB: the "pageIds OR contentUids" constraint is intentionally NOT expressed as a
+            // top-level anyOf/oneOf — Anthropic and OpenAI reject those in tool input schemas
+            // (and the SDK/subagent tool API does too).
         ];
     }
 
@@ -118,7 +107,11 @@ class OptimizeContentTool extends AbstractAiTool
         $requestedFields = $params['fields'] ?? ['bodytext'];
 
         if ('' === $prompt) {
-            return new CallToolResult([new TextContent('"prompt" is required.')], isError: true);
+            return $this->textError('"prompt" is required.');
+        }
+
+        if (empty($params['pageIds']) && empty($params['contentUids'])) {
+            return $this->textError('Provide either "pageIds" or "contentUids" — at least one is required.');
         }
 
         if ('' === $model) {
@@ -134,7 +127,7 @@ class OptimizeContentTool extends AbstractAiTool
                 $message .= "\n\n".$this->formatPermissionSkips();
             }
 
-            return new CallToolResult([new TextContent($message)], isError: true);
+            return $this->textError($message);
         }
 
         $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), (int) ($elements[0]['pid'] ?? 1));
@@ -181,7 +174,7 @@ class OptimizeContentTool extends AbstractAiTool
         }
         $text .= "\n\nPresent the models to the user and ask which one to use.";
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
     /**
@@ -236,7 +229,7 @@ class OptimizeContentTool extends AbstractAiTool
         }
 
         if (empty($results)) {
-            return new CallToolResult([new TextContent('No results could be generated.')]);
+            return $this->textResult('No results could be generated.');
         }
 
         $text = $this->appendDataFlowInfo('', $model);
@@ -256,7 +249,7 @@ class OptimizeContentTool extends AbstractAiTool
             $text .= "\n\n".$this->formatPermissionSkips();
         }
 
-        return $this->appendCreditInfo(new CallToolResult([new TextContent($text)]), $lastResult);
+        return $this->appendCreditInfo($this->textResult($text), $lastResult);
     }
 
     /**
@@ -308,7 +301,7 @@ class OptimizeContentTool extends AbstractAiTool
         }
 
         if (empty($payload)) {
-            return new CallToolResult([new TextContent('No optimizable content found.')], isError: true);
+            return $this->textError('No optimizable content found.');
         }
 
         $result = $this->sendRequestService->sendDataRequest(
@@ -342,7 +335,7 @@ class OptimizeContentTool extends AbstractAiTool
             $text .= "\n\n".$this->formatPermissionSkips();
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
     private function formatPermissionSkips(): string
@@ -355,9 +348,6 @@ class OptimizeContentTool extends AbstractAiTool
     }
 
     /**
-     * Resolve content elements using TYPO3 FormDataCompiler.
-     * Per record: determines available fields (via TCA showitem) and loads current values (via databaseRow).
-     *
      * @param array<string, mixed> $params
      * @param array<string, mixed> $requestedFields
      *
@@ -372,14 +362,12 @@ class OptimizeContentTool extends AbstractAiTool
             return [];
         }
 
-        // Permission-filter (skip-and-report): drop pageIds/contentUids the user cannot edit.
-        // Skipped items are recorded in $this->permissionSkips for the result formatter.
         $allowedPageIds = [];
         foreach ($pageIds as $pageId) {
             $pid = (int) $pageId;
 
             try {
-                $this->assertPagePerm($pid, Permission::CONTENT_EDIT);
+                $this->recordAccess->assertPagePerm($pid, Permission::CONTENT_EDIT);
                 $allowedPageIds[] = $pid;
             } catch (InsufficientPermissionException $e) {
                 $this->logger->warning('OptimizeContent: skipping page — insufficient permission', [
@@ -395,7 +383,7 @@ class OptimizeContentTool extends AbstractAiTool
             $cuid = (int) $contentUid;
 
             try {
-                $this->assertRecordEditAccess('tt_content', $cuid);
+                $this->recordAccess->assertRecordEditAccess('tt_content', $cuid);
                 $allowedContentUids[] = $cuid;
             } catch (InsufficientPermissionException $e) {
                 $this->logger->warning('OptimizeContent: skipping tt_content — insufficient permission', [
@@ -439,7 +427,6 @@ class OptimizeContentTool extends AbstractAiTool
                 $columnsToProcess = $formData['columnsToProcess'] ?? [];
                 $databaseRow = $formData['databaseRow'] ?? [];
 
-                // Intersect: TCA-available fields ∩ requested fields ∩ OPTIMIZABLE_FIELDS ∩ non-empty
                 $fields = [];
                 foreach ($requestedFields as $field) {
                     $field = (string) $field;
@@ -448,7 +435,6 @@ class OptimizeContentTool extends AbstractAiTool
                         && \in_array($field, $columnsToProcess, true)
                     ) {
                         $value = $databaseRow[$field] ?? '';
-                        // databaseRow may return arrays for some field types
                         if (\is_array($value)) {
                             $value = implode(' ', $value);
                         }

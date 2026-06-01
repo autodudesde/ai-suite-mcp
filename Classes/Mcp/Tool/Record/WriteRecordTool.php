@@ -6,28 +6,25 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
-use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Create or update TCA records via DataHandler.
- * Supports single record or batch (multiple records at once).
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class WriteRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly RecordRepository $recordRepository,
+        private readonly BatchResultBuilderService $batchResultBuilder,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -41,7 +38,14 @@ class WriteRecordTool extends AbstractDataTool
     {
         return 'Write one or more records to the database. Only call after the user has seen a preview (via previewRecords or a generate*/translate* tool) and explicitly approved. '
             .'Always pass a records array — even for a single record, wrap it in an array. '
-            .'For b13/container content, set `tx_container_parent` (parent container UID, or "$ref:N" of the container created earlier in the same batch) and `colPos` to one of the container grid slots — see getContentTypes / getColumnPositions for valid slots.';
+            .'For b13/container content, set `tx_container_parent` (parent container UID, or "$ref:N" of the container created earlier in the same batch) and `colPos` to one of the container grid slots — see getContentTypes / getColumnPositions for valid slots. '
+            .'Notes: pid/uid/position are sibling properties of each record, never inside `fields`. '
+            .'IRRE child records (e.g. bootstrap_package card_group_item/accordion_item/timeline_item) require their own `pid`. '
+            .'Most reliable order is two-pass: create the tt_content parent first, then create children with the literal parent UID. '
+            .'Attach an image with an explicit sys_file_reference record {uid_local:<sysFile>, uid_foreign:<elementUID|$ref:N>, tablenames, fieldname, pid} — do not put the sys_file UID directly into the image/assets field. '
+            .'`sorting` is not writable here; reorder with moveRecord. '
+            .'TCA-required fields are enforced on create — a record missing one is rejected (use getRecordSchema to see the required fields of a type). '
+            .'On a partial failure the batch reports each record individually and lists the succeeded (persisted) UIDs — only re-send the failed records.';
     }
 
     public function getSchema(): array
@@ -68,123 +72,96 @@ class WriteRecordTool extends AbstractDataTool
         $records = $params['records'] ?? [];
 
         if (!is_array($records) || empty($records)) {
-            return new CallToolResult([new TextContent('records must be a non-empty array.')], isError: true);
+            return $this->textError('records must be a non-empty array.');
         }
 
         $batchPosition = (string) ($params['position'] ?? 'end');
 
         $createdUids = [];
-        $results = [];
-        // Tracks last-created sibling per group "pid:tx_container_parent:colPos" so multiple
-        // children added to the same container slot stack inside that slot, while top-level
-        // content in different colPos doesn't get falsely chained.
         $lastSiblingByGroup = [];
 
-        foreach ($records as $i => $record) {
-            $table = (string) ($record['table'] ?? '');
-            $uid = isset($record['uid']) ? (int) $record['uid'] : null;
-            $pid = isset($record['pid']) ? (int) $record['pid'] : null;
-            $fields = $record['fields'] ?? [];
+        return $this->batchResultBuilder->run(
+            $records,
+            'record(s)',
+            function (mixed $record, int $index) use (&$createdUids, &$lastSiblingByGroup, $batchPosition): array {
+                $zeroBased = $index - 1;
 
-            if ('' === $table || !is_array($fields) || empty($fields)) {
-                $results[] = sprintf('#%d: ❌ Skipped (missing table or fields)', $i + 1);
+                $table = (string) ($record['table'] ?? '');
+                $uid = isset($record['uid']) ? (int) $record['uid'] : null;
+                $pid = isset($record['pid']) ? (int) $record['pid'] : null;
+                $fields = $record['fields'] ?? [];
 
-                continue;
-            }
-
-            $this->validateTableWriteAccess($table);
-            $fields = $this->filterAccessibleFields($table, $fields);
-
-            // Resolve $ref:N references first so tx_container_parent (and other refs) are
-            // concrete UIDs before we decide on position grouping.
-            $fields = $this->resolveReferences($fields, $createdUids);
-
-            // Position logic for tt_content records in batch:
-            // - First sibling in a (pid, tx_container_parent, colPos) group: use batchPosition
-            // - Subsequent siblings in the SAME group: insert after the previous one (keeps order
-            //   within the same container slot or top-level colPos)
-            // - Non-tt_content (e.g. IRRE child items): always "end"
-            $position = (string) ($record['position'] ?? '');
-            $groupKey = sprintf(
-                '%d:%d:%d',
-                $pid ?? 0,
-                (int) ($fields['tx_container_parent'] ?? 0),
-                (int) ($fields['colPos'] ?? 0),
-            );
-            if ('' === $position) {
-                if ('tt_content' === $table && isset($lastSiblingByGroup[$groupKey])) {
-                    $position = 'after:'.$lastSiblingByGroup[$groupKey];
-                } elseif ('tt_content' === $table) {
-                    $position = $batchPosition;
-                } else {
-                    $position = 'end';
-                }
-            }
-
-            if (null === $uid) {
-                if (null === $pid) {
-                    $results[] = sprintf('#%d: ❌ Skipped (no pid for create)', $i + 1);
-
-                    continue;
+                if ('' === $table || !is_array($fields) || empty($fields)) {
+                    throw new InvalidParameterException('Skipped (missing table or fields).');
                 }
 
-                try {
-                    $this->assertRecordCreateAccess($table, $pid);
-                } catch (InsufficientPermissionException $e) {
-                    $this->logger->warning('WriteRecord: skipping create — insufficient permission', [
-                        'table' => $table,
-                        'pid' => $pid,
-                        'reason' => $e->getMessage(),
-                    ]);
-                    $results[] = sprintf('#%d: ⛔ Skipped (no create permission on %s @ pid=%d): %s', $i + 1, $table, $pid, $e->getMessage());
-
-                    continue;
+                foreach (['pid', 'uid', 'position'] as $reserved) {
+                    if (array_key_exists($reserved, $fields)) {
+                        throw new InvalidParameterException(sprintf(
+                            '`%s` must be a sibling property of the record (next to `table` and `fields`), not inside `fields`.',
+                            $reserved,
+                        ));
+                    }
                 }
 
-                $createdUid = $this->createSingleRecord($table, $pid, $fields, $position);
-                $createdUids[$i] = $createdUid;
-                if ('tt_content' === $table) {
-                    $lastSiblingByGroup[$groupKey] = $createdUid;
-                }
-                $results[] = sprintf('#%d: ✅ %s created (UID: %d)', $i + 1, $this->getTableLabel($table), $createdUid);
-            } else {
-                try {
-                    $this->assertRecordEditAccess($table, $uid);
-                } catch (InsufficientPermissionException $e) {
-                    $this->logger->warning('WriteRecord: skipping update — insufficient permission', [
-                        'table' => $table,
-                        'uid' => $uid,
-                        'reason' => $e->getMessage(),
-                    ]);
-                    $results[] = sprintf('#%d: ⛔ Skipped (no edit permission on %s:%d): %s', $i + 1, $table, $uid, $e->getMessage());
+                $this->recordAccess->validateTableWriteAccess($table);
+                $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
+                $fields = $this->resolveReferences($fields, $createdUids);
 
-                    continue;
-                } catch (\RuntimeException $e) {
-                    $this->logger->warning('WriteRecord: record not found, cannot update', [
-                        'table' => $table,
-                        'uid' => $uid,
-                        'reason' => $e->getMessage(),
-                    ]);
-                    $results[] = sprintf('#%d: ❌ %s:%d not found', $i + 1, $table, $uid);
-
-                    continue;
+                $position = (string) ($record['position'] ?? '');
+                $groupKey = sprintf(
+                    '%d:%d:%d',
+                    $pid ?? 0,
+                    (int) ($fields['tx_container_parent'] ?? 0),
+                    (int) ($fields['colPos'] ?? 0),
+                );
+                if ('' === $position) {
+                    if ('tt_content' === $table && isset($lastSiblingByGroup[$groupKey])) {
+                        $position = 'after:'.$lastSiblingByGroup[$groupKey];
+                    } elseif ('tt_content' === $table) {
+                        $position = $batchPosition;
+                    } else {
+                        $position = 'end';
+                    }
                 }
 
+                if (null === $uid) {
+                    if (null === $pid) {
+                        throw new InvalidParameterException('Missing `pid` (required to create a record).');
+                    }
+
+                    $this->recordAccess->assertRecordCreateAccess($table, $pid);
+
+                    $typeField = $this->tcaCompatibilityService->getSubSchemaDivisorFieldName($table);
+                    $typeValue = null !== $typeField ? (string) ($fields[$typeField] ?? '') : null;
+                    $missingRequired = $this->recordAccess->findMissingRequiredFields($table, $typeValue, $fields);
+                    if ([] !== $missingRequired) {
+                        throw new InvalidParameterException(sprintf(
+                            'Missing required field(s) for %s: %s. Provide them — see getRecordSchema for the required fields of this type.',
+                            $this->tcaLabel->getTableLabel($table),
+                            implode(', ', $missingRequired),
+                        ));
+                    }
+
+                    $createdUid = $this->createSingleRecord($table, $pid, $fields, $position);
+                    $createdUids[$zeroBased] = $createdUid;
+                    if ('tt_content' === $table) {
+                        $lastSiblingByGroup[$groupKey] = $createdUid;
+                    }
+
+                    return ['message' => sprintf('%s created (UID: %d)', $this->tcaLabel->getTableLabel($table), $createdUid), 'uid' => $createdUid];
+                }
+
+                $this->recordAccess->assertRecordEditAccess($table, $uid);
                 $this->updateSingleRecord($table, $uid, $fields);
-                $createdUids[$i] = $uid;
-                $results[] = sprintf('#%d: ✅ %s updated (UID: %d)', $i + 1, $this->getTableLabel($table), $uid);
-            }
-        }
+                $createdUids[$zeroBased] = $uid;
 
-        $text = sprintf("## Batch result: %d record(s)\n\n", count($records));
-        $text .= implode("\n", $results);
-
-        return new CallToolResult([new TextContent($text)]);
+                return ['message' => sprintf('%s updated (UID: %d)', $this->tcaLabel->getTableLabel($table), $uid), 'uid' => $uid];
+            },
+        );
     }
 
     /**
-     * Replace "$ref:N" values with the actual UID from a previously created record.
-     *
      * @param array<int, int>      $createdUids
      * @param array<string, mixed> $fields
      *
@@ -212,7 +189,6 @@ class WriteRecordTool extends AbstractDataTool
         $fields = $this->dataHandlerSanitizer->sanitizeFields($table, $fields);
         $newId = 'NEW'.substr(md5((string) time().random_int(0, 100000)), 0, 22);
 
-        // Resolve position: DataHandler uses positive pid = start of page, negative = after record
         $resolvedPid = $this->resolvePosition($table, $pid, $fields, $position);
         $fields['pid'] = $resolvedPid;
 
@@ -228,11 +204,6 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * Resolve position to DataHandler pid convention.
-     * "start" → positive pageId (DataHandler default = top)
-     * "end" → negative UID of last record in same colPos/page
-     * "after:UID" → negative of that UID.
-     *
      * @param array<string, mixed> $fields
      */
     private function resolvePosition(string $table, int $pageId, array $fields, string $position): int
@@ -248,7 +219,6 @@ class WriteRecordTool extends AbstractDataTool
             }
         }
 
-        // "end" → find last record on this page (same colPos if tt_content)
         $sortByField = $this->tcaCompatibilityService->getRawConfiguration($table)['sortby'] ?? '';
         if ('end' === $position && '' !== $sortByField) {
             $colPos = ('tt_content' === $table && isset($fields['colPos'])) ? (int) $fields['colPos'] : null;
@@ -266,14 +236,23 @@ class WriteRecordTool extends AbstractDataTool
      */
     private function updateSingleRecord(string $table, int $uid, array $fields): void
     {
-        // Existence + permission already verified in doExecute(); WSOL keeps the
-        // workspace draft visible if applicable.
         $record = BackendUtility::getRecordWSOL($table, $uid);
         if (null === $record) {
             throw new \RuntimeException(sprintf('%s:%d not found.', $table, $uid));
         }
 
-        $fields = $this->dataHandlerSanitizer->sanitizeFields($table, $fields);
+        $typeKey = null;
+
+        try {
+            $typeKey = $this->tcaCompatibilityService->resolveSubSchemaType($table, $fields + $record);
+        } catch (\Throwable $e) {
+            $this->logger->warning('WriteRecord: could not resolve record type for sanitizing, using base config', [
+                'table' => $table,
+                'uid' => $uid,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        $fields = $this->dataHandlerSanitizer->sanitizeFields($table, $fields, $typeKey);
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
         $dh->start([$table => [$uid => $fields]], []);
@@ -283,13 +262,10 @@ class WriteRecordTool extends AbstractDataTool
             throw new \RuntimeException('Update failed: '.implode(', ', $dh->errorLog));
         }
 
-        // Clean up finished background tasks for the written fields
         $this->cleanupBackgroundTasks($table, $uid, $fields);
     }
 
     /**
-     * Remove finished background tasks whose results have just been written.
-     *
      * @param array<string, mixed> $fields
      */
     private function cleanupBackgroundTasks(string $table, int $uid, array $fields): void

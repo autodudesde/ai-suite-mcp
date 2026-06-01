@@ -8,13 +8,6 @@ use AutoDudes\AiSuiteMcp\Domain\Repository\TokenRepository;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 
-/**
- * DataHandler hook: When a backend user's password changes,
- * revoke all their MCP OAuth tokens.
- *
- * This ensures that if an account is compromised and the password
- * is changed, all existing MCP sessions are immediately terminated.
- */
 class PasswordChangeHook
 {
     public function __construct(
@@ -23,8 +16,6 @@ class PasswordChangeHook
     ) {}
 
     /**
-     * Called after database operations on be_users.
-     *
      * @param array<string, mixed> $fieldArray
      */
     public function processDatamap_afterDatabaseOperations(
@@ -38,7 +29,6 @@ class PasswordChangeHook
             return;
         }
 
-        // Check if password was changed
         if (!isset($fieldArray['password'])) {
             return;
         }
@@ -48,7 +38,6 @@ class PasswordChangeHook
             return;
         }
 
-        // Revoke all MCP tokens for this user
         $revokedCount = $this->tokenRepository->revokeAllTokensForUser($uid);
 
         if ($revokedCount > 0) {

@@ -2,15 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp;
+namespace AutoDudes\AiSuiteMcp\Mcp\Utility;
 
-/**
- * Canonical description snippets shared across MCP tool descriptions.
- *
- * Single source of truth for recurring phrases — ensures consistent wording
- * across all tools. Change once here, applies everywhere.
- */
-class ToolDescriptionSnippets
+class DescriptionSnippets
 {
     /**
      * Approach A: external AI intro.
@@ -25,6 +19,16 @@ class ToolDescriptionSnippets
      */
     public const APPROACH_A_PREVIEW_AND_PERSIST = 'Approach A returns a preview directly in the response — display it to the user (no additional tool call needed). '
         .'After explicit user approval, persist via writeRecords.';
+
+    /**
+     * Approach A for tools that PERSIST directly (translatePage, translateRecord,
+     * translateFileMetadata): they write the target-language record themselves via DataHandler.
+     * Use instead of {@see APPROACH_A_PREVIEW_AND_PERSIST} so the model does not issue a redundant
+     * (and often wrong) writeRecords call afterwards.
+     */
+    public const APPROACH_A_TRANSLATE_DIRECT_PERSIST = 'Approach A applies the translation directly to the target-language record '
+        .'(created automatically if missing) and saves it immediately via DataHandler. '
+        .'Once it reports the translation is complete you are done — do NOT call writeRecords afterwards.';
 
     /**
      * Approach B: manual workflow suffix.

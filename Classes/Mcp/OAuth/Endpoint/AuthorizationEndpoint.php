@@ -6,12 +6,12 @@ namespace AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint;
 
 use AutoDudes\AiSuite\Service\ViewFactoryService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
-use AutoDudes\AiSuiteMcp\Mcp\McpPermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ClientIpService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RateLimiterService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\TokenAuthenticatedBackendUserFactory;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TokenAuthenticatedBackendUserService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
@@ -47,7 +47,7 @@ class AuthorizationEndpoint
 
     public function __construct(
         private readonly OAuthService $oauthService,
-        private readonly McpPermissionService $permissionService,
+        private readonly PermissionService $permissionService,
         private readonly RateLimiterService $rateLimiter,
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly AuthenticationStyleInformation $authStyleInfo,
@@ -56,13 +56,12 @@ class AuthorizationEndpoint
         private readonly Typo3Version $typo3Version,
         private readonly SysWorkspaceRepository $sysWorkspaceRepository,
         private readonly ClientIpService $clientIpService,
-        private readonly TokenAuthenticatedBackendUserFactory $tokenAuthenticatedBackendUserFactory,
+        private readonly TokenAuthenticatedBackendUserService $tokenAuthenticatedBackendUser,
         private readonly LoggerInterface $logger,
     ) {}
 
     public function __invoke(ServerRequestInterface $request): ResponseInterface
     {
-        // Rate limiting per IP
         $ip = $this->clientIpService->resolve($request);
 
         try {
@@ -90,20 +89,15 @@ class AuthorizationEndpoint
         return new JsonResponse(['error' => 'method_not_allowed'], 405);
     }
 
-    /**
-     * GET: Validate parameters and show login form.
-     */
     private function showLoginForm(ServerRequestInterface $request): ResponseInterface
     {
         $params = $request->getQueryParams();
 
-        // Validate required parameters
         $validation = $this->validateAuthorizationParams($params);
         if (null !== $validation) {
             return $validation;
         }
 
-        // Render login form
         return new HtmlResponse($this->renderOAuthView('OAuth/Login', [
             'clientId' => $params['client_id'],
             'redirectUri' => $params['redirect_uri'],
@@ -115,9 +109,6 @@ class AuthorizationEndpoint
         ], $request));
     }
 
-    /**
-     * POST: Authenticate user, show consent or redirect with code.
-     */
     private function processLogin(ServerRequestInterface $request): ResponseInterface
     {
         /** @var array<string, mixed> $body */
@@ -144,7 +135,6 @@ class AuthorizationEndpoint
             return $this->handleConsent($body);
         }
 
-        // Authenticate user
         $beUserUid = $this->authenticateUser($username, $password);
 
         if (null === $beUserUid) {
@@ -197,8 +187,6 @@ class AuthorizationEndpoint
     }
 
     /**
-     * Handle MFA verification submission.
-     *
      * @param array<string, mixed> $body
      */
     private function processMfa(ServerRequestInterface $request, array $body): ResponseInterface
@@ -301,7 +289,6 @@ class AuthorizationEndpoint
     ): ResponseInterface {
         $provider = $this->mfaProviderRegistry->getFirstAuthenticationAwareProvider($backendUser);
         if (null === $provider) {
-            // No active provider (should not happen here — defensive fallback)
             return $this->renderConsent($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $state, $resource, $request);
         }
 
@@ -355,9 +342,6 @@ class AuthorizationEndpoint
     }
 
     /**
-     * Returns the list of workspaces the BE user may select from in the consent form.
-     * Empty when ext:workspaces is not loaded — the template hides the dropdown then.
-     *
      * @return list<array{uid: int, title: string}>
      */
     private function resolveAvailableWorkspaces(int $beUserUid): array
@@ -395,16 +379,12 @@ class AuthorizationEndpoint
 
     private function initBackendUser(int $beUserUid): BackendUserAuthentication
     {
-        $backendUser = $this->tokenAuthenticatedBackendUserFactory->createForUid($beUserUid);
+        $backendUser = $this->tokenAuthenticatedBackendUser->createForUid($beUserUid);
         $GLOBALS['BE_USER'] = $backendUser;
 
         return $backendUser;
     }
 
-    /**
-     * Create an HMAC-signed MFA ticket carrying the authenticated uid across the MFA step.
-     * Format: base64url(uid|ip|exp).base64url(hmac).
-     */
     private function createMfaTicket(int $beUserUid, string $ip): string
     {
         $expires = time() + self::MFA_TICKET_TTL;
@@ -415,9 +395,6 @@ class AuthorizationEndpoint
         return $payloadEncoded.'.'.$signature;
     }
 
-    /**
-     * Verify an MFA ticket. Returns the uid on success, null otherwise.
-     */
     private function verifyMfaTicket(string $ticket, string $ip): ?int
     {
         $parts = explode('.', $ticket);
@@ -472,8 +449,6 @@ class AuthorizationEndpoint
     }
 
     /**
-     * Handle consent form submission.
-     *
      * @param array<string, mixed> $body
      */
     private function handleConsent(array $body): ResponseInterface
@@ -492,8 +467,6 @@ class AuthorizationEndpoint
             return new RedirectResponse($redirectUri.$separator.'error=access_denied&state='.urlencode($state));
         }
 
-        // Re-validate the resource binding now that we're about to mint the code. The hidden
-        // field could have been tampered with after the initial /authorize GET.
         if ('' === $resource || !CanonicalResource::matches($resource)) {
             $separator = str_contains($redirectUri, '?') ? '&' : '?';
 
@@ -502,25 +475,20 @@ class AuthorizationEndpoint
             );
         }
 
-        // Initialize backend user context so permission checks work
-        $backendUser = $this->tokenAuthenticatedBackendUserFactory->createForUid($beUserUid);
+        $backendUser = $this->tokenAuthenticatedBackendUser->createForUid($beUserUid);
         $GLOBALS['BE_USER'] = $backendUser;
 
-        // Determine granted scopes
         if ('all' === $consentAction) {
             $grantedScopes = $this->permissionService->getAvailableScopes();
         } else {
             $grantedScopes = (array) ($body['scopes'] ?? []);
         }
 
-        // Resolve workspace selection from the consent form. Body field is optional —
-        // 0 / missing / inaccessible workspace falls back to "user default" (null).
         $workspaceUid = (int) ($body['workspace_uid'] ?? 0);
         if ($workspaceUid > 0 && false === $backendUser->checkWorkspace($workspaceUid)) {
             $workspaceUid = 0;
         }
 
-        // Create authorization code
         $rawCode = $this->oauthService->createAuthorizationCode(
             $beUserUid,
             $clientId,
@@ -539,7 +507,6 @@ class AuthorizationEndpoint
             'audience' => $resource,
         ]);
 
-        // Redirect with code
         $separator = str_contains($redirectUri, '?') ? '&' : '?';
 
         return new RedirectResponse(
@@ -548,8 +515,6 @@ class AuthorizationEndpoint
     }
 
     /**
-     * Validate authorization request parameters.
-     *
      * @param array<string, mixed> $params
      */
     private function validateAuthorizationParams(array $params): ?ResponseInterface
@@ -642,11 +607,6 @@ class AuthorizationEndpoint
         return null;
     }
 
-    /**
-     * Validate redirect URI.
-     * Localhost always allowed. External URIs only with allowlist.
-     * Production + empty allowlist = only localhost allowed.
-     */
     private function validateRedirectUri(string $redirectUri): bool
     {
         $parsed = parse_url($redirectUri);
@@ -658,7 +618,6 @@ class AuthorizationEndpoint
 
         $host = $parsed['host'] ?? '';
 
-        // Localhost always allowed
         if (in_array($host, ['localhost', '127.0.0.1', '[::1]'], true)) {
             return true;
         }
@@ -668,7 +627,6 @@ class AuthorizationEndpoint
             array_map('trim', explode(',', (string) ($extConf['mcpAllowedRedirectUris'] ?? ''))),
         );
 
-        // Empty allowlist in production = localhost only
         if (empty($allowedRedirectUris)) {
             return !Environment::getContext()->isProduction();
         }
@@ -682,9 +640,6 @@ class AuthorizationEndpoint
         return false;
     }
 
-    /**
-     * Authenticate a backend user by username and password.
-     */
     private function authenticateUser(string $username, string $password): ?int
     {
         if ('' === $username || '' === $password) {
@@ -692,7 +647,6 @@ class AuthorizationEndpoint
         }
 
         try {
-            // setBeUserByName applies userConstraints() (deleted=0, disable=0, starttime/endtime),
             // mirroring TYPO3's own login pre-check.
             $backendUser = GeneralUtility::makeInstance(BackendUserAuthentication::class);
             $backendUser->setBeUserByName($username);
@@ -759,6 +713,7 @@ class AuthorizationEndpoint
             'mcp:generate' => 'SEO-Metadaten, Content und Seitenstrukturen generieren',
             'mcp:translate' => 'Seiten und Inhalte in andere Sprachen übersetzen',
             'mcp:image' => 'Bilder mit KI generieren (GPTImage, Midjourney, Flux)',
+            'mcp:media' => 'Bilder und Videos in die Dateiablage hochladen (per URL, Upload oder YouTube/Vimeo-Link)',
             'mcp:workflow' => 'Massenaktionen und Hintergrund-Tasks für viele Seiten gleichzeitig durchführen',
             'mcp:easy-language' => 'Inhalte in Leichte Sprache umwandeln (BFSG-konform)',
             'mcp:glossary' => 'Glossar für konsistente Übersetzungen nutzen',
@@ -777,8 +732,6 @@ class AuthorizationEndpoint
     }
 
     /**
-     * Render an OAuth Fluid template.
-     *
      * @param array<string, mixed> $params
      */
     private function renderOAuthView(
@@ -797,8 +750,6 @@ class AuthorizationEndpoint
     }
 
     /**
-     * Collect TYPO3 backend branding settings for the OAuth templates.
-     *
      * @return array<string, mixed>
      */
     private function getBackendStyleVariables(?ServerRequestInterface $request = null): array

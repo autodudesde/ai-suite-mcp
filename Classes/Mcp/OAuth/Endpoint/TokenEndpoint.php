@@ -36,7 +36,6 @@ class TokenEndpoint
             return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'POST method required.'], 405);
         }
 
-        // Rate limiting per client_id + IP
         /** @var array<string, mixed> $body */
         $body = (array) ($request->getParsedBody() ?? []);
         $clientId = (string) ($body['client_id'] ?? '');
@@ -132,8 +131,7 @@ class TokenEndpoint
     {
         $refreshToken = (string) ($body['refresh_token'] ?? '');
         $clientId = (string) ($body['client_id'] ?? '');
-        // `resource` on refresh is optional per spec — when set, OAuthService validates that
-        // it matches the audience the refresh token was originally bound to.
+
         $resource = (string) ($body['resource'] ?? '');
 
         if ('' === $refreshToken || '' === $clientId) {

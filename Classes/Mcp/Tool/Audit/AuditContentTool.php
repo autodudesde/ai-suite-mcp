@@ -4,26 +4,21 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Audit;
 
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ContentAuditService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Analyze pages for SEO issues, missing translations, missing alt texts,
- * and accessibility problems. Returns structured report with severity levels
- * and suggestions referencing AI Suite tools.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class AuditContentTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly ContentAuditService $contentAuditService,
     ) {
         parent::__construct($mcpToolContext);
@@ -79,7 +74,7 @@ class AuditContentTool extends AbstractTool
     protected function doExecute(array $params): CallToolResult
     {
         $pageId = (int) $params['pageId'];
-        $this->assertPagePerm($pageId, Permission::PAGE_SHOW);
+        $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
         $report = $this->contentAuditService->audit(
             $pageId,
@@ -89,7 +84,6 @@ class AuditContentTool extends AbstractTool
             (int) ($params['limit'] ?? 100),
         );
 
-        // Extract deduplicated UIDs for easy piping into batch tools
         $affectedPageIds = [];
         $affectedFileUids = [];
 

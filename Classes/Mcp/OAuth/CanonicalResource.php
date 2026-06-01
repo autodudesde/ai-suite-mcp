@@ -14,27 +14,11 @@ use TYPO3\CMS\Core\Http\NormalizedParams;
  *   - ProtectedResourceMetadataEndpoint  (`resource` field)
  *   - AuthorizationEndpoint              (`resource` request parameter)
  *   - OAuthService::validateToken        (audience check on every request)
- *
- * Centralising the construction here prevents drift (e.g. one endpoint adding
- * a trailing slash, another stripping it).
- *
- * Spec: https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#canonical-server-uri
  */
 final class CanonicalResource
 {
     private const PATH = '/aisuite-mcp';
 
-    /**
-     * Build the canonical resource URI from the current request host.
-     *
-     * Format: `<scheme>://<host>/aisuite-mcp` — no trailing slash, no fragment.
-     *
-     * Resolution order:
-     *   1. PSR-7 request's NormalizedParams (TYPO3 v14 pattern, what middleware-driven
-     *      production code paths populate).
-     *   2. Direct read of $_SERVER (CLI tools that set HTTP_HOST manually, e.g.
-     *      McpCreateTokenCommand running with the host as a CLI argument).
-     */
     public static function get(): string
     {
         $host = '';
@@ -56,10 +40,6 @@ final class CanonicalResource
         return rtrim($host, '/').self::PATH;
     }
 
-    /**
-     * Spec-tolerant comparison: case-insensitive scheme/host, case-sensitive path,
-     * tolerates a trailing slash on the candidate.
-     */
     public static function matches(string $candidate): bool
     {
         $expected = self::normalize(self::get());

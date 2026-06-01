@@ -2,19 +2,11 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp;
+namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
-/**
- * Registry for all MCP tools.
- *
- * Currently supports tool registration via DI tags (aisuite.mcp.tool).
- * Will be extended in a later phase to also support:
- * - DB-defined Custom Tools (DynamicCustomToolFactory)
- * - PSR-14 Event-based tools (CollectToolsEvent)
- */
 class ToolRegistry
 {
     /**
@@ -54,19 +46,13 @@ class ToolRegistry
         return $this->tools[$name] ?? null;
     }
 
-    /**
-     * Validates that third-party tools extend AbstractCustomTool.
-     */
     private function validateToolOrigin(ToolInterface $tool): bool
     {
         $className = get_class($tool);
 
-        // Built-in tools: always allowed
         if (str_starts_with($className, self::BUILTIN_NAMESPACE)) {
             return true;
         }
-
-        // AbstractCustomTool: allowed (enforces server route)
 
         // Third-party extending AbstractTool directly: rejected
         if ($tool instanceof AbstractTool

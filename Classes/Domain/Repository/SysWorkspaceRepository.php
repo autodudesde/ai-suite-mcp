@@ -17,8 +17,6 @@ class SysWorkspaceRepository
     ) {}
 
     /**
-     * Return all workspaces, ordered by title.
-     *
      * @return list<array{uid: int, title: string}>
      */
     public function findAll(): array
@@ -42,8 +40,6 @@ class SysWorkspaceRepository
     }
 
     /**
-     * Return uids of all workspaces, ordered by uid ASC.
-     *
      * @return list<int>
      */
     public function findAllUids(): array
@@ -62,8 +58,6 @@ class SysWorkspaceRepository
     }
 
     /**
-     * Look up workspace titles by uid.
-     *
      * @param list<int> $uids
      *
      * @return array<int, string> map of uid => title

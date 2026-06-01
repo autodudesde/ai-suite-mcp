@@ -35,8 +35,8 @@
                 <target>Die Änderungen konnten nicht gespeichert werden. Mögliche Ursache: fehlende Schreibrechte auf der Zielseite. Details: %s</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.invalid_input">
-                <source>Please check the parameter "%s": %s</source>
-                <target>Bitte überprüfe den Parameter „%s": %s</target>
+                <source>Please check the input: %s</source>
+                <target>Bitte überprüfe die Eingabe: %s</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.session_budget_reached">
                 <source>You've used %d credits in this session — great productivity! Your session budget of %d credits has been reached. Start a new session or contact your administrator for a higher budget.</source>

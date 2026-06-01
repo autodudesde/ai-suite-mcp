@@ -13,11 +13,6 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 /**
  * Protected Resource Metadata (RFC 9728).
  * GET /.well-known/oauth-protected-resource.
- *
- * Tells MCP clients which authorization server protects this resource
- * and which scopes are available. This is the entry point for the
- * OAuth 2.1 discovery flow used by Claude.ai Connectors and other
- * external MCP clients.
  */
 class ProtectedResourceMetadataEndpoint
 {
@@ -34,6 +29,7 @@ class ProtectedResourceMetadataEndpoint
                 'mcp:generate',
                 'mcp:translate',
                 'mcp:image',
+                'mcp:media',
                 'mcp:workflow',
                 'mcp:easy-language',
                 'mcp:glossary',

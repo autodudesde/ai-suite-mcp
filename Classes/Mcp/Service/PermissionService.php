@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp;
+namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
@@ -10,8 +10,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 
 /**
- * Validates MCP tool access by checking both OAuth scopes and TYPO3 permissions.
- *
  * Scope → TYPO3 Permission mapping:
  *   mcp:read       → (base permission, always granted if scope present)
  *   mcp:write      → (no TYPO3 permission required; preview+confirm enforced per tool)
@@ -24,12 +22,9 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
  *   mcp:easy-language → enable_rte_aieasylanguageplugin
  *   mcp:manage     → enable_mcp_access
  */
-class McpPermissionService
+class PermissionService
 {
     /**
-     * Maps tool names to their required OAuth scope.
-     * Tools not listed here default to 'mcp:read'.
-     *
      * @var array<string, string>
      */
     private const TOOL_SCOPE_MAP = [
@@ -48,12 +43,14 @@ class McpPermissionService
         'getPageTypes' => 'mcp:read',
         'getContentTypes' => 'mcp:read',
         'getColumnPositions' => 'mcp:read',
-
-        // Record tools — CRUD (no AI, just DataHandler)
         'previewRecords' => 'mcp:write',
         'writeRecords' => 'mcp:write',
         'readRecords' => 'mcp:read',
+        'compareWithLive' => 'mcp:read',
         'deleteRecords' => 'mcp:write',
+        'copyRecords' => 'mcp:write',
+        'moveRecords' => 'mcp:write',
+        'localizeRecord' => 'mcp:write',
         'savePageTree' => 'mcp:write',
 
         // Generate tools
@@ -71,10 +68,13 @@ class McpPermissionService
         // Image tools
         'generateImage' => 'mcp:image',
 
+        // Media tools (upload existing media to FAL)
+        'uploadMedia' => 'mcp:media',
+
         // Content optimization
         'optimizeContent' => 'mcp:generate',
 
-        // Batch tools (page/folder-wide async operations — gated by enable_massaction_generation)
+        // Batch tools (page/folder-wide async operations)
         'batchGenerateMetadata' => 'mcp:workflow',
         'batchGenerateFileMetadata' => 'mcp:workflow',
         'batchGenerateFolderMetadata' => 'mcp:workflow',
@@ -94,8 +94,6 @@ class McpPermissionService
     ];
 
     /**
-     * Maps scopes to TYPO3 permission keys. A scope may require ANY of the listed permissions.
-     *
      * @var array<string, list<string>>
      */
     private const SCOPE_PERMISSION_MAP = [
@@ -111,6 +109,9 @@ class McpPermissionService
         ],
         'mcp:image' => [
             'tx_aisuite_features:enable_image_generation',
+        ],
+        'mcp:media' => [
+            'tx_aisuite_features:enable_mcp_media_upload',
         ],
         'mcp:workflow' => [
             'tx_aisuite_features:enable_massaction_generation',
@@ -133,9 +134,6 @@ class McpPermissionService
     ) {}
 
     /**
-     * Validate that the current user has both the required OAuth scope
-     * and the matching TYPO3 permission to use a tool.
-     *
      * @param string       $toolName    Tool name to check
      * @param list<string> $tokenScopes Scopes from the OAuth token
      *
@@ -158,17 +156,11 @@ class McpPermissionService
         }
     }
 
-    /**
-     * Get the required scope for a tool.
-     */
     public function getRequiredScope(string $toolName): ?string
     {
         return self::TOOL_SCOPE_MAP[$toolName] ?? 'mcp:read';
     }
 
-    /**
-     * Validate that the user has permission to use a specific AI model.
-     */
     public function validateModelAccess(string $modelIdentifier): void
     {
         $permission = 'tx_aisuite_models:'.$modelIdentifier;
@@ -181,8 +173,6 @@ class McpPermissionService
     }
 
     /**
-     * Get all scopes the current backend user is eligible for.
-     *
      * @return list<string>
      */
     public function getAvailableScopes(): array
@@ -209,8 +199,28 @@ class McpPermissionService
     }
 
     /**
-     * Validate that the user has a TYPO3 permission matching the scope.
+     * @param list<string> $tokenScopes
      */
+    public function isScopeGranted(string $scope, array $tokenScopes): bool
+    {
+        if (!in_array($scope, $tokenScopes, true)) {
+            return false;
+        }
+
+        $requiredPermissions = self::SCOPE_PERMISSION_MAP[$scope] ?? [];
+        if (empty($requiredPermissions)) {
+            return true;
+        }
+
+        foreach ($requiredPermissions as $permission) {
+            if ($this->backendUserService->checkPermissions($permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function validatePermissionForScope(string $scope): void
     {
         $requiredPermissions = self::SCOPE_PERMISSION_MAP[$scope] ?? [];

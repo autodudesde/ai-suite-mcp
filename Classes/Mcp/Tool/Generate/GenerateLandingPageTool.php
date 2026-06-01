@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Generate;
 
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
@@ -66,8 +66,8 @@ class GenerateLandingPageTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'NOT YET IMPLEMENTED. Generate a complete landing page with SEO metadata and content elements. '
-            .ToolDescriptionSnippets::APPROACH_A.'Considers existing site structure to avoid duplicates. '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A.'Considers existing site structure to avoid duplicates. '
+            .DescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
     }
 
     public function getSchema(): array

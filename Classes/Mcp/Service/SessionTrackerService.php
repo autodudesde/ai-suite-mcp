@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp;
+namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuiteMcp\Domain\Repository\TokenRepository;
 
-class McpSessionCreditTracker
+class SessionTrackerService
 {
     private int $creditsUsedInSession = 0;
     private string $tokenId = '';
@@ -17,9 +17,6 @@ class McpSessionCreditTracker
         private readonly TokenRepository $tokenRepository,
     ) {}
 
-    /**
-     * Load session credit state from DB token record.
-     */
     public function initializeFromToken(string $tokenId, int $maxCreditsPerSession = 0): void
     {
         $this->tokenId = $tokenId;

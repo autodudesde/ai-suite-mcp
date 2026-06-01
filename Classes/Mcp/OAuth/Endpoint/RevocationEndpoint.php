@@ -14,9 +14,6 @@ use TYPO3\CMS\Core\Http\Response;
 /**
  * OAuth 2.1 Token Revocation Endpoint (S18).
  * POST /aisuite-mcp/oauth/revoke.
- *
- * Always returns HTTP 200 — even for unknown tokens.
- * This prevents token-existence probing attacks.
  */
 class RevocationEndpoint
 {
@@ -40,7 +37,6 @@ class RevocationEndpoint
                     'ip' => $this->clientIpService->resolve($request),
                 ]);
             } catch (\Throwable $e) {
-                // Silently ignore — always 200 to prevent probing
                 $this->logger->notice('Token revocation for unknown/invalid token', [
                     'error' => $e->getMessage(),
                 ]);

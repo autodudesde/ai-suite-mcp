@@ -10,9 +10,9 @@ use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\MetadataService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -23,7 +23,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
     protected ?string $requiredScope = 'mcp:generate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
         private readonly MetadataService $metadataService,
@@ -40,9 +40,9 @@ class GenerateFileMetadataTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Generate alt text, title, and description for a file. Write target: sys_file_metadata (not sys_file) — call getFileInfo(fileUid) to find the metadata record UID. Two approaches: '
-            .ToolDescriptionSnippets::APPROACH_A.'Uses AI Vision, recommended for image alt text. '
-            .'(B) For title/description only (no vision needed), compose manually '.ToolDescriptionSnippets::APPROACH_B_PERSIST.' '
-            .ToolDescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+            .DescriptionSnippets::APPROACH_A.'Uses AI Vision, recommended for image alt text. '
+            .'(B) For title/description only (no vision needed), compose manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
+            .DescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
     }
 
     public function getSchema(): array
@@ -77,9 +77,8 @@ class GenerateFileMetadataTool extends AbstractAiTool
         $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), 1);
 
         $this->permissionService->validateModelAccess($model);
-        $this->assertFileReadAccess($fileUid);
+        $this->recordAccess->assertFileReadAccess($fileUid);
 
-        // Fetch file content (base64-encoded) the same way the backend UI does
         try {
             $fileContent = $this->metadataService->getFileContent($fileUid);
             $filename = $this->metadataService->getFilename($fileUid);
@@ -102,7 +101,6 @@ class GenerateFileMetadataTool extends AbstractAiTool
         $allSuggestions = [];
         $lastResult = [];
 
-        // Send one request per field, matching the original controller behavior
         foreach ($fields as $fieldLabel) {
             $uuid = $this->uuidService->generateUuid();
 
@@ -130,7 +128,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
             json_encode($allSuggestions, JSON_PRETTY_PRINT),
         );
 
-        return $this->appendCreditInfo(new CallToolResult([new TextContent($text)]), $lastResult);
+        return $this->appendCreditInfo($this->textResult($text), $lastResult);
     }
 
     private function listModels(): CallToolResult
@@ -148,13 +146,11 @@ class GenerateFileMetadataTool extends AbstractAiTool
             );
         }
 
-        // Filter to vision-capable models only
         $libraries = $librariesAnswer->getResponseData()['textGenerationLibraries'] ?? [];
         $filtered = $this->libraryService->prepareLibraries(
             array_filter($libraries, fn ($lib) => in_array($lib['model_identifier'] ?? '', ['Vision', 'MittwaldMinistral14BVision'], true)),
         );
 
-        // Fallback: show all text models if no vision models found
         if (empty($filtered)) {
             $filtered = $this->libraryService->prepareLibraries($libraries);
         }
@@ -175,6 +171,6 @@ class GenerateFileMetadataTool extends AbstractAiTool
         $text .= sprintf("\nEach generation costs %d credit(s). Tell the user this before they choose.", $cost);
         $text .= "\nDo NOT pick a model yourself. Show this exact list and wait for the user to choose.";
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

@@ -6,23 +6,19 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
 use AutoDudes\AiSuite\Service\TranslationService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Retrieve the generated suggestions/results from a completed background batch operation.
- * Optionally apply translation results directly (for batch translations).
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class GetTaskResultsTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly TranslationService $translationService,
     ) {
@@ -64,13 +60,13 @@ class GetTaskResultsTool extends AbstractTool
         $limit = max(1, min(50, (int) ($params['limit'] ?? 10)));
 
         if ('' === $taskId) {
-            return new CallToolResult([new TextContent('taskId is required.')], isError: true);
+            return $this->textError('taskId is required.');
         }
 
         $tasks = $this->backgroundTaskRepository->findByParentUuid($taskId);
 
         if (empty($tasks)) {
-            return new CallToolResult([new TextContent(sprintf('No tasks found for ID: %s', $taskId))], isError: true);
+            return $this->textError(sprintf('No tasks found for ID: %s', $taskId));
         }
 
         // Check if this is a translation batch
@@ -123,7 +119,7 @@ class GetTaskResultsTool extends AbstractTool
 
         $text .= "\n\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to verify.";
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
     /**
@@ -146,7 +142,7 @@ class GetTaskResultsTool extends AbstractTool
         }
 
         if (empty($resultGroups)) {
-            return new CallToolResult([new TextContent('No results available for this batch.')]);
+            return $this->textResult('No results available for this batch.');
         }
 
         $groupKeys = array_keys($resultGroups);
@@ -179,6 +175,6 @@ class GetTaskResultsTool extends AbstractTool
             $text .= 'To apply these translations, call `getTaskResults` again with `apply: true` after user confirmation.';
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

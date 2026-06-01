@@ -6,25 +6,21 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\SysFileMetadataRepository;
 use AutoDudes\AiSuite\Domain\Repository\SysFileReferenceRepository;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FilePreviewService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Retrieve file info: metadata (all languages), file references, or both.
- * Consolidates the former getFileMetadata and getFileReferences tools.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class GetFileInfoTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly SysFileMetadataRepository $sysFileMetadataRepository,
         private readonly SysFileReferenceRepository $sysFileReferenceRepository,
         private readonly FilePreviewService $filePreviewService,
@@ -72,7 +68,7 @@ class GetFileInfoTool extends AbstractTool
         $includeThumbnail = (bool) ($params['includeThumbnail'] ?? true);
 
         try {
-            $file = $this->assertFileReadAccess($fileUid);
+            $file = $this->recordAccess->assertFileReadAccess($fileUid);
         } catch (\RuntimeException $e) {
             $this->logger->warning('GetFileInfo: file not found', [
                 'fileUid' => $fileUid,

@@ -12,8 +12,6 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 /**
  * OAuth 2.1 Authorization Server Metadata.
  * GET /.well-known/oauth-authorization-server.
- *
- * Returns the server's OAuth configuration for MCP client auto-discovery.
  */
 class MetadataEndpoint
 {
@@ -37,6 +35,7 @@ class MetadataEndpoint
                 'mcp:generate',
                 'mcp:translate',
                 'mcp:image',
+                'mcp:media',
                 'mcp:workflow',
                 'mcp:easy-language',
                 'mcp:glossary',

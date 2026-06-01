@@ -12,8 +12,8 @@ use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\TokenRepository;
-use AutoDudes\AiSuiteMcp\Mcp\McpPermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
@@ -43,7 +43,7 @@ class McpController extends AbstractBackendController
         TranslationService $translationService,
         EventDispatcher $eventDispatcher,
         AiSuiteContext $aiSuiteContext,
-        protected readonly McpPermissionService $permissionService,
+        protected readonly PermissionService $permissionService,
         protected readonly ExtensionConfiguration $extensionConfiguration,
         protected readonly OAuthService $oauthService,
         protected readonly TokenRepository $tokenRepository,
@@ -149,7 +149,6 @@ class McpController extends AbstractBackendController
         $mcpEnabled = (bool) ($extConf['enableMcp'] ?? false);
         $beUserUid = (int) ($this->aiSuiteContext->backendUserService->getBackendUser()?->user['uid'] ?? 0);
 
-        // Get active tokens for current user
         $tokens = [];
         if ($mcpEnabled) {
             $tokens = $this->tokenRepository->findActiveTokensForUser($beUserUid);
@@ -163,7 +162,6 @@ class McpController extends AbstractBackendController
         $allowedOrigins = trim((string) ($extConf['mcpAllowedOrigins'] ?? ''));
         $allowedRedirectUris = trim((string) ($extConf['mcpAllowedRedirectUris'] ?? ''));
 
-        // Workspace selection options for the create-token form
         $availableWorkspaces = $this->resolveAvailableWorkspaces();
         $defaultWorkspaceLabel = $this->resolveDefaultWorkspaceLabel();
         $tokens = $this->decorateTokensWithWorkspaceTitle($tokens);

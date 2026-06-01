@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Batch-generate file metadata for all files in one or more FAL folders.
- * Resolves folder paths to file UIDs, then delegates to the same logic as BatchGenerateFileMetadataTool.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateFolderMetadataTool extends BatchGenerateFileMetadataTool
 {
@@ -25,7 +21,7 @@ class BatchGenerateFolderMetadataTool extends BatchGenerateFileMetadataTool
     {
         return 'Generate file metadata (alt text, title, description) for all files in one or more FAL folders using an external AI model — costs credits per file. '
             .'For specific files by UID, use batchGenerateFileMetadata instead. '
-            .ToolDescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC_FLOW;
     }
 
     public function getSchema(): array
@@ -56,10 +52,9 @@ class BatchGenerateFolderMetadataTool extends BatchGenerateFileMetadataTool
         $folderIdentifiers = $params['folderIdentifiers'] ?? [];
 
         if (empty($folderIdentifiers)) {
-            return new CallToolResult([new TextContent('folderIdentifiers must be a non-empty array.')], isError: true);
+            return $this->textError('folderIdentifiers must be a non-empty array.');
         }
 
-        // Resolve all folders to file UIDs
         $fileUids = [];
         foreach ($folderIdentifiers as $folder) {
             try {
@@ -78,10 +73,9 @@ class BatchGenerateFolderMetadataTool extends BatchGenerateFileMetadataTool
         }
 
         if (empty($fileUids)) {
-            return new CallToolResult([new TextContent('No files found in the specified folders.')], isError: true);
+            return $this->textError('No files found in the specified folders.');
         }
 
-        // Delegate to parent with resolved UIDs
         $params['fileUids'] = array_unique($fileUids);
         unset($params['folderIdentifiers']);
 

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FilePreviewService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
@@ -21,7 +21,7 @@ class ListFilesTool extends AbstractTool
     protected ?string $requiredScope = 'mcp:read';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly FilePreviewService $filePreviewService,
     ) {
         parent::__construct($mcpToolContext);
@@ -86,7 +86,6 @@ class ListFilesTool extends AbstractTool
         $limit = (int) ($params['limit'] ?? 10);
         $offset = (int) ($params['offset'] ?? 0);
 
-        // Normalize FAL identifier (e.g. "1:/user_upload/") — ensure storage prefix and trailing slash
         $combinedIdentifier = $folderInput;
         if (!preg_match('/^\d+:/', $combinedIdentifier)) {
             $combinedIdentifier = '1:'.$combinedIdentifier;
@@ -97,7 +96,7 @@ class ListFilesTool extends AbstractTool
         $combinedIdentifier = $storageUid.':'.$folderPath;
 
         try {
-            $folder = $this->assertFolderReadAccess($combinedIdentifier);
+            $folder = $this->recordAccess->assertFolderReadAccess($combinedIdentifier);
             $storage = $folder->getStorage();
         } catch (\Throwable $e) {
             $this->logger->error('ListFiles: folder not accessible, aborting listing', [
@@ -112,19 +111,16 @@ class ListFilesTool extends AbstractTool
             );
         }
 
-        // Get files from FAL
         $fileObjects = $recursive
             ? $this->getFilesRecursive($storage, $folder, 0, 10)
             : $storage->getFilesInFolder($folder);
 
-        // Apply filters
         $filtered = [];
         foreach ($fileObjects as $fileObject) {
             if (!$fileObject instanceof File) {
                 continue;
             }
 
-            // File type filter
             if ('all' !== $fileType) {
                 $mimePrefix = match ($fileType) {
                     'image' => 'image/',
@@ -138,7 +134,6 @@ class ListFilesTool extends AbstractTool
                 }
             }
 
-            // Missing metadata filter
             if ($onlyMissing) {
                 $meta = $fileObject->getMetaData()->get();
                 $hasAlt = '' !== trim((string) ($meta['alternative'] ?? ''));
@@ -155,7 +150,6 @@ class ListFilesTool extends AbstractTool
         $total = count($filtered);
         $paged = array_slice($filtered, $offset, $limit);
 
-        // Build file list
         $files = [];
         foreach ($paged as $file) {
             $meta = $file->getMetaData()->get();
@@ -180,7 +174,6 @@ class ListFilesTool extends AbstractTool
             'pagination' => ['total' => $total, 'limit' => $limit, 'offset' => $offset, 'hasMore' => ($offset + $limit) < $total],
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))];
 
-        // Generate thumbnails for image files
         if ($includeThumbnails) {
             foreach ($paged as $file) {
                 $thumbnail = $this->filePreviewService->generate($file, 50, 50);
@@ -194,8 +187,6 @@ class ListFilesTool extends AbstractTool
     }
 
     /**
-     * Recursively collect files from a folder and its subfolders.
-     *
      * @return list<File>
      */
     private function getFilesRecursive(ResourceStorage $storage, Folder $folder, int $depth, int $maxDepth): array

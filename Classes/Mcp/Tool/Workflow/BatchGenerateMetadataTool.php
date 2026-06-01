@@ -10,28 +10,22 @@ use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuite\Service\WorkflowProcessingService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ContentFetchService;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
-use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Batch-generate metadata for multiple pages using an external AI model.
- * Delegates to WorkflowProcessingService for payload building and background task creation.
- * Use getTaskStatus to check progress.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateMetadataTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:generate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
         private readonly WorkflowProcessingService $workflowProcessingService,
@@ -49,7 +43,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Generate SEO metadata for multiple pages using an external AI model — costs credits per page. '
-            .ToolDescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC_FLOW;
     }
 
     public function getSchema(): array
@@ -83,7 +77,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
         $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $pageIds[0] ?? 1);
 
         if (empty($pageIds)) {
-            return new CallToolResult([new TextContent('pageIds must be a non-empty array.')], isError: true);
+            return $this->textError('pageIds must be a non-empty array.');
         }
 
         if ('' === $model) {
@@ -117,13 +111,11 @@ class BatchGenerateMetadataTool extends AbstractAiTool
             }
             $text .= "\n\nPresent both options to the user and ask which approach they prefer.";
 
-            return new CallToolResult([new TextContent($text)]);
+            return $this->textResult($text);
         }
 
         $this->permissionService->validateModelAccess($model);
 
-        // Filter valid pages and build pages map for WorkflowProcessingService.
-        // validatePageForAi enforces PAGE_SHOW permission (skip-and-report) and the AI opt-out.
         $pages = [];
         $skipped = [];
 
@@ -131,7 +123,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
             $pageId = (int) $pageId;
 
             try {
-                $validated = $this->validatePageForAi($pageId, Permission::PAGE_SHOW);
+                $validated = $this->validatePageForAi($pageId);
             } catch (InsufficientPermissionException $e) {
                 $this->logger->warning('BatchGenerateMetadata: skipping page — insufficient permission', [
                     'pageId' => $pageId,
@@ -151,13 +143,12 @@ class BatchGenerateMetadataTool extends AbstractAiTool
         }
 
         if (empty($pages)) {
-            return new CallToolResult([new TextContent('No valid pages found to process.')], isError: true);
+            return $this->textError('No valid pages found to process.');
         }
 
         $parentUuid = $this->uuidService->generateUuid();
         $languageParts = [strtoupper($langIsoCode), (string) 0];
 
-        // Use ContentFetchService as content fetcher (HTTP preview + DB fallback)
         $contentFetcher = function (int $pageUid, int $languageId): string {
             return $this->contentFetchService->fetchPageContent($pageUid, $languageId);
         };
@@ -224,6 +215,6 @@ class BatchGenerateMetadataTool extends AbstractAiTool
 
         $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

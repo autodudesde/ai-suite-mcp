@@ -7,12 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Domain\Repository;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 
-/**
- * Generic, table-agnostic record lookups used by ReadRecordTool and WriteRecordTool.
- *
- * Caller is responsible for permission checks and TCA-validation of field names.
- * This repository only assembles the SQL — it trusts its inputs.
- */
 class RecordRepository
 {
     public function __construct(
@@ -20,11 +14,6 @@ class RecordRepository
     ) {}
 
     /**
-     * Find UIDs matching the given criteria.
-     *
-     * Empty-string and null filter values both match "field is empty or NULL".
-     * DeletedRestriction is applied automatically via the default restriction container.
-     *
      * @param array<string, null|scalar> $fieldFilters
      * @param null|list<int>             $allowedPids  null = no PID-IN restriction (admin, rootlevel table, or $pid mode)
      * @param null|string                $extraWhere   raw SQL andWhere() — used for the pages page-perm-clause
@@ -72,11 +61,65 @@ class RecordRepository
         return array_map(static fn ($v): int => (int) $v, $query->executeQuery()->fetchFirstColumn());
     }
 
+    public function countLiveRecords(string $table, int $pid): int
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable($table);
+
+        return (int) $qb
+            ->count('uid')
+            ->from($table)
+            ->where(
+                $qb->expr()->eq('pid', $qb->createNamedParameter($pid, Connection::PARAM_INT)),
+                $qb->expr()->eq('t3ver_wsid', $qb->createNamedParameter(0, Connection::PARAM_INT)),
+            )
+            ->executeQuery()
+            ->fetchOne()
+        ;
+    }
+
     /**
-     * UID of the last record on the page (greatest sortBy value).
-     * If $colPos is non-null, restrict to that column position — used for tt_content
-     * stacking inside a colPos slot.
+     * @param array<string, scalar> $fieldFilters
      */
+    public function countByCriteria(string $table, array $fieldFilters): int
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $query = $qb->count('uid')->from($table);
+
+        foreach ($fieldFilters as $field => $value) {
+            $query->andWhere($qb->expr()->eq($field, $qb->createNamedParameter($value)));
+        }
+
+        return (int) $query->executeQuery()->fetchOne();
+    }
+
+    /**
+     * @return null|array{value: string, count: int}
+     */
+    public function mostCommonValue(string $table, string $field, ?string $typeField, ?string $typeValue): ?array
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $query = $qb
+            ->select($field)
+            ->addSelectLiteral($qb->expr()->count('uid', 'cnt'))
+            ->from($table)
+            ->where($qb->expr()->neq($field, $qb->createNamedParameter('')))
+            ->groupBy($field)
+            ->orderBy('cnt', 'DESC')
+            ->setMaxResults(1)
+        ;
+
+        if (null !== $typeField && null !== $typeValue && '' !== $typeValue) {
+            $query->andWhere($qb->expr()->eq($typeField, $qb->createNamedParameter($typeValue)));
+        }
+
+        $row = $query->executeQuery()->fetchAssociative();
+        if (false === $row || null === ($row[$field] ?? null)) {
+            return null;
+        }
+
+        return ['value' => (string) $row[$field], 'count' => (int) $row['cnt']];
+    }
+
     public function findLastUidOnPage(
         string $table,
         int $pageId,

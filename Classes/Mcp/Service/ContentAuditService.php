@@ -8,19 +8,12 @@ use AutoDudes\AiSuite\Domain\Repository\PagesRepository;
 use AutoDudes\AiSuite\Domain\Repository\SysFileReferenceRepository;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\SiteService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Context\Context;
 
 class ContentAuditService
 {
-    /**
-     * Counter for sys_file_reference / image-issue rows that point to pages outside the
-     * BE user's webmount and were therefore excluded from the audit report. Reset per audit() call.
-     */
-    private int $excludedDueToPermissions = 0;
-
     public function __construct(
         private readonly PagesRepository $pagesRepository,
         private readonly SysFileReferenceRepository $sysFileReferenceRepository,
@@ -38,19 +31,18 @@ class ContentAuditService
      */
     public function audit(int $pageId, int $depth, array $checks, array $targetLanguages, int $limit = 100): array
     {
-        $this->excludedDueToPermissions = 0;
+        $excludedDueToPermissions = 0;
         $pageIds = $this->pagesRepository->getSubtreePageIdsWorkspaceAware($pageId, $depth, $this->currentWorkspaceId());
 
-        // Webmount whitelist: drop pages outside the user's accessible tree.
         $beUser = $this->backendUserService->getBackendUser();
         if (null !== $beUser && !$beUser->isAdmin() && [] !== $pageIds) {
             $allowedPids = $this->backendUserService->getSearchableWebmounts($pageId, max(1, $depth));
-            if (count($allowedPids) > AbstractTool::MAX_FILTERABLE_PAGES) {
+            if (count($allowedPids) > RecordAccessService::MAX_FILTERABLE_PAGES) {
                 throw new \RuntimeException('Audit scope too large — provide a more specific pageId or reduce depth.');
             }
             $allowed = array_flip($allowedPids);
             $filtered = array_values(array_filter($pageIds, static fn (int $id): bool => isset($allowed[$id])));
-            $this->excludedDueToPermissions += count($pageIds) - count($filtered);
+            $excludedDueToPermissions += count($pageIds) - count($filtered);
             $pageIds = $filtered;
         }
 
@@ -85,7 +77,7 @@ class ContentAuditService
                 'totalIssues' => $totalIssues,
                 'bySeverity' => $bySeverity,
                 'limited' => $totalIssues > $limit,
-                'excludedDueToPermissions' => $this->excludedDueToPermissions,
+                'excludedDueToPermissions' => $excludedDueToPermissions,
             ],
             'issues' => $issues,
         ];
@@ -196,7 +188,6 @@ class ContentAuditService
     {
         $refs = $this->sysFileReferenceRepository->findImagesWithoutAlt($pageIds, $this->currentWorkspaceId());
 
-        // Group by page
         $byPage = [];
         foreach ($refs as $ref) {
             $pid = (int) $ref['pid'];

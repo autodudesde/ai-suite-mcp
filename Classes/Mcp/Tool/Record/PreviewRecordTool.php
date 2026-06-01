@@ -5,14 +5,10 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Preview what writeRecords would create/update — without actually writing.
- * Supports single record or batch (multiple records at once).
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class PreviewRecordTool extends AbstractDataTool
 {
@@ -53,7 +49,7 @@ class PreviewRecordTool extends AbstractDataTool
         $records = $params['records'] ?? [];
 
         if (!is_array($records) || empty($records)) {
-            return new CallToolResult([new TextContent('records must be a non-empty array.')], isError: true);
+            return $this->textError('records must be a non-empty array.');
         }
 
         return $this->previewBatch($records);
@@ -80,17 +76,18 @@ class PreviewRecordTool extends AbstractDataTool
                 continue;
             }
 
-            $this->validateTableReadAccess($table);
             $isCreate = null === $uid;
 
             try {
+                $this->recordAccess->validateTableReadAccess($table);
                 if ($isCreate && null !== $pid) {
-                    $this->assertRecordCreateAccess($table, $pid);
+                    $this->recordAccess->assertRecordCreateAccess($table, $pid);
                 } elseif (!$isCreate) {
-                    $this->assertRecordEditAccess($table, $uid);
+                    $this->recordAccess->assertRecordEditAccess($table, $uid);
                 }
+                $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
             } catch (InsufficientPermissionException $e) {
-                $this->logger->warning('PreviewRecord: skipping — insufficient permission', [
+                $this->logger->warning('PreviewRecord: skipping record — insufficient permission', [
                     'table' => $table,
                     'uid' => $uid,
                     'pid' => $pid,
@@ -100,8 +97,8 @@ class PreviewRecordTool extends AbstractDataTool
                 $text .= sprintf("### Record %d: ⛔ Skipped — %s\n\n", $i, $e->getMessage());
 
                 continue;
-            } catch (\RuntimeException $e) {
-                $this->logger->warning('PreviewRecord: skipping — runtime error', [
+            } catch (InvalidParameterException|\RuntimeException $e) {
+                $this->logger->warning('PreviewRecord: skipping record — invalid input', [
                     'table' => $table,
                     'uid' => $uid,
                     'pid' => $pid,
@@ -112,10 +109,10 @@ class PreviewRecordTool extends AbstractDataTool
 
                 continue;
             }
-            $fields = $this->filterAccessibleFields($table, $fields);
+
             $action = $isCreate ? 'CREATE' : 'UPDATE';
 
-            $text .= sprintf("### Record %d: %s `%s` (%s)\n", $i, $action, $table, $this->getTableLabel($table));
+            $text .= sprintf("### Record %d: %s `%s` (%s)\n", $i, $action, $table, $this->tcaLabel->getTableLabel($table));
             if ($isCreate && null !== $pid) {
                 $text .= sprintf('Page: %d', $pid);
                 $position = (string) ($record['position'] ?? 'end');
@@ -125,7 +122,7 @@ class PreviewRecordTool extends AbstractDataTool
             }
 
             foreach ($fields as $field => $value) {
-                $label = $this->getFieldLabel($table, (string) $field);
+                $label = $this->tcaLabel->getFieldLabel($table, (string) $field);
                 $displayValue = is_string($value) ? $value : json_encode($value);
                 if (is_string($displayValue) && mb_strlen($displayValue) > 300) {
                     $displayValue = mb_substr($displayValue, 0, 300).'...';
@@ -139,6 +136,6 @@ class PreviewRecordTool extends AbstractDataTool
         $text .= "---\n";
         $text .= 'Show this preview to the user and wait for their confirmation before saving.';
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

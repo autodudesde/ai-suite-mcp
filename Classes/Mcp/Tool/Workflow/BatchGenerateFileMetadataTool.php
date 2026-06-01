@@ -11,27 +11,22 @@ use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\MetadataService;
 use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuite\Service\WorkflowProcessingService;
-use AutoDudes\AiSuiteMcp\Mcp\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
 
-/**
- * Batch-generate metadata (alt text, title, description) for multiple files.
- * Delegates to WorkflowProcessingService for payload building, batching, and server communication.
- * Use getTaskStatus to check progress.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateFileMetadataTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:generate';
 
     public function __construct(
-        McpToolContext $mcpToolContext,
+        ToolContext $mcpToolContext,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
         private readonly WorkflowProcessingService $workflowProcessingService,
@@ -49,7 +44,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
     {
         return 'Generate file metadata (alt text, title, description) for specific files using an external AI model — costs credits per file. '
             .'For processing all files in a folder, use batchGenerateFolderMetadata instead. '
-            .ToolDescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC_FLOW;
     }
 
     public function getSchema(): array
@@ -83,7 +78,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
         $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), 1);
 
         if (empty($fileUids)) {
-            return new CallToolResult([new TextContent('fileUids must be a non-empty array.')], isError: true);
+            return $this->textError('fileUids must be a non-empty array.');
         }
 
         if ('' === $model) {
@@ -116,7 +111,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
             }
             $text .= "\n\nPresent both options to the user and ask which approach they prefer.";
 
-            return new CallToolResult([new TextContent($text)]);
+            return $this->textResult($text);
         }
 
         $this->permissionService->validateModelAccess($model);
@@ -130,7 +125,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
 
             try {
                 // Filemount-aware permission check (skip-and-report).
-                $file = $this->assertFileReadAccess($fileUid);
+                $file = $this->recordAccess->assertFileReadAccess($fileUid);
             } catch (InsufficientPermissionException $e) {
                 $this->logger->warning('BatchGenerateFileMetadata: skipping file — insufficient permission', [
                     'fileUid' => $fileUid,
@@ -182,13 +177,12 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
         }
 
         if (empty($workflowDataFiles)) {
-            return new CallToolResult([new TextContent('No valid files found to process.')], isError: true);
+            return $this->textError('No valid files found to process.');
         }
 
         $parentUuid = $this->uuidService->generateUuid();
         $languageParts = [strtoupper($langIsoCode), (string) 0];
 
-        // Server expects one task per field (not "all") — each field maps to a PROMPTPREFIX_ constant
         $allFailedFiles = [];
 
         foreach ($fields as $field) {
@@ -206,7 +200,6 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
                 $this->sendRequestService,
             );
 
-            // Send remaining payload (processFilelistFilesForMetadataGeneration only flushes on size overflow)
             $remainingPayload = $result['payload'] ?? [];
             $remainingBulkPayload = $result['bulkPayload'] ?? [];
 
@@ -251,6 +244,6 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
 
         $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

@@ -28,7 +28,7 @@
                 <source>The changes could not be saved. This may be due to missing write permissions on the target page. Details: %s</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.invalid_input">
-                <source>Please check the parameter "%s": %s</source>
+                <source>Please check the input: %s</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.session_budget_reached">
                 <source>You've used %d credits in this session — great productivity! Your session budget of %d credits has been reached. Start a new session or contact your administrator for a higher budget.</source>

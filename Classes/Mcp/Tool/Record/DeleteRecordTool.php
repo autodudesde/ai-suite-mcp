@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
-use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -15,6 +16,13 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class DeleteRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
+
+    public function __construct(
+        ToolContext $mcpToolContext,
+        private readonly BatchResultBuilderService $batchResultBuilder,
+    ) {
+        parent::__construct($mcpToolContext);
+    }
 
     public function getName(): string
     {
@@ -48,70 +56,40 @@ class DeleteRecordTool extends AbstractDataTool
         $records = $params['records'] ?? [];
 
         if (!is_array($records) || empty($records)) {
-            return new CallToolResult([new TextContent('records must be a non-empty array.')], isError: true);
+            return $this->textError('records must be a non-empty array.');
         }
 
-        $results = [];
-
-        foreach ($records as $i => $record) {
+        return $this->batchResultBuilder->run($records, 'record(s)', function (mixed $record): array {
             $table = (string) ($record['table'] ?? '');
             $uid = (int) ($record['uid'] ?? 0);
 
             if ('' === $table || 0 === $uid) {
-                $results[] = sprintf('#%d: ❌ Skipped (missing table or uid)', $i + 1);
-
-                continue;
+                throw new InvalidParameterException('Skipped (missing table or uid).');
             }
 
-            $this->validateTableWriteAccess($table);
+            // Validation is now inside the per-item handler so an excluded/missing table marks only
+            // this record as failed instead of aborting the whole batch.
+            $this->recordAccess->validateTableWriteAccess($table);
 
             if (!$this->tcaCompatibilityService->hasSoftDelete($table)) {
-                $results[] = sprintf('#%d: ❌ %s does not support soft-delete — deletion refused', $i + 1, $table);
-
-                continue;
+                throw new InvalidParameterException(sprintf('%s does not support soft-delete — deletion refused.', $table));
             }
 
-            try {
-                $existing = $this->assertRecordEditAccess($table, $uid);
-            } catch (InsufficientPermissionException $e) {
-                $this->logger->warning('DeleteRecord: skipping — insufficient permission', [
-                    'table' => $table,
-                    'uid' => $uid,
-                    'reason' => $e->getMessage(),
-                ]);
-                $results[] = sprintf('#%d: ⛔ %s:%d skipped — %s', $i + 1, $table, $uid, $e->getMessage());
-
-                continue;
-            } catch (\RuntimeException $e) {
-                $this->logger->warning('DeleteRecord: record not found', [
-                    'table' => $table,
-                    'uid' => $uid,
-                    'reason' => $e->getMessage(),
-                ]);
-                $results[] = sprintf('#%d: ❌ %s:%d not found', $i + 1, $table, $uid);
-
-                continue;
-            }
+            $existing = $this->recordAccess->assertRecordEditAccess($table, $uid);
 
             $labelField = $this->tcaCompatibilityService->getLabelField($table);
             $recordLabel = $existing[$labelField] ?? $uid;
+            $tableLabel = $this->tcaLabel->getTableLabel($table);
 
             $dh = GeneralUtility::makeInstance(DataHandler::class);
             $dh->start([], [$table => [$uid => ['delete' => 1]]]);
             $dh->process_cmdmap();
 
             if ([] !== $dh->errorLog) {
-                $results[] = sprintf('#%d: ❌ %s "%s" (UID: %d) failed: %s', $i + 1, $this->getTableLabel($table), $recordLabel, $uid, implode(', ', $dh->errorLog));
-
-                continue;
+                throw new \RuntimeException(sprintf('%s "%s" (UID: %d) failed: %s', $tableLabel, $recordLabel, $uid, implode(', ', $dh->errorLog)));
             }
 
-            $results[] = sprintf('#%d: ✅ %s "%s" (UID: %d) deleted', $i + 1, $this->getTableLabel($table), $recordLabel, $uid);
-        }
-
-        $text = sprintf("## Delete result: %d record(s)\n\n", count($records));
-        $text .= implode("\n", $results);
-
-        return new CallToolResult([new TextContent($text)]);
+            return ['message' => sprintf('%s "%s" (UID: %d) deleted', $tableLabel, $recordLabel, $uid), 'uid' => $uid];
+        });
     }
 }

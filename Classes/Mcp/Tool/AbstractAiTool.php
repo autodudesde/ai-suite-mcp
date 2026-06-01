@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp;
+namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizer;
+use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
@@ -23,13 +24,13 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 abstract class AbstractAiTool extends AbstractTool
 {
     protected readonly SendRequestService $sendRequestService;
-    protected readonly McpSessionCreditTracker $creditTracker;
+    protected readonly SessionTrackerService $creditTracker;
     protected readonly ExtensionConfiguration $extensionConfiguration;
     protected readonly Context $typo3Context;
-    protected readonly DataHandlerSanitizer $dataHandlerSanitizer;
+    protected readonly DataHandlerSanitizerService $dataHandlerSanitizer;
     private bool $dataFlowNotified = false;
 
-    public function __construct(McpToolContext $mcpToolContext)
+    public function __construct(ToolContext $mcpToolContext)
     {
         parent::__construct($mcpToolContext);
         $this->sendRequestService = $mcpToolContext->sendRequestService;
@@ -40,9 +41,6 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * Send a request to the AI Suite Server.
-     * Sets X-AiSuite-Source: mcp header, handles errors gracefully (Q19).
-     *
      * @param array<string, mixed> $data
      * @param array<string, mixed> $models
      *
@@ -81,7 +79,6 @@ abstract class AbstractAiTool extends AbstractTool
             throw new \RuntimeException($body['message'] ?? 'Unknown server error');
         }
 
-        // Track credits
         $totalCredits = (int) ($body['totalCredits'] ?? 0);
         if ($totalCredits > 0 && $this->creditTracker->isInitialized()) {
             $this->creditTracker->trackUsage($totalCredits);
@@ -91,8 +88,6 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * Write data via TYPO3 DataHandler.
-     *
      * @param array<string, mixed> $data
      *
      * @throws \RuntimeException On DataHandler errors
@@ -114,8 +109,6 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * Append credit info to a tool response.
-     *
      * @param array<string, mixed> $serverResponse
      */
     protected function appendCreditInfo(CallToolResult $result, array $serverResponse): CallToolResult
@@ -132,7 +125,6 @@ abstract class AbstractAiTool extends AbstractTool
         if (!empty($content) && $content[0] instanceof TextContent) {
             $text = $content[0]->text.$creditInfo;
 
-            // Replace first TextContent but preserve all other content items (e.g. ImageContent)
             $newContent = $content;
             $newContent[0] = new TextContent($this->appendBranding($text));
 
@@ -162,9 +154,6 @@ abstract class AbstractAiTool extends AbstractTool
         return $text;
     }
 
-    /**
-     * Check if a page has opted out of AI processing.
-     */
     protected function isPageExcludedFromAi(int $pageId): bool
     {
         $tsConfig = BackendUtility::getPagesTSconfig($pageId);
@@ -173,12 +162,6 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * Validate that the BE user may operate on the page with the requested permission,
-     * the page exists, and is not excluded from AI processing. Returns the WSOL-resolved
-     * page record on success, or a CallToolResult error for the page-not-found / opt-out
-     * branches. Permission denial is thrown as InsufficientPermissionException and caught
-     * by AbstractTool::execute.
-     *
      * @param int $perm one of Permission::PAGE_SHOW | PAGE_EDIT | PAGE_NEW | CONTENT_EDIT
      *
      * @return array<string, mixed>|CallToolResult page record array, or error result
@@ -188,11 +171,11 @@ abstract class AbstractAiTool extends AbstractTool
      */
     protected function validatePageForAi(int $pageId, int $perm = Permission::PAGE_SHOW): array|CallToolResult
     {
-        $this->assertPagePerm($pageId, $perm);
+        $this->recordAccess->assertPagePerm($pageId, $perm);
 
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page) {
-            return new CallToolResult([new TextContent("Page {$pageId} not found.")], isError: true);
+            return $this->textError("Page {$pageId} not found.");
         }
 
         if ($this->isPageExcludedFromAi($pageId)) {
@@ -205,11 +188,6 @@ abstract class AbstractAiTool extends AbstractTool
         return $page;
     }
 
-    /**
-     * Resolve a language value to the actual ISO code via site configuration.
-     * Empty string resolves to the site's default language.
-     * A real ISO code (e.g. 'de', 'en') is returned as-is.
-     */
     protected function resolveLanguageIsoCode(string $language, int $pageId): string
     {
         if ('' !== $language) {
@@ -228,9 +206,6 @@ abstract class AbstractAiTool extends AbstractTool
         }
     }
 
-    /**
-     * Get workspace info text if writing to a workspace.
-     */
     protected function getWorkspaceInfo(): string
     {
         try {
@@ -249,12 +224,6 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * Shared model listing for AI tools that need a model selection step.
-     *
-     * Returns a CallToolResult with a numbered list of available models
-     * for the user to choose from. Used by all AI tools that accept an
-     * optional `model` parameter.
-     *
      * @param LibraryService        $libraryService injected from the concrete tool
      * @param string                $libraryType    GenerationLibraryEnumeration constant
      * @param string                $endpoint       server endpoint name
@@ -328,12 +297,10 @@ abstract class AbstractAiTool extends AbstractTool
         $text .= sprintf("\nEach operation costs %d credit(s).\n", $creditCost);
         $text .= 'Ask the user which model they would like to use.';
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 
     /**
-     * Resolve a FAL folder identifier (e.g. "1:/user_upload/") to an array of sys_file UIDs.
-     *
      * @return list<int>
      */
     protected function resolveFileUidsFromFolder(string $folderIdentifier): array
@@ -347,10 +314,8 @@ abstract class AbstractAiTool extends AbstractTool
         [$storagePrefix] = explode(':', $combinedIdentifier, 2);
         $combinedIdentifier = $storagePrefix.':'.$folderPath;
 
-        // Filemount-aware: throws InsufficientPermissionException if the folder is outside
-        // the BE user's mounts. Files inside the folder still get their own assertFileReadAccess
-        // pass in the calling batch tool to handle storage-cross references.
-        $folder = $this->assertFolderReadAccess($combinedIdentifier);
+        // Filemount-aware
+        $folder = $this->recordAccess->assertFolderReadAccess($combinedIdentifier);
         $files = $folder->getStorage()->getFilesInFolder($folder);
 
         return array_map(static fn ($file) => $file->getUid(), array_values($files));

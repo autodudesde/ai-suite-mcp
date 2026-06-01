@@ -17,13 +17,6 @@ use TYPO3\CMS\Core\Domain\Repository\PageRepository;
 use TYPO3\CMS\Core\Http\RequestFactory;
 use TYPO3\CMS\Core\Session\UserSessionManager;
 
-/**
- * Fetches page content for AI processing via frontend preview URL.
- *
- * Creates a temporary backend session for the authenticated MCP user,
- * fetches the rendered page via HTTP, then immediately removes the session.
- * Falls back to direct DB query if HTTP fetch fails.
- */
 class ContentFetchService
 {
     private const TEXT_FIELD_TYPES = ['text', 'input'];
@@ -69,10 +62,6 @@ class ContentFetchService
         private readonly LoggerInterface $logger,
     ) {}
 
-    /**
-     * Fetch page content for AI metadata generation.
-     * Tries HTTP preview first, falls back to DB extraction.
-     */
     public function fetchPageContent(int $pageId, int $languageUid = 0): string
     {
         // Skip HTTP preview when in a workspace
@@ -109,9 +98,6 @@ class ContentFetchService
         }
     }
 
-    /**
-     * Fetch rendered page HTML via preview URL with a temporary backend session.
-     */
     private function fetchViaPreviewUrl(int $pageId, int $languageUid): string
     {
         $previewUrl = $this->buildPreviewUrl($pageId, $languageUid);
@@ -143,14 +129,10 @@ class ContentFetchService
 
             return $response->getBody()->getContents();
         } finally {
-            // Always clean up the temporary session
             $sessionManager->removeSession($session);
         }
     }
 
-    /**
-     * Build the frontend preview URL for a page.
-     */
     private function buildPreviewUrl(int $pageId, int $languageUid): string
     {
         try {
@@ -182,9 +164,6 @@ class ContentFetchService
         }
     }
 
-    /**
-     * Extract readable text from HTML, stripping tags, scripts, styles and nav.
-     */
     private function extractTextFromHtml(string $html): string
     {
         // Remove script, style, nav, header, footer elements
@@ -209,16 +188,10 @@ class ContentFetchService
         return trim($text);
     }
 
-    /**
-     * Fallback: Build page content from database records.
-     * More comprehensive than a simple header+bodytext query.
-     */
     private function fetchFromDatabase(int $pageId, int $languageUid): string
     {
         $workspaceId = $this->currentWorkspaceId();
 
-        // BackendUtility::getRecordWSOL applies workspace overlay in BE context — works
-        // for both live records and workspace-only versions (NEW placeholders, t3ver_state=1).
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page || [] === $page) {
             return '';
@@ -245,7 +218,6 @@ class ContentFetchService
         foreach ($rows as $row) {
             $elementParts = $this->extractTextFieldsFromRow('tt_content', $row);
 
-            // FlexForm is type 'flex', not picked up by the TCA text-field walk — extract separately.
             if (!empty($row['pi_flexform'])) {
                 $flexText = $this->extractFlexFormText($row['pi_flexform']);
                 if ('' !== $flexText) {
@@ -258,7 +230,6 @@ class ContentFetchService
             }
         }
 
-        // Fetch IRRE child records (e.g. accordion items, tabs)
         $irreText = $this->fetchIrreChildContent($languageUid, $rows, $workspaceId);
         if ('' !== $irreText) {
             $parts[] = $irreText;
@@ -267,9 +238,6 @@ class ContentFetchService
         return implode("\n\n", $parts);
     }
 
-    /**
-     * Extract readable text values from FlexForm XML.
-     */
     private function extractFlexFormText(string $flexFormXml): string
     {
         if ('' === trim($flexFormXml)) {
@@ -302,8 +270,6 @@ class ContentFetchService
     }
 
     /**
-     * Fetch content from IRRE child tables (e.g. tx_container, accordion items).
-     *
      * @param array<int, array<string, mixed>> $parentRows
      */
     private function fetchIrreChildContent(int $languageUid, array $parentRows, int $workspaceId): string
@@ -331,9 +297,6 @@ class ContentFetchService
     }
 
     /**
-     * Walk a record's TCA fields for the row's CType (sub-schema), keep text/input
-     * fields with real content, drop config-ish fields (link/numeric/layout/class/…).
-     *
      * @param array<string, mixed> $row
      *
      * @return list<string>

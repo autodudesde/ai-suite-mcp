@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
-use AutoDudes\AiSuiteMcp\Mcp\AbstractTool;
-use AutoDudes\AiSuiteMcp\Mcp\McpToolContext;
-use AutoDudes\AiSuiteMcp\Mcp\OperatingGuidelines;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
@@ -16,7 +15,7 @@ class GetOperatingGuidelinesTool extends AbstractTool
 {
     protected ?string $requiredScope = null;
 
-    public function __construct(McpToolContext $mcpToolContext)
+    public function __construct(ToolContext $mcpToolContext)
     {
         parent::__construct($mcpToolContext);
     }
@@ -46,7 +45,6 @@ class GetOperatingGuidelinesTool extends AbstractTool
     {
         $text = OperatingGuidelines::get();
 
-        // Append site/language overview so the client knows available languages without a separate getServerInfo call
         $sites = $this->siteFinder->getAllSites();
         if (!empty($sites)) {
             $text .= "\n\n## Available sites\n";
@@ -68,6 +66,6 @@ class GetOperatingGuidelinesTool extends AbstractTool
             }
         }
 
-        return new CallToolResult([new TextContent($text)]);
+        return $this->textResult($text);
     }
 }

@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
-use AutoDudes\AiSuiteMcp\Mcp\ToolDescriptionSnippets;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Batch-translate file metadata for all files in one or more FAL folders.
- * Resolves folder paths to file UIDs, then delegates to BatchTranslateFileMetadataTool.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslateFolderMetadataTool extends BatchTranslateFileMetadataTool
 {
@@ -25,7 +21,7 @@ class BatchTranslateFolderMetadataTool extends BatchTranslateFileMetadataTool
     {
         return 'Translate file metadata (alt text, title, description) for all files in one or more FAL folders using an external AI model — costs credits per file. '
             .'For specific files by UID, use batchTranslateFileMetadata instead. '
-            .ToolDescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC_FLOW;
     }
 
     public function getSchema(): array
@@ -57,7 +53,7 @@ class BatchTranslateFolderMetadataTool extends BatchTranslateFileMetadataTool
         $folderIdentifiers = $params['folderIdentifiers'] ?? [];
 
         if (empty($folderIdentifiers)) {
-            return new CallToolResult([new TextContent('folderIdentifiers must be a non-empty array.')], isError: true);
+            return $this->textError('folderIdentifiers must be a non-empty array.');
         }
 
         $fileUids = [];
@@ -78,7 +74,7 @@ class BatchTranslateFolderMetadataTool extends BatchTranslateFileMetadataTool
         }
 
         if (empty($fileUids)) {
-            return new CallToolResult([new TextContent('No files found in the specified folders.')], isError: true);
+            return $this->textError('No files found in the specified folders.');
         }
 
         $params['fileUids'] = array_unique($fileUids);

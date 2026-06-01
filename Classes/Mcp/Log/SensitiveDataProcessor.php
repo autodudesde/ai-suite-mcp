@@ -7,23 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Log;
 use TYPO3\CMS\Core\Log\LogRecord;
 use TYPO3\CMS\Core\Log\Processor\AbstractProcessor;
 
-/**
- * Log processor that redacts sensitive substrings from log messages and structured data
- * before they are written to the dedicated MCP log file.
- *
- * Built-in patterns cover the cases that show up routinely:
- * - `Bearer <token>` headers logged accidentally
- * - 64-character hex strings (SHA-256 hashes of tokens, raw `bin2hex(random_bytes(32))`
- *   authorization codes before hashing)
- * - email addresses (often appear in OAuth user-info / generation prompts)
- *
- * Additional patterns can be added via `mcpLogRedactionPatterns` in the extension
- * configuration (comma-separated regex bodies without delimiters; each gets the
- * generic `[REDACTED]` replacement).
- *
- * Activation lives in `ext_localconf.php` via `processorConfiguration`. The processor
- * runs at LogLevel::DEBUG so it sees every record regardless of writer level.
- */
 class SensitiveDataProcessor extends AbstractProcessor
 {
     /**
@@ -36,13 +19,6 @@ class SensitiveDataProcessor extends AbstractProcessor
     ];
 
     /**
-     * Setter invoked by {@see AbstractProcessor::__construct} from `processorConfiguration` options.
-     * Each entry is a raw regex body (no delimiters); it is wrapped with `/.../` and added
-     * to the built-in patterns with a generic `[REDACTED]` replacement.
-     *
-     * Invalid patterns are silently skipped — we never want a misconfigured redaction
-     * rule to crash logging itself.
-     *
      * @param list<string> $additionalPatterns
      */
     public function setAdditionalPatterns(array $additionalPatterns): void
@@ -53,9 +29,6 @@ class SensitiveDataProcessor extends AbstractProcessor
                 continue;
             }
             $delimited = '/'.$rawPattern.'/';
-            // Validate the pattern by running it against an empty string. preg_match
-            // returns false on syntax error and warns; we suppress the warning, the
-            // false return tells us to skip.
             if (false === @preg_match($delimited, '')) {
                 continue;
             }
