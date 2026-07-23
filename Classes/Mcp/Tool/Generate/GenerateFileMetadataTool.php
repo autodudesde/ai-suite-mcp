@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Generate;
 
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
@@ -39,10 +38,9 @@ class GenerateFileMetadataTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Generate alt text, title, and description for a file. Write target: sys_file_metadata (not sys_file) — call getFileInfo(fileUid) to find the metadata record UID. Two approaches: '
-            .DescriptionSnippets::APPROACH_A.'Uses AI Vision, recommended for image alt text. '
-            .'(B) For title/description only (no vision needed), compose manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
-            .DescriptionSnippets::APPROACH_A_PREVIEW_AND_PERSIST;
+        return 'Generate alt text, title and description for a file by looking at the file itself with AI vision '
+            .DescriptionSnippets::COSTS_CREDITS.'. '
+            .'The write target is sys_file_metadata, not sys_file.';
     }
 
     public function getSchema(): array
@@ -161,14 +159,13 @@ class GenerateFileMetadataTool extends AbstractAiTool
             );
         }
 
-        $cost = CreditCostEnumeration::FILE_METADATA;
         $text = "Present the following numbered list to the user and ask them to pick one:\n\n";
         $i = 1;
         foreach ($filtered as $library) {
             $text .= sprintf("%d. %s\n", $i, $library['model_identifier']);
             ++$i;
         }
-        $text .= sprintf("\nEach generation costs %d credit(s). Tell the user this before they choose.", $cost);
+        $text .= "\nEach generation costs at least one credit. Tell the user this before they choose.";
         $text .= "\nDo NOT pick a model yourself. Show this exact list and wait for the user to choose.";
 
         return $this->textResult($text);

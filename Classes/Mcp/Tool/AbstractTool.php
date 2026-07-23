@@ -7,15 +7,19 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\McpException;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
+use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OutputFormatterService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ParameterValidatorService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordAccessService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\SiteLanguageService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TcaLabelService;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -30,6 +34,10 @@ use TYPO3\CMS\Core\Site\SiteFinder;
 abstract class AbstractTool implements ToolInterface
 {
     protected ?string $requiredScope = null;
+    protected bool $readOnlyHint = false;
+    protected bool $destructiveHint = false;
+    protected bool $idempotentHint = false;
+    protected bool $openWorldHint = false;
 
     protected readonly McpUserContext $userContext;
     protected readonly PermissionService $permissionService;
@@ -44,6 +52,8 @@ abstract class AbstractTool implements ToolInterface
     protected readonly TcaLabelService $tcaLabel;
     protected readonly OutputFormatterService $outputFormatter;
     protected readonly ParameterValidatorService $parameterValidator;
+    protected readonly DataHandlerErrorFormatter $dataHandlerError;
+    protected readonly SiteLanguageService $siteLanguages;
 
     public function __construct(
         protected readonly ToolContext $mcpToolContext,
@@ -61,6 +71,8 @@ abstract class AbstractTool implements ToolInterface
         $this->tcaLabel = $mcpToolContext->tcaLabel;
         $this->outputFormatter = $mcpToolContext->outputFormatter;
         $this->parameterValidator = $mcpToolContext->parameterValidator;
+        $this->dataHandlerError = $mcpToolContext->dataHandlerError;
+        $this->siteLanguages = $mcpToolContext->siteLanguages;
     }
 
     final public function execute(array $params): CallToolResult
@@ -76,14 +88,17 @@ abstract class AbstractTool implements ToolInterface
                 'tool' => $this->getName(),
                 'beUserUid' => $this->getBackendUser()?->user['uid'] ?? null,
                 'message' => $e->getMessage(),
+                // Without this the log cannot tell two rejections of the same kind apart: every
+                // `records` syntax error logged identical bytes, so the payload that caused it was
+                // never recoverable after the fact.
+                'context' => $e->getErrorContext(),
             ]);
 
-            return new CallToolResult(
-                [new TextContent(
-                    $this->translate('hint.invalid_input', [$e->getMessage()])
-                        ?? 'Please check the input: '.$e->getMessage(),
-                )],
-                isError: true,
+            return $this->errorResult(
+                $this->translate('hint.invalid_input', [$e->getMessage()])
+                    ?? 'Please check the input: '.$e->getMessage(),
+                $e->getErrorType(),
+                $e->getErrorContext(),
             );
         } catch (InsufficientPermissionException|InsufficientScopeException $e) {
             $this->logger->info('MCP tool permission denied', [
@@ -92,10 +107,7 @@ abstract class AbstractTool implements ToolInterface
                 'message' => $e->getMessage(),
             ]);
 
-            return new CallToolResult(
-                [new TextContent($e->getMessage())],
-                isError: true,
-            );
+            return $this->errorResult($e->getMessage(), $e->getErrorType(), $e->getErrorContext());
         } catch (\RuntimeException $e) {
             $this->logger->error('MCP tool execution failed', [
                 'tool' => $this->getName(),
@@ -105,10 +117,10 @@ abstract class AbstractTool implements ToolInterface
                 'line' => $e->getLine(),
             ]);
 
-            return new CallToolResult(
-                [new TextContent($e->getMessage())],
-                isError: true,
-            );
+            $errorType = $e instanceof McpException ? $e->getErrorType() : McpErrorType::InternalError;
+            $context = $e instanceof McpException ? $e->getErrorContext() : [];
+
+            return $this->errorResult($e->getMessage(), $errorType, $context);
         } catch (\Throwable $e) {
             $this->logger->error('MCP tool execution failed', [
                 'tool' => $this->getName(),
@@ -118,15 +130,15 @@ abstract class AbstractTool implements ToolInterface
                 'line' => $e->getLine(),
             ]);
 
-            return new CallToolResult(
-                [new TextContent(
-                    $this->translate('hint.internal_issue', [$this->getName()])
-                        ?? sprintf(
-                            'Something unexpected happened while running "%s". Please try again or contact your administrator if the issue persists.',
-                            $this->getName(),
-                        ),
-                )],
-                isError: true,
+            // The reader here is a model, not a person. "Please try again" was taken literally:
+            // it re-sent an identical, still-broken payload instead of correcting it.
+            return $this->errorResult(
+                $this->translate('hint.internal_issue', [$this->getName()])
+                    ?? sprintf(
+                        'Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.',
+                        $this->getName(),
+                    ),
+                McpErrorType::InternalError,
             );
         }
     }
@@ -134,6 +146,19 @@ abstract class AbstractTool implements ToolInterface
     public function getRequiredScope(): ?string
     {
         return $this->requiredScope;
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    public function getAnnotations(): array
+    {
+        return [
+            'readOnlyHint' => $this->readOnlyHint,
+            'destructiveHint' => $this->destructiveHint,
+            'idempotentHint' => $this->idempotentHint,
+            'openWorldHint' => $this->openWorldHint,
+        ];
     }
 
     /**
@@ -179,8 +204,30 @@ abstract class AbstractTool implements ToolInterface
         return new CallToolResult([new TextContent($text)]);
     }
 
-    protected function textError(string $text): CallToolResult
+    /**
+     * @param array<string, mixed> $structured
+     */
+    protected function structuredResult(string $text, array $structured): CallToolResult
     {
-        return new CallToolResult([new TextContent($text)], isError: true);
+        return new CallToolResult([new TextContent($text)], structuredContent: $structured);
+    }
+
+    protected function textError(string $text, McpErrorType $errorType = McpErrorType::InvalidParameter): CallToolResult
+    {
+        return $this->errorResult($text, $errorType);
+    }
+
+    /**
+     * @param array<string, mixed> $context    extra fields merged into the error envelope (e.g. table, field, uid)
+     * @param array<string, mixed> $structured extra top-level payload kept alongside the error envelope, for
+     *                                         results that still carry something worth rendering (e.g. a preview)
+     */
+    protected function errorResult(string $text, McpErrorType $errorType, array $context = [], array $structured = []): CallToolResult
+    {
+        return new CallToolResult(
+            [new TextContent($text)],
+            isError: true,
+            structuredContent: ['error' => ['type' => $errorType->value] + $context] + $structured,
+        );
     }
 }

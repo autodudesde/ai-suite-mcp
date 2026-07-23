@@ -34,6 +34,9 @@ CREATE TABLE tx_aisuite_oauth_tokens (
     last_used_ip varchar(45) DEFAULT '',
     session_credits_used int(11) unsigned DEFAULT '0',
     deleted tinyint(1) unsigned DEFAULT '0',
+    family_id int(11) unsigned NOT NULL DEFAULT '0',
+    replaced_by int(11) unsigned NOT NULL DEFAULT '0',
+    rotated_at int(11) unsigned NOT NULL DEFAULT '0',
 
     PRIMARY KEY (uid),
     KEY token (token(191)),
@@ -41,7 +44,8 @@ CREATE TABLE tx_aisuite_oauth_tokens (
     KEY be_user_uid (be_user_uid),
     KEY expires_at (expires_at),
     KEY audience (audience(191)),
-    KEY revoked_cleanup (deleted, created_at)
+    KEY revoked_cleanup (deleted, created_at),
+    KEY family_id (family_id)
 );
 
 CREATE TABLE tx_aisuite_oauth_consents (

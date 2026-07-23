@@ -12,6 +12,8 @@ class SysWorkspaceRepository
 {
     private const TABLE = 'sys_workspace';
 
+    private const USER_WORKSPACE_TITLE = 'AI Suite MCP [#%d]';
+
     public function __construct(
         private readonly ConnectionPool $connectionPool,
     ) {}
@@ -84,5 +86,60 @@ class SysWorkspaceRepository
         }
 
         return $titles;
+    }
+
+    /**
+     * Find the auto-provisioned per-user MCP workspace, if it exists. Matches the
+     * deterministic title AND requires the user to be a listed member, so a title
+     * collision cannot hand a user someone else's workspace.
+     */
+    public function findUserWorkspaceUid(int $beUserUid): ?int
+    {
+        if ($beUserUid <= 0) {
+            return null;
+        }
+
+        $qb = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
+        $qb->getRestrictions()->removeByType(HiddenRestriction::class);
+        $uid = $qb
+            ->select('uid')
+            ->from(self::TABLE)
+            ->where(
+                $qb->expr()->eq('title', $qb->createNamedParameter($this->userWorkspaceTitle($beUserUid))),
+                $qb->expr()->like('members', $qb->createNamedParameter('%'.$this->memberToken($beUserUid).'%')),
+            )
+            ->orderBy('uid', 'ASC')
+            ->setMaxResults(1)
+            ->executeQuery()
+            ->fetchOne()
+        ;
+
+        return false === $uid ? null : (int) $uid;
+    }
+
+    public function createForUser(int $beUserUid, string $username): int
+    {
+        $connection = $this->connectionPool->getConnectionForTable(self::TABLE);
+        $now = (int) ($GLOBALS['EXEC_TIME'] ?? time());
+
+        $connection->insert(self::TABLE, [
+            'pid' => 0,
+            'title' => $this->userWorkspaceTitle($beUserUid),
+            'description' => sprintf('Auto-created MCP draft workspace for backend user "%s" (#%d).', $username, $beUserUid),
+            'members' => $this->memberToken($beUserUid),
+            'tstamp' => $now,
+        ]);
+
+        return (int) $connection->lastInsertId();
+    }
+
+    private function userWorkspaceTitle(int $beUserUid): string
+    {
+        return sprintf(self::USER_WORKSPACE_TITLE, $beUserUid);
+    }
+
+    private function memberToken(int $beUserUid): string
+    {
+        return 'be_users_'.$beUserUid;
     }
 }

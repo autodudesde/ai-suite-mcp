@@ -59,7 +59,7 @@ ChatGPT is hosted by OpenAI — there is no local client to install. In return t
 
 3. Click **Connect** — ChatGPT performs OAuth Dynamic Client Registration against `<typo3-url>/aisuite-mcp/oauth/register`, then opens an authorization popup pointing at `<typo3-url>/aisuite-mcp/oauth/authorize?...`.
 4. If you are not yet logged in: TYPO3 backend login.
-5. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:workflow`, `mcp:easy-language`, `mcp:glossary`, `mcp:manage`) → confirm.
+5. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:media`, `mcp:workflow`) → confirm.
 6. Redirect back to ChatGPT → token is stored. Connector status: *"Connected"*.
 
 ## Step 3 — Activate the connector per chat
@@ -70,6 +70,12 @@ Custom connectors are **not enabled in every chat by default** — they have to 
 2. Click the **`+` icon** (or **Tools** / **Apps & Connectors** button) below the chat input.
 3. In the popup find **AI Suite** and toggle it on.
 4. Only now does ChatGPT include the tool definitions in the model's context.
+
+## Connector mode vs. Deep Research
+
+This guide covers ChatGPT **custom connectors** (the *Apps & Connectors* flow above), which expose the **full AI Suite tool set** — read, write, generate, translate, images, workflow — to the model in a normal chat.
+
+ChatGPT's separate **Deep Research** connectors are a narrower mode that, by OpenAI's convention, only calls two tools named `search` and `fetch`. AI Suite deliberately does not register those two aliases (they would leak into every other MCP client and cannot be verified against the live Deep Research runtime), so **AI Suite is not usable as a Deep Research source**. Use the custom connector for content operations; the closest read equivalents to `search`/`fetch` are `searchContent` and `readPageContent` / `readRecords`, which the model can call directly in a normal chat.
 
 ## Troubleshooting
 

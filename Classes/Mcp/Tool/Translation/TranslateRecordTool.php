@@ -20,10 +20,9 @@ class TranslateRecordTool extends AbstractTranslateTool
 
     public function getDescription(): string
     {
-        return 'Translate a single database record to another language. Two approaches: '
-            .DescriptionSnippets::APPROACH_A.'Supports any TCA table with language support. '
-            .'(B) Use localizeRecord to create a translation shell → translate manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
-            .DescriptionSnippets::APPROACH_A_TRANSLATE_DIRECT_PERSIST;
+        return 'Translate one record of any language-aware TCA table into a target language, using DeepL and the site glossary '
+            .DescriptionSnippets::COSTS_CREDITS.'. '
+            .'Writes the translation itself; localizeRecord only creates an empty translation shell.';
     }
 
     public function getSchema(): array
@@ -33,9 +32,15 @@ class TranslateRecordTool extends AbstractTranslateTool
             'properties' => [
                 'table' => ['type' => 'string', 'description' => 'TCA table name'],
                 'uid' => ['type' => 'integer', 'description' => 'Record UID'],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language code'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language code',
+                ]),
                 'model' => ['type' => 'string', 'description' => 'Translation model identifier. Omit to get a list of available models first.'],
-                'sourceLanguage' => ['type' => 'string', 'description' => 'ISO source language. Default: site default language.'],
+                'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO source language. Default: site default language.',
+                ]),
             ],
             'required' => ['table', 'uid', 'targetLanguage'],
         ];

@@ -23,6 +23,14 @@ class UploadMediaTool extends AbstractTool
 {
     private const PREVIEW_LIMIT = 5;
     protected ?string $requiredScope = 'mcp:media';
+    // Fetches agent-controlled remote URLs (SSRF-guarded) → interacts with the outside world.
+    protected bool $openWorldHint = true;
+    // Writes sys_file + the physical file straight through FAL (no versioningWS), so no write mode
+    // can undo it — it lands on live in every mode. Flagged destructive so the client's approval
+    // dialog (its only gate) and ChEddi's confirmation card treat it like a deletion rather than a
+    // reversible workspace write. Semantically the upload is additive, but "cannot be undone by a
+    // workspace" is exactly what destructiveHint gates on here (see deleteRecords, applyTaskResults).
+    protected bool $destructiveHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -40,12 +48,9 @@ class UploadMediaTool extends AbstractTool
 
     public function getDescription(): string
     {
-        return 'Upload one or more images/videos into the file storage (FAL). '
-            .'Always pass a "media" array. Each item provides exactly one source: '
-            .'"url" (remote http(s) file — downloaded), "content" (base64 / data-URI — direct upload), '
-            .'or a YouTube/Vimeo link in "url" (stored as an online-media reference, not downloaded). '
-            .'Videos are best provided via url or online-media link — base64 is impractical for large files. '
-            .'Optionally set fileName, targetFolder and metadata (title, alternative, description).';
+        return 'Bring one or more existing images/videos into the file storage (writes). Not an AI tool: it uploads '
+            .'media you already have, by remote URL, inline base64, or a YouTube/Vimeo link. See the schema for the '
+            .'per-item sources and optional metadata.';
     }
 
     public function getSchema(): array
@@ -55,8 +60,7 @@ class UploadMediaTool extends AbstractTool
             'properties' => [
                 'media' => [
                     'type' => 'array',
-                    'description' => 'Array of media items. Each: {url? , content?, fileName?, targetFolder?, title?, alternative?, description?}. '
-                        .'Provide either url OR content. fileName is required for base64 content without a derivable name.',
+                    'description' => 'The media items to bring into FAL. Each: {url?, content?, fileName?, targetFolder?, title?, alternative?, description?}. Exactly one source per item: `url` for a remote http(s) file (downloaded), `content` for base64 / a data-URI (direct upload, needs fileName), or a YouTube/Vimeo link in `url` (stored as an online-media reference, not downloaded). Never give both url and content. Prefer url or an online-media link for videos — base64 is impractical for large files.',
                     'items' => ['type' => 'object'],
                 ],
                 'targetFolder' => [
@@ -83,7 +87,7 @@ class UploadMediaTool extends AbstractTool
         /** @var list<Content> $previews */
         $previews = [];
 
-        $text = $this->batchResultBuilder->renderText($media, 'media item(s)', function (mixed $item) use (&$previews, $batchFolder, $config): array {
+        $outcome = $this->batchResultBuilder->build($media, 'media item(s)', function (mixed $item) use (&$previews, $batchFolder, $config): array {
             if (!is_array($item)) {
                 throw new InvalidParameterException('Skipped (not an object).');
             }
@@ -103,7 +107,7 @@ class UploadMediaTool extends AbstractTool
             ];
         });
 
-        return new CallToolResult([new TextContent($text), ...$previews]);
+        return new CallToolResult([new TextContent($outcome->text), ...$previews], isError: $outcome->hadError());
     }
 
     /**

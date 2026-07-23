@@ -12,6 +12,7 @@ use AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint\ProtectedResourceMetadataEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint\RegistrationEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint\RevocationEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint\TokenEndpoint;
+use AutoDudes\AiSuiteMcp\Mcp\Service\ClientIpService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RateLimiterService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -31,6 +32,7 @@ use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
  *   /aisuite-mcp/oauth/token                 → TokenEndpoint
  *   /aisuite-mcp/oauth/revoke                → RevocationEndpoint
  *   /.well-known/oauth-authorization-server  → MetadataEndpoint
+ *   /.well-known/openid-configuration        → MetadataEndpoint (RFC 8414 §5 fallback)
  *   /.well-known/oauth-protected-resource    → ProtectedResourceMetadataEndpoint (RFC 9728)
  *   /aisuite-mcp/health                      → HealthCheckEndpoint.
  */
@@ -39,6 +41,11 @@ class McpServerMiddleware implements MiddlewareInterface
     private const MAX_REQUEST_BODY_SIZE = 1_048_576; // 1 MB
     private const MCP_PATH = '/aisuite-mcp';
     private const WELL_KNOWN_PATH = '/.well-known/oauth-authorization-server';
+
+    /**
+     * RFC 8414 §5.
+     */
+    private const OPENID_CONFIGURATION_PATH = '/.well-known/openid-configuration';
     private const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource';
 
     public function __construct(
@@ -52,6 +59,7 @@ class McpServerMiddleware implements MiddlewareInterface
         private readonly RegistrationEndpoint $registrationEndpoint,
         private readonly RateLimiterService $rateLimiter,
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly ClientIpService $clientIpService,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -63,7 +71,7 @@ class McpServerMiddleware implements MiddlewareInterface
             return $this->serveFavicon();
         }
 
-        if (!str_starts_with($path, self::MCP_PATH) && self::WELL_KNOWN_PATH !== $path && self::PROTECTED_RESOURCE_PATH !== $path) {
+        if (!str_starts_with($path, self::MCP_PATH) && !$this->isWellKnownPath($path)) {
             return $handler->handle($request);
         }
 
@@ -111,11 +119,27 @@ class McpServerMiddleware implements MiddlewareInterface
             }
         }
 
+        if ($path === self::MCP_PATH.'/oauth/token' || $path === self::MCP_PATH.'/oauth/register') {
+            $rateCheck = $this->enforceOAuthRateLimit($request);
+            if (null !== $rateCheck) {
+                return $rateCheck;
+            }
+        }
+
         // Route to handler
         $response = $this->route($path, $request);
 
         // Add CORS headers to response
         return $this->addCorsHeaders($response, $request->getHeaderLine('Origin'), $extConf);
+    }
+
+    private function isWellKnownPath(string $path): bool
+    {
+        return \in_array(
+            $path,
+            [self::WELL_KNOWN_PATH, self::OPENID_CONFIGURATION_PATH, self::PROTECTED_RESOURCE_PATH],
+            true,
+        );
     }
 
     private function route(string $path, ServerRequestInterface $request): ResponseInterface
@@ -125,8 +149,8 @@ class McpServerMiddleware implements MiddlewareInterface
             return ($this->healthCheckEndpoint)($request);
         }
 
-        // Well-known OAuth metadata
-        if (self::WELL_KNOWN_PATH === $path) {
+        // Well-known OAuth metadata — the OIDC discovery path serves the same RFC 8414 document.
+        if (self::WELL_KNOWN_PATH === $path || self::OPENID_CONFIGURATION_PATH === $path) {
             return ($this->metadataEndpoint)($request);
         }
 
@@ -228,6 +252,14 @@ class McpServerMiddleware implements MiddlewareInterface
             return null;
         }
 
+        // Same-origin is not a rebinding vector — the attack needs a *foreign* origin pointed at
+        // our IP. Blocking our own origin only breaks the OAuth consent form, whose POST submit
+        // carries Origin: <our host> (the GET that renders it does not, which is why the form
+        // appears to work and only the submit dies).
+        if ($originHost === $request->getUri()->getHost()) {
+            return null;
+        }
+
         if (Environment::getContext()->isDevelopment()) {
             $this->logger->warning('MCP middleware accepted cross-origin request (Development context bypass)', [
                 'origin' => $origin,
@@ -269,6 +301,32 @@ class McpServerMiddleware implements MiddlewareInterface
                 'error' => 'request_too_large',
                 'error_description' => 'Request body exceeds maximum size of 1 MB.',
             ], 413);
+        }
+
+        return null;
+    }
+
+    private function enforceOAuthRateLimit(ServerRequestInterface $request): ?ResponseInterface
+    {
+        $ip = $this->clientIpService->resolve($request);
+        $path = $request->getUri()->getPath();
+        $bucket = str_ends_with($path, '/register') ? 'oauth_register_' : 'oauth_token_';
+
+        try {
+            $this->rateLimiter->checkAndIncrement($bucket.$ip);
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('OAuth endpoint rate limit exceeded', [
+                'ip' => $ip,
+                'path' => $path,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return new JsonResponse([
+                'error' => 'rate_limit_exceeded',
+                'error_description' => $e->getMessage(),
+            ], 429, [
+                'Retry-After' => '60',
+            ]);
         }
 
         return null;

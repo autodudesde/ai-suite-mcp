@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Translation;
 
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\GlossarService;
@@ -39,7 +38,6 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             GenerationLibraryEnumeration::TRANSLATE,
             'translate',
             ['text'],
-            CreditCostEnumeration::TRANSLATION,
             ['text' => 'Translation models'],
         );
     }
@@ -178,7 +176,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             }
         }
 
-        $text .= "\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to verify.\n";
+        $text .= "\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
 
         return $this->appendCreditInfo($this->textResult($text), $result);
     }

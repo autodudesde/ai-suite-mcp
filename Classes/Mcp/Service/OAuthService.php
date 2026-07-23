@@ -19,6 +19,15 @@ class OAuthService
 
     private const CODE_LIFETIME = 600;
 
+    /**
+     * How long a just-rotated refresh token stays acceptable (RFC 9700 §4.14.2 leeway).
+     *
+     * Connectors fire refreshes concurrently and keep only the last pair they receive.
+     * Without leeway every such race ends in a reuse alarm that revokes the whole lineage
+     * and forces a full re-authorization mid-conversation.
+     */
+    private const REFRESH_GRACE_SECONDS = 30;
+
     public function __construct(
         private readonly TokenRepository $tokenRepository,
         private readonly PermissionService $permissionService,
@@ -206,46 +215,20 @@ class OAuthService
             throw new InvalidGrantException('Refresh token is invalid.');
         }
 
-        if (0 !== (int) $existing['deleted']) {
-            $revokedCount = $this->tokenRepository->revokeAllTokensForUserAndClient(
-                (int) $existing['be_user_uid'],
-                (string) $existing['client_id'],
-            );
+        $now = time();
 
-            $this->logger->critical('SECURITY: Refresh token reuse detected — possible token theft', [
-                'be_user_uid' => $existing['be_user_uid'],
-                'client_id' => $existing['client_id'],
-                'revoked_tokens' => $revokedCount,
-            ]);
-
-            throw new InvalidGrantException(
-                'Security alert: This refresh token has already been used. '
-                .'All sessions for this client have been revoked. Please re-authorize.',
-            );
+        // Revoked, never rotated: logout, password change, admin revoke, disabled account.
+        // A benign end-of-life — not theft, so no alarm and no lineage revocation.
+        if (0 !== (int) $existing['deleted'] && 0 === (int) $existing['rotated_at']) {
+            throw new InvalidGrantException('Refresh token has been revoked. Please re-authorize.');
         }
 
-        if (!hash_equals((string) $existing['client_id'], $clientId)) {
-            throw new InvalidGrantException('Client ID does not match the token.');
-        }
+        // Guards run before the claim: a rejected refresh must not leave the token marked
+        // as rotated, or a retry within the grace window would skip these very checks.
+        $audience = $this->assertRefreshable($existing, $clientId, $resource);
 
-        $beUser = BackendUtility::getRecord('be_users', (int) $existing['be_user_uid']);
-        if (null === $beUser || 0 !== (int) ($beUser['disable'] ?? 0) || 0 !== (int) ($beUser['deleted'] ?? 0)) {
-            $this->tokenRepository->markDeleted((int) $existing['uid']);
-
-            throw new InvalidGrantException('Your backend account has been deactivated. Please contact your administrator.');
-        }
-
-        // Audience binding (RFC 8707).
-        $audience = (string) ($existing['audience'] ?? '');
-        if ('' === $audience) {
-            $this->tokenRepository->markDeleted((int) $existing['uid']);
-
-            throw new InvalidGrantException(
-                'Refresh token has no audience binding (legacy token). Please re-authorize.',
-            );
-        }
-        if ('' !== $resource && $resource !== $audience) {
-            throw new InvalidGrantException('resource parameter does not match the bound audience.');
+        if (!$this->tokenRepository->claimRotation((int) $existing['uid'], $now)) {
+            return $this->handleAlreadyRotatedToken($refreshHash, $clientId, $resource, $now);
         }
 
         $oldScopes = array_values(array_filter(explode(' ', (string) $existing['scopes'])));
@@ -258,6 +241,9 @@ class OAuthService
             $clientId,
             $validScopes,
             $audience,
+            (int) ($existing['workspace_uid'] ?? 0),
+            (int) $existing['family_id'] ?: (int) $existing['uid'],
+            (int) $existing['uid'],
         );
     }
 
@@ -291,8 +277,104 @@ class OAuthService
     }
 
     /**
+     * Shared guards for both the rotating and the grace path.
+     *
+     * @param array<string, mixed> $row
+     *
+     * @return string the audience the token is bound to (RFC 8707)
+     *
+     * @throws InvalidGrantException
+     */
+    private function assertRefreshable(array $row, string $clientId, string $resource): string
+    {
+        if (!hash_equals((string) $row['client_id'], $clientId)) {
+            throw new InvalidGrantException('Client ID does not match the token.');
+        }
+
+        $beUser = BackendUtility::getRecord('be_users', (int) $row['be_user_uid']);
+        if (null === $beUser || 0 !== (int) ($beUser['disable'] ?? 0) || 0 !== (int) ($beUser['deleted'] ?? 0)) {
+            $this->tokenRepository->markDeleted((int) $row['uid']);
+
+            throw new InvalidGrantException('Your backend account has been deactivated. Please contact your administrator.');
+        }
+
+        // Audience binding (RFC 8707).
+        $audience = (string) ($row['audience'] ?? '');
+        if ('' === $audience) {
+            $this->tokenRepository->markDeleted((int) $row['uid']);
+
+            throw new InvalidGrantException(
+                'Refresh token has no audience binding (legacy token). Please re-authorize.',
+            );
+        }
+        if ('' !== $resource && $resource !== $audience) {
+            throw new InvalidGrantException('resource parameter does not match the bound audience.');
+        }
+
+        return $audience;
+    }
+
+    /**
+     * Someone else already rotated this token — decide between a concurrent retry and real reuse.
+     *
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string}
+     *
+     * @throws InvalidGrantException
+     */
+    private function handleAlreadyRotatedToken(string $refreshHash, string $clientId, string $resource, int $now): array
+    {
+        $row = $this->tokenRepository->findByRefreshTokenHash($refreshHash);
+        if (null === $row) {
+            throw new InvalidGrantException('Refresh token is invalid.');
+        }
+
+        $rotatedAt = (int) $row['rotated_at'];
+        $familyId = (int) $row['family_id'] ?: (int) $row['uid'];
+
+        if ($rotatedAt > 0 && ($now - $rotatedAt) <= self::REFRESH_GRACE_SECONDS) {
+            $audience = $this->assertRefreshable($row, $clientId, $resource);
+
+            $this->logger->info('Concurrent refresh within grace window — issuing an additional pair', [
+                'client_id' => $clientId,
+                'family_id' => $familyId,
+                'age_seconds' => $now - $rotatedAt,
+            ]);
+
+            $scopes = array_values(array_filter(explode(' ', (string) $row['scopes'])));
+
+            return $this->createTokenPair(
+                (int) $row['be_user_uid'],
+                $clientId,
+                $this->filterScopesByPermissions($scopes, (int) $row['be_user_uid']),
+                $audience,
+                (int) ($row['workspace_uid'] ?? 0),
+                $familyId,
+            );
+        }
+
+        $revokedCount = $this->tokenRepository->revokeFamily($familyId);
+
+        $this->logger->critical('SECURITY: Refresh token reuse detected — possible token theft', [
+            'be_user_uid' => $row['be_user_uid'],
+            'client_id' => $row['client_id'],
+            'family_id' => $familyId,
+            'rotated_age_seconds' => $rotatedAt > 0 ? $now - $rotatedAt : null,
+            'revoked_tokens' => $revokedCount,
+        ]);
+
+        throw new InvalidGrantException(sprintf(
+            'Security alert: This refresh token has already been used. %s Please re-authorize.',
+            1 === $revokedCount
+                ? '1 session has been revoked.'
+                : sprintf('%d sessions have been revoked.', $revokedCount),
+        ));
+    }
+
+    /**
      * @param list<string> $scopes
-     * @param string       $audience canonical resource URI the token is bound to (RFC 8707)
+     * @param string       $audience       canonical resource URI the token is bound to (RFC 8707)
+     * @param int          $familyId       uid of the lineage root; 0 makes the new token its own root
+     * @param null|int     $predecessorUid the rotated token this pair replaces, linked for auditability
      *
      * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string}
      */
@@ -302,6 +384,8 @@ class OAuthService
         array $scopes,
         string $audience,
         ?int $workspaceUid = null,
+        int $familyId = 0,
+        ?int $predecessorUid = null,
     ): array {
         $activeCount = $this->tokenRepository->countActiveTokensForUser($beUserUid);
         if ($activeCount >= self::MAX_ACTIVE_TOKENS_PER_USER) {
@@ -313,7 +397,7 @@ class OAuthService
 
         $expiresIn = $this->tokenLifetimeDays * 86400;
 
-        $this->tokenRepository->createToken([
+        $uid = $this->tokenRepository->createToken([
             'token' => hash('sha256', $rawAccessToken),
             'refresh_token' => hash('sha256', $rawRefreshToken),
             'be_user_uid' => $beUserUid,
@@ -326,7 +410,14 @@ class OAuthService
             'expires_at' => time() + $expiresIn,
             'session_credits_used' => 0,
             'deleted' => 0,
+            'family_id' => $familyId,
+            'replaced_by' => 0,
+            'rotated_at' => 0,
         ]);
+
+        if (null !== $predecessorUid) {
+            $this->tokenRepository->linkSuccessor($predecessorUid, $uid);
+        }
 
         return [
             'access_token' => $rawAccessToken,

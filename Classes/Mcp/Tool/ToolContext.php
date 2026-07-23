@@ -9,6 +9,7 @@ use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
+use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OutputFormatterService;
@@ -16,6 +17,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\ParameterValidatorService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordAccessService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\SiteLanguageService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TcaLabelService;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
@@ -39,11 +41,13 @@ class ToolContext implements SingletonInterface
         public readonly ExtensionConfiguration $extensionConfiguration,
         public readonly Context $typo3Context,
         public readonly DataHandlerSanitizerService $dataHandlerSanitizer,
+        public readonly DataHandlerErrorFormatter $dataHandlerError,
         public readonly ResourceFactory $resourceFactory,
         public readonly McpExcludedTablesService $excludedTablesService,
         public readonly RecordAccessService $recordAccess,
         public readonly TcaLabelService $tcaLabel,
         public readonly OutputFormatterService $outputFormatter,
         public readonly ParameterValidatorService $parameterValidator,
+        public readonly SiteLanguageService $siteLanguages,
     ) {}
 }

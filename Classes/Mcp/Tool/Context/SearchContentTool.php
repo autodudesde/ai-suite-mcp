@@ -17,6 +17,7 @@ class SearchContentTool extends AbstractTool
 {
     private const PREVIEW_LENGTH = 200;
     protected ?string $requiredScope = 'mcp:read';
+    protected bool $readOnlyHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -35,6 +36,7 @@ class SearchContentTool extends AbstractTool
     {
         return 'Full-text search across pages and content elements. Returns matching results '
             .'with page context and content previews. '
+            .'Pass `field` to search a single tt_content field (e.g. bodytext), and `matchHtml` to search/return the raw HTML markup. '
             .'Returns only items within your backend webmounts.';
     }
 
@@ -45,6 +47,8 @@ class SearchContentTool extends AbstractTool
             'properties' => [
                 'query' => ['type' => 'string', 'description' => 'Search term'],
                 'searchIn' => ['type' => 'string', 'enum' => ['all', 'pages', 'content'], 'default' => 'all', 'description' => 'Where to search. Default: all.'],
+                'field' => ['type' => 'string', 'description' => 'Restrict the content search to a single tt_content field (e.g. bodytext, header, subheader). Default: all text-bearing fields of the table.'],
+                'matchHtml' => ['type' => 'boolean', 'default' => false, 'description' => 'Keep HTML markup in the bodytext preview (so <a>, class names etc. are visible/searchable). Default: false (stripped).'],
                 'includeFullContent' => ['type' => 'boolean', 'default' => false, 'description' => 'Return full content text instead of preview snippets. Default: false.'],
                 'limit' => ['type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100, 'description' => 'Maximum number of results. Default: 20.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N results for pagination. Default: 0.'],
@@ -59,6 +63,22 @@ class SearchContentTool extends AbstractTool
         $searchIn = $params['searchIn'] ?? 'all';
         $limit = (int) ($params['limit'] ?? 20);
         $offset = (int) ($params['offset'] ?? 0);
+        $matchHtml = (bool) ($params['matchHtml'] ?? false);
+
+        $fieldRestricted = false;
+        $field = (string) ($params['field'] ?? '');
+        if ('' !== $field) {
+            if (!$this->recordAccess->fieldExistsInSchema('tt_content', $field)) {
+                return $this->textError(sprintf('Unknown tt_content field "%s".', $field));
+            }
+            $fieldRestricted = true;
+        }
+
+        // Default: search every text-bearing tt_content column discovered from TCA
+        // (header, subheader, bodytext, …) — no hardcoded field list.
+        $contentFields = $fieldRestricted
+            ? [$field]
+            : $this->tcaCompatibilityService->getSearchableTextFields('tt_content');
 
         $includeFullContent = (bool) ($params['includeFullContent'] ?? false);
         if ($includeFullContent && !$this->userContext->hasScope('mcp:generate') && !$this->userContext->hasScope('mcp:translate')) {
@@ -72,11 +92,13 @@ class SearchContentTool extends AbstractTool
 
         $results = [];
 
-        if ('all' === $searchIn || 'pages' === $searchIn) {
+        // A specific tt_content field restricts the search to content only (pages have
+        // a different schema), so only sweep pages when the caller did not narrow to one.
+        if (('all' === $searchIn || 'pages' === $searchIn) && !$fieldRestricted) {
             $results = array_merge($results, $this->searchPages($query, $allowedPageIds));
         }
         if ('all' === $searchIn || 'content' === $searchIn) {
-            $results = array_merge($results, $this->searchContentElements($query, $includeFullContent, $allowedPageIds));
+            $results = array_merge($results, $this->searchContentElements($query, $includeFullContent, $allowedPageIds, $contentFields, $matchHtml));
         }
 
         $total = count($results);
@@ -95,7 +117,12 @@ class SearchContentTool extends AbstractTool
      */
     private function searchPages(string $query, ?array $allowedPageIds): array
     {
-        $rows = $this->pagesRepository->searchByText($query, 100, $allowedPageIds);
+        $rows = $this->pagesRepository->searchByText(
+            $query,
+            100,
+            $allowedPageIds,
+            $this->tcaCompatibilityService->getSearchableTextFields('pages'),
+        );
 
         return array_map(fn ($r) => [
             'type' => 'page', 'uid' => (int) $r['uid'], 'title' => $r['title'],
@@ -105,15 +132,16 @@ class SearchContentTool extends AbstractTool
 
     /**
      * @param null|list<int> $allowedPageIds
+     * @param list<string>   $searchFields   text columns to match (from TCA discovery or the `field` param)
      *
      * @return list<array<string, mixed>>
      */
-    private function searchContentElements(string $query, bool $full, ?array $allowedPageIds): array
+    private function searchContentElements(string $query, bool $full, ?array $allowedPageIds, array $searchFields, bool $matchHtml = false): array
     {
-        $rows = $this->contentRepository->searchByText($query, 100, $allowedPageIds);
+        $rows = $this->contentRepository->searchByText($query, 100, $allowedPageIds, $searchFields);
 
-        return array_map(function ($r) use ($full) {
-            $body = strip_tags((string) $r['bodytext']);
+        return array_map(function ($r) use ($full, $matchHtml) {
+            $body = $matchHtml ? (string) $r['bodytext'] : strip_tags((string) $r['bodytext']);
             $element = [
                 'type' => 'content', 'uid' => (int) $r['uid'], 'pageId' => (int) $r['pid'],
                 'header' => $r['header'], 'CType' => $r['CType'], 'matchIn' => 'tt_content',

@@ -88,7 +88,7 @@ The next time Claude Code talks to the server (either on session start or the fi
 1. Performs OAuth Dynamic Client Registration against `<typo3-url>/aisuite-mcp/oauth/register`.
 2. Spawns a local HTTP listener on an ephemeral port (e.g. `http://localhost:54123/callback`).
 3. Opens your default browser at `<typo3-url>/aisuite-mcp/oauth/authorize?...`.
-4. You log in to TYPO3 (if necessary) and confirm the consent screen with the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:workflow`, `mcp:easy-language`, `mcp:glossary`, `mcp:manage`).
+4. You log in to TYPO3 (if necessary) and confirm the consent screen with the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:media`, `mcp:workflow`).
 5. The browser redirects back to the localhost listener → Claude Code exchanges the code for tokens and persists them in `~/.claude.json`.
 
 After the first run, the token is reused (and refreshed automatically) on subsequent invocations.
@@ -101,7 +101,7 @@ Inside an interactive Claude Code session, run:
 /mcp
 ```
 
-This lists all configured MCP servers and their status. `typo3-ai-suite` should be `connected`. The available tools (`getServerInfo`, `getTables`, `getPageTree`, `generateMetadata`, …) are now in scope for the model.
+This lists all configured MCP servers and their status. `typo3-ai-suite` should be `connected`. The available tools (`readServerInfo`, `listTables`, `readPageTree`, `generateFileMetadata`, …) are now in scope for the model.
 
 ## Troubleshooting
 

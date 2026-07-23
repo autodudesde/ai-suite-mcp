@@ -65,7 +65,7 @@ The infrastructure side (containers, networking, TLS, optional GPU acceleration)
 5. **Save**.
 6. Re-open the connection → click **Authenticate**. A browser tab opens `<typo3-url>/aisuite-mcp/oauth/authorize?...`.
 7. If you are not yet logged in: TYPO3 backend login.
-8. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:workflow`, `mcp:easy-language`, `mcp:glossary`, `mcp:manage`) → confirm.
+8. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:media`, `mcp:workflow`) → confirm.
 9. Redirect back to OpenWebUI → token is stored. Connection status: *"Connected"*.
 
 ## Step 3 — Grant tool server access

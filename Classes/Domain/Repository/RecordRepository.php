@@ -78,6 +78,31 @@ class RecordRepository
     }
 
     /**
+     * Count records of any table on a page, tolerant of tables that are not workspace-aware.
+     *
+     * Unlike countLiveRecords() this adds NO t3ver_wsid condition (which would fail on a table that
+     * has no such column) and swallows any table-shape surprise, so it is safe to run across the whole
+     * TCA. The query builder's default restrictions still hide deleted/disabled rows. Intended for the
+     * "what else lives on this page" overview, where an approximate visible count is enough.
+     */
+    public function countRecordsOnPage(string $table, int $pid): int
+    {
+        try {
+            $qb = $this->connectionPool->getQueryBuilderForTable($table);
+
+            return (int) $qb
+                ->count('uid')
+                ->from($table)
+                ->where($qb->expr()->eq('pid', $qb->createNamedParameter($pid, Connection::PARAM_INT)))
+                ->executeQuery()
+                ->fetchOne()
+            ;
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    /**
      * @param array<string, scalar> $fieldFilters
      */
     public function countByCriteria(string $table, array $fieldFilters): int

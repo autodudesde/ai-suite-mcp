@@ -23,6 +23,9 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  */
 abstract class AbstractAiTool extends AbstractTool
 {
+    // AI tools contact the external AI Suite Server (cost credits) → never read-only.
+    protected bool $openWorldHint = true;
+
     protected readonly SendRequestService $sendRequestService;
     protected readonly SessionTrackerService $creditTracker;
     protected readonly ExtensionConfiguration $extensionConfiguration;
@@ -228,7 +231,6 @@ abstract class AbstractAiTool extends AbstractTool
      * @param string                $libraryType    GenerationLibraryEnumeration constant
      * @param string                $endpoint       server endpoint name
      * @param list<string>          $featureTypes   library response keys (e.g. ['text'], ['text', 'image'])
-     * @param int                   $creditCost     credit cost per generation
      * @param array<string, string> $featureLabels  human labels per feature key (e.g. ['text' => 'Text models'])
      */
     protected function listAvailableModels(
@@ -236,7 +238,6 @@ abstract class AbstractAiTool extends AbstractTool
         string $libraryType,
         string $endpoint,
         array $featureTypes,
-        int $creditCost,
         array $featureLabels = [],
     ): CallToolResult {
         $librariesAnswer = $this->sendRequestService->sendLibrariesRequest(
@@ -294,7 +295,7 @@ abstract class AbstractAiTool extends AbstractTool
             );
         }
 
-        $text .= sprintf("\nEach operation costs %d credit(s).\n", $creditCost);
+        $text .= "\nEach operation costs at least one credit.\n";
         $text .= 'Ask the user which model they would like to use.';
 
         return $this->textResult($text);

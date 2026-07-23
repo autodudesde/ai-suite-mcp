@@ -32,26 +32,25 @@ class CopyRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Copy one or more records (including relations and child records) to a target page. '
-            .'For a single copy pass table, uid and targetPid. '
-            .'To copy several records in one call, pass a "copies" array — each item is {table, uid, targetPid}.';
+        return 'Duplicate one or more records onto a target page, including their relations and child records (writes). '
+            .'The original stays where it is; moveRecords relocates instead of duplicating.';
     }
 
     public function getSchema(): array
     {
+        // Array-only. The former dual mode (a `copies` array *or* top-level table/uid/targetPid,
+        // with zero required properties) cannot be expressed in JSON Schema, so the model had to
+        // guess a mode from prose. One shape, one required property.
         return [
             'type' => 'object',
             'properties' => [
                 'copies' => [
                     'type' => 'array',
-                    'description' => 'Batch mode: array of copies. Each item: {table, uid, targetPid}. '
-                        .'When provided, the top-level table/uid/targetPid are ignored.',
+                    'description' => 'The records to copy. Each: {table, uid, targetPid}, all required. Pass one entry even for a single copy.',
                     'items' => ['type' => 'object'],
                 ],
-                'table' => ['type' => 'string', 'description' => 'TCA table name (single copy).'],
-                'uid' => ['type' => 'integer', 'description' => 'UID of the record to copy (single copy).'],
-                'targetPid' => ['type' => 'integer', 'description' => 'Target page UID where the copy will be placed.'],
             ],
+            'required' => ['copies'],
         ];
     }
 
@@ -59,27 +58,23 @@ class CopyRecordTool extends AbstractDataTool
     {
         $copies = $params['copies'] ?? null;
 
-        if (is_array($copies)) {
-            if (empty($copies)) {
-                return $this->textError('copies must be a non-empty array.');
-            }
-
-            return $this->batchResultBuilder->run($copies, 'copy/copies', function (mixed $copy): array {
-                if (!is_array($copy)) {
-                    throw new InvalidParameterException('Skipped (not an object).');
-                }
-
-                return $this->performCopy($copy);
-            });
+        if (!is_array($copies) || empty($copies)) {
+            return $this->textError('copies must be a non-empty array of {table, uid, targetPid}.');
         }
 
-        return $this->textResult($this->performCopy($params)['message']);
+        return $this->batchResultBuilder->run($copies, 'copy/copies', function (mixed $copy): array {
+            if (!is_array($copy)) {
+                throw new InvalidParameterException('Skipped (not an object).');
+            }
+
+            return $this->performCopy($copy);
+        });
     }
 
     /**
      * @param array<string, mixed> $copy
      *
-     * @return array{message: string, uid: null|int}
+     * @return array{message: string, uid: null|int, table: string, action: string}
      */
     private function performCopy(array $copy): array
     {
@@ -109,7 +104,7 @@ class CopyRecordTool extends AbstractDataTool
         $dh->process_cmdmap();
 
         if ([] !== $dh->errorLog) {
-            throw new \RuntimeException('Copy failed: '.implode(', ', $dh->errorLog));
+            throw $this->dataHandlerError->toException('copy', $table, $uid, $dh->errorLog);
         }
 
         $newUid = $dh->copyMappingArray[$table][$uid] ?? null;
@@ -126,6 +121,11 @@ class CopyRecordTool extends AbstractDataTool
             $text .= sprintf(' New record UID: %d.', $newUid);
         }
 
-        return ['message' => $text, 'uid' => null !== $newUid ? (int) $newUid : null];
+        return [
+            'message' => $text,
+            'uid' => null !== $newUid ? (int) $newUid : null,
+            'table' => $table,
+            'action' => 'create',
+        ];
     }
 }

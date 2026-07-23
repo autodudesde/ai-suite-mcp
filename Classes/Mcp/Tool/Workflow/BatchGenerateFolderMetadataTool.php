@@ -19,9 +19,9 @@ class BatchGenerateFolderMetadataTool extends BatchGenerateFileMetadataTool
 
     public function getDescription(): string
     {
-        return 'Generate file metadata (alt text, title, description) for all files in one or more FAL folders using an external AI model — costs credits per file. '
+        return 'Generate file metadata (alt text, title, description) for every file in one or more FAL folders with an external AI model (costs credits). '
             .'For specific files by UID, use batchGenerateFileMetadata instead. '
-            .DescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC;
     }
 
     public function getSchema(): array

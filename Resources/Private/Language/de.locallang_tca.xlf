@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+    <file source-language="en" target-language="de" datatype="plaintext" original="messages" date="2026-07-13T12:00:00Z" product-name="ai_suite_mcp">
+        <header/>
+        <body>
+            <trans-unit id="aiSuite.mcp.permissions.enableMcpAccess">
+                <source>Enable MCP Access</source>
+                <target>MCP-Zugriff aktivieren</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableMcpAccessDescription">
+                <source>Allows connecting via MCP protocol (Claude Desktop, Claude.ai, ChatGPT, etc.)</source>
+                <target>Erlaubt die Verbindung über das MCP-Protokoll (Claude Desktop, Claude.ai, ChatGPT usw.).</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableMcpMediaUpload">
+                <source>Enable MCP Media Upload</source>
+                <target>MCP-Medien-Upload aktivieren</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableMcpMediaUploadDescription">
+                <source>Allows uploading images/videos into FAL via MCP (by URL, base64 upload, or YouTube/Vimeo link). Filemount permissions still apply on top.</source>
+                <target>Erlaubt das Hochladen von Bildern/Videos nach FAL über MCP (per URL, Base64-Upload oder YouTube-/Vimeo-Link). Die Dateimount-Berechtigungen gelten zusätzlich.</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableMcpRenderedPageRead">
+                <source>Enable MCP Rendered Page Read</source>
+                <target>MCP-Lesen gerenderter Seiten aktivieren</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableMcpRenderedPageReadDescription">
+                <source>Allows the readRenderedPage tool. It renders a page through a backend preview session of the MCP user, so it also returns hidden and unpublished pages as well as workspace drafts. The user's own page permissions still apply on top.</source>
+                <target>Erlaubt das Tool readRenderedPage. Es rendert eine Seite über eine Backend-Vorschau-Session des MCP-Benutzers und liefert deshalb auch versteckte und unveröffentlichte Seiten sowie Workspace-Entwürfe. Die Seitenrechte des Benutzers gelten zusätzlich.</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>

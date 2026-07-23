@@ -32,28 +32,23 @@ class MoveRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Move one or more records to a different page or position. '
-            .'For a single move pass table, uid and targetPid (optionally afterUid). '
-            .'To move several records in one call, pass a "moves" array — each item is {table, uid, targetPid?, afterUid?}. '
-            .'targetPid sets the destination page; afterUid places the record after a specific record instead of at the top.';
+        return 'Relocate one or more records to another page or another position (writes). '
+            .'The record itself moves; copyRecords duplicates instead. Also the way to reorder — `sorting` is not writable.';
     }
 
     public function getSchema(): array
     {
+        // Array-only, see CopyRecordTool::getSchema().
         return [
             'type' => 'object',
             'properties' => [
                 'moves' => [
                     'type' => 'array',
-                    'description' => 'Batch mode: array of moves. Each item: {table, uid, targetPid?, afterUid?}. '
-                        .'When provided, the top-level table/uid/targetPid/afterUid are ignored.',
+                    'description' => 'The records to move. Each: {table, uid, targetPid?, afterUid?}. Give each entry targetPid or afterUid. Pass one entry even for a single move.',
                     'items' => ['type' => 'object'],
                 ],
-                'table' => ['type' => 'string', 'description' => 'TCA table name (single move).'],
-                'uid' => ['type' => 'integer', 'description' => 'UID of the record to move (single move).'],
-                'targetPid' => ['type' => 'integer', 'description' => 'Target page UID (record placed at top of page).'],
-                'afterUid' => ['type' => 'integer', 'description' => 'Place after this record UID. If provided, overrides targetPid positioning.'],
             ],
+            'required' => ['moves'],
         ];
     }
 
@@ -61,27 +56,23 @@ class MoveRecordTool extends AbstractDataTool
     {
         $moves = $params['moves'] ?? null;
 
-        if (is_array($moves)) {
-            if (empty($moves)) {
-                return $this->textError('moves must be a non-empty array.');
-            }
-
-            return $this->batchResultBuilder->run($moves, 'move(s)', function (mixed $move): array {
-                if (!is_array($move)) {
-                    throw new InvalidParameterException('Skipped (not an object).');
-                }
-
-                return $this->performMove($move);
-            });
+        if (!is_array($moves) || empty($moves)) {
+            return $this->textError('moves must be a non-empty array of {table, uid, targetPid|afterUid}.');
         }
 
-        return $this->textResult($this->performMove($params)['message']);
+        return $this->batchResultBuilder->run($moves, 'move(s)', function (mixed $move): array {
+            if (!is_array($move)) {
+                throw new InvalidParameterException('Skipped (not an object).');
+            }
+
+            return $this->performMove($move);
+        });
     }
 
     /**
      * @param array<string, mixed> $move
      *
-     * @return array{message: string, uid: int}
+     * @return array{message: string, uid: int, table: string, action: string}
      */
     private function performMove(array $move): array
     {
@@ -123,7 +114,7 @@ class MoveRecordTool extends AbstractDataTool
         $dh->process_cmdmap();
 
         if ([] !== $dh->errorLog) {
-            throw new \RuntimeException('Move failed: '.implode(', ', $dh->errorLog));
+            throw $this->dataHandlerError->toException('move', $table, $uid, $dh->errorLog);
         }
 
         $text = sprintf(
@@ -139,6 +130,6 @@ class MoveRecordTool extends AbstractDataTool
             $text .= sprintf(' to page %d.', $targetPid);
         }
 
-        return ['message' => $text, 'uid' => $uid];
+        return ['message' => $text, 'uid' => $uid, 'table' => $table, 'action' => 'update'];
     }
 }

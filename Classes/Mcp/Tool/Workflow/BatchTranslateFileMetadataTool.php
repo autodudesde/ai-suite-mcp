@@ -6,7 +6,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
 use AutoDudes\AiSuite\Domain\Repository\SysFileMetadataRepository;
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
@@ -23,7 +22,9 @@ use TYPO3\CMS\Core\Resource\File;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslateFileMetadataTool extends AbstractAiTool
 {
-    protected ?string $requiredScope = 'mcp:translate';
+    // Gating scope = the mass-action scope the gate actually checks (TOOL_SCOPE_MAP).
+    // The AI feature permission is verified on top, in validatePermissions().
+    protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -43,9 +44,9 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Translate file metadata (alt text, title, description) for specific files using an external AI model — costs credits per file. '
+        return 'Translate file metadata (alt text, title, description) for specific files with an external AI model (costs credits). '
             .'For processing all files in a folder, use batchTranslateFolderMetadata instead. '
-            .DescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC;
     }
 
     public function getSchema(): array
@@ -58,8 +59,14 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
                     'items' => ['type' => 'integer'],
                     'description' => 'Array of sys_file UIDs to translate metadata for.',
                 ],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language code (de, en, fr, es, ...).'],
-                'sourceLanguage' => ['type' => 'string', 'description' => 'ISO source language. Default: site default language.'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language code (de, en, fr, es, ...).',
+                ]),
+                'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO source language. Default: site default language.',
+                ]),
                 'fields' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
@@ -70,6 +77,12 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             ],
             'required' => ['fileUids', 'targetLanguage'],
         ];
+    }
+
+    protected function validatePermissions(): void
+    {
+        parent::validatePermissions();
+        $this->permissionService->validateFeatureScope('mcp:translate');
     }
 
     protected function doExecute(array $params): CallToolResult
@@ -102,7 +115,6 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
                 GenerationLibraryEnumeration::TRANSLATE,
                 'translate',
                 ['text'],
-                CreditCostEnumeration::TRANSLATION,
                 ['text' => 'Translation models'],
             );
 
@@ -125,6 +137,14 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
 
         $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, 1);
         $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, 1);
+
+        // See BatchTranslatePageTool: 0 means "default language" *and* "could not resolve", so an
+        // unresolvable target would silently translate into the source language and spend credits
+        // doing it. Inherited by batchTranslateFolderMetadata.
+        if (0 === $targetLanguageUid) {
+            return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
+        }
+
         $this->recordAccess->assertLanguageAccess($targetLanguageUid);
         $column = count($fields) > 1 ? 'all' : ($fields[0] ?? 'alternative');
 
@@ -283,7 +303,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped files: %s (not found, no source metadata, or not accessible)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
         return $this->textResult($text);
     }

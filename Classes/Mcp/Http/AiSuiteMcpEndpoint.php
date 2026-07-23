@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Http;
 
 use AutoDudes\AiSuite\Service\BackendUserService;
+use AutoDudes\AiSuite\Service\IconService;
 use AutoDudes\AiSuiteMcp\Domain\Model\Dto\TokenData;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\McpBackendUserInitializer;
@@ -12,14 +13,11 @@ use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidTokenException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\SessionOrientationService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use Mcp\Server\HttpServerRunner;
-use Mcp\Server\InitializationOptions;
 use Mcp\Server\Transport\Http\FileSessionStore;
 use Mcp\Server\Transport\Http\HttpMessage;
-use Mcp\Types\ServerCapabilities;
-use Mcp\Types\ServerResourcesCapability;
-use Mcp\Types\ServerToolsCapability;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
@@ -28,9 +26,7 @@ use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\Response;
-use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
-use TYPO3\CMS\Core\Utility\PathUtility;
 
 class AiSuiteMcpEndpoint
 {
@@ -47,6 +43,8 @@ class AiSuiteMcpEndpoint
         private readonly BackendUserService $backendUserService,
         private readonly McpBackendUserInitializer $backendUserInitializer,
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly SessionOrientationService $sessionOrientation,
+        private readonly IconService $iconService,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -81,45 +79,17 @@ class AiSuiteMcpEndpoint
             );
             $this->userContext->setServerRequest($request);
 
-            $server = $this->serverFactory->createServer();
-
-            $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
-            $sessionTimeout = (int) ($extConf['mcpSessionTimeoutSeconds'] ?? 1800);
-
-            $initOptions = new InitializationOptions(
-                serverName: 'ai-suite',
-                serverVersion: ExtensionManagementUtility::getExtensionVersion('ai_suite_mcp') ?: '0.0.0',
-                capabilities: new ServerCapabilities(
-                    tools: new ServerToolsCapability(listChanged: false),
-                    resources: new ServerResourcesCapability(subscribe: false, listChanged: false),
-                ),
-            );
-
-            $sessionPath = Environment::getVarPath().'/aisuite_mcp_sessions/';
-            if (!is_dir($sessionPath)) {
-                GeneralUtility::mkdir_deep($sessionPath);
+            $mcpSessionId = trim($request->getHeaderLine('Mcp-Session-Id'));
+            if ('' !== $mcpSessionId) {
+                $this->userContext->setSessionKey('mcp:'.$mcpSessionId);
             }
 
-            // Stateless HTTP only: no long-lived SSE streams that would pin a
-            // PHP-FPM worker per client. auto_detect would otherwise flip
-            // enable_sse on in non-shared-hosting environments.
-            $httpOptions = [
-                'auto_detect' => false,
-                'enable_sse' => false,
-                'shared_hosting' => true,
-                'session_timeout' => $sessionTimeout > 0 ? $sessionTimeout : 3600,
-            ];
-
-            $runner = new HttpServerRunner(
-                $server,
-                $initOptions,
-                $httpOptions,
-                null,
-                new FileSessionStore($sessionPath),
-            );
+            $rawBody = (string) $request->getBody();
+            $payload = json_decode($rawBody);
+            $payload = $payload instanceof \stdClass ? $payload : null;
 
             // Build HttpMessage from PSR-7 request
-            $httpMessage = new HttpMessage((string) $request->getBody());
+            $httpMessage = new HttpMessage($rawBody);
             $httpMessage->setMethod($request->getMethod());
             $httpMessage->setUri((string) $request->getUri());
             $httpMessage->setQueryParams($request->getQueryParams());
@@ -127,8 +97,10 @@ class AiSuiteMcpEndpoint
                 $httpMessage->setHeader($name, implode(', ', $values));
             }
 
+            $this->mintSessionForStatelessClient($httpMessage, $request, $mcpSessionId, $payload);
+
             // process the JSON-RPC request
-            $sdkResponse = $runner->handleRequest($httpMessage);
+            $sdkResponse = $this->createRunner()->handleRequest($httpMessage);
 
             // Inject server icon into initialize response (SDK doesn't support this natively)
             $body = $sdkResponse->getBody();
@@ -141,7 +113,7 @@ class AiSuiteMcpEndpoint
                 'body' => substr((string) $body, 0, 500),
                 'headers' => $sdkResponse->getHeaders(),
                 'request_method' => $request->getMethod(),
-                'request_body' => substr((string) $request->getBody(), 0, 300),
+                'request' => $this->describeRequest($payload, $rawBody),
             ]);
 
             // Convert SDK HttpMessage to PSR-7 response
@@ -187,31 +159,183 @@ class AiSuiteMcpEndpoint
         }
     }
 
+    private function createRunner(): HttpServerRunner
+    {
+        $server = $this->serverFactory->createServer();
+
+        $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
+        $sessionTimeout = (int) ($extConf['mcpSessionTimeoutSeconds'] ?? 1800);
+
+        $initOptions = $server->createInitializationOptions();
+
+        $sessionPath = Environment::getVarPath().'/aisuite_mcp_sessions/';
+        if (!is_dir($sessionPath)) {
+            GeneralUtility::mkdir_deep($sessionPath);
+        }
+
+        // Stateless HTTP only: no long-lived SSE streams that would pin a
+        // PHP-FPM worker per client. auto_detect would otherwise flip
+        // enable_sse on in non-shared-hosting environments.
+        $httpOptions = [
+            'auto_detect' => false,
+            'enable_sse' => false,
+            'shared_hosting' => true,
+            'session_timeout' => $sessionTimeout > 0 ? $sessionTimeout : 3600,
+        ];
+
+        return new HttpServerRunner(
+            $server,
+            $initOptions,
+            $httpOptions,
+            null,
+            new FileSessionStore($sessionPath),
+        );
+    }
+
+    private function mintSessionForStatelessClient(
+        HttpMessage $httpMessage,
+        ServerRequestInterface $request,
+        string $mcpSessionId,
+        ?\stdClass $payload,
+    ): void {
+        if ('POST' !== $request->getMethod() || '' !== $mcpSessionId) {
+            return;
+        }
+
+        // `initialize` is the one request that is allowed to create a session itself.
+        if ('initialize' === $this->rpcMethod($payload)) {
+            return;
+        }
+
+        $sessionId = $this->establishSessionId($request);
+        if (null === $sessionId) {
+            return;
+        }
+
+        $httpMessage->setHeader('Mcp-Session-Id', $sessionId);
+        $this->userContext->setSessionKey('mcp:'.$sessionId);
+    }
+
+    private function establishSessionId(ServerRequestInterface $request): ?string
+    {
+        $protocolVersion = trim($request->getHeaderLine('MCP-Protocol-Version'));
+        if (!in_array($protocolVersion, self::SUPPORTED_PROTOCOL_VERSIONS, true)) {
+            $protocolVersion = self::SUPPORTED_PROTOCOL_VERSIONS[0];
+        }
+
+        $initMessage = new HttpMessage((string) json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 0,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => $protocolVersion,
+                'capabilities' => new \stdClass(),
+                'clientInfo' => ['name' => 'ai-suite-mcp session recovery', 'version' => '1.0'],
+            ],
+        ]));
+        $initMessage->setMethod('POST');
+        $initMessage->setUri((string) $request->getUri());
+        $initMessage->setHeader('Content-Type', 'application/json');
+        $initMessage->setHeader('Accept', 'application/json');
+
+        $sessionId = $this->createRunner()->handleRequest($initMessage)->getHeader('Mcp-Session-Id');
+
+        return \is_string($sessionId) && '' !== $sessionId ? $sessionId : null;
+    }
+
+    private function rpcMethod(?\stdClass $payload): string
+    {
+        $method = $payload->method ?? null;
+
+        return \is_string($method) ? $method : '';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function describeRequest(?\stdClass $payload, string $rawBody): array
+    {
+        if (null === $payload) {
+            return ['raw' => substr($rawBody, 0, 300)];
+        }
+
+        $described = ['method' => $this->rpcMethod($payload)];
+
+        $params = $payload->params ?? null;
+        if (!$params instanceof \stdClass) {
+            return $described;
+        }
+
+        $tool = $params->name ?? null;
+        if (\is_string($tool)) {
+            $described['tool'] = $tool;
+        }
+
+        $arguments = $params->arguments ?? null;
+        if (null !== $arguments) {
+            $described['arguments'] = substr((string) json_encode($arguments, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 0, 500);
+        }
+
+        return $described;
+    }
+
     private function injectServerIcon(string $body, ServerRequestInterface $request): string
     {
-        $json = json_decode($body, true);
-        if (!is_array($json) || !isset($json['result']['serverInfo'])) {
+        $json = json_decode($body);
+        if (!$json instanceof \stdClass) {
+            return $body;
+        }
+
+        $result = $json->result ?? null;
+        if (!$result instanceof \stdClass) {
+            return $body;
+        }
+
+        $serverInfo = $result->serverInfo ?? null;
+        if (!$serverInfo instanceof \stdClass) {
             return $body;
         }
 
         $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
-        $iconPath = PathUtility::getPublicResourceWebPath('EXT:ai_suite/Resources/Public/Icons/Extension.svg');
-        $iconUrl = $baseUrl.$iconPath;
+        // Through the icon registry, so a white-label package re-registering the identifier wins.
+        $iconPath = $this->iconService->getPublicIconUrl('tx-aisuite-extension');
 
-        $json['result']['serverInfo']['icons'] = [
-            ['src' => $iconUrl, 'mimeType' => 'image/svg+xml'],
-        ];
+        if ('' !== $iconPath) {
+            $serverInfo->icons = [
+                (object) ['src' => $baseUrl.$iconPath, 'mimeType' => $this->iconMimeType($iconPath)],
+            ];
+        }
 
-        $json['result']['instructions'] = $this->getServerInstructions();
+        $result->instructions = $this->getServerInstructions();
 
         return (string) json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
+    private function iconMimeType(string $iconPath): string
+    {
+        $extension = strtolower(pathinfo(parse_url($iconPath, PHP_URL_PATH) ?: $iconPath, PATHINFO_EXTENSION));
+
+        return match ($extension) {
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'webp' => 'image/webp',
+            default => 'image/svg+xml',
+        };
+    }
+
     private function getServerInstructions(): string
     {
-        return 'You are connected to a TYPO3 CMS via AI Suite MCP.'
+        $instructions = 'You are connected to a TYPO3 CMS via AI Suite MCP.'
             ."\n\n"
-            .OperatingGuidelines::get();
+            .OperatingGuidelines::getForInstructions();
+
+        $orientation = $this->sessionOrientation->buildInstructionBlock();
+        if ('' !== $orientation) {
+            $instructions .= "\n\n".$orientation;
+        }
+
+        return $instructions;
     }
 
     /**

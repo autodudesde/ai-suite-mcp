@@ -4,7 +4,7 @@ enableMcp = 0
 # cat=MCP/settings; type=int+; label=MCP Token Lifetime (days):How long OAuth tokens remain valid
 mcpTokenLifetimeDays = 30
 
-# cat=MCP/settings; type=string; label=MCP Allowed Origins:Comma-separated list of allowed CORS origins (empty = Development: all allowed, Production: none)
+# cat=MCP/settings; type=string; label=MCP Allowed Origins:Comma-separated list of allowed CORS origins (empty = Development: all allowed, Production: same-origin only)
 mcpAllowedOrigins =
 
 # cat=MCP/settings; type=string; label=MCP Allowed Client IDs:Comma-separated list of allowed OAuth client IDs (empty = all allowed)
@@ -13,8 +13,8 @@ mcpAllowedClientIds =
 # cat=MCP/security; type=boolean; label=Allow HTTP (development only):Allow MCP over unencrypted HTTP. NEVER enable in production!
 mcpAllowHttp = 0
 
-# cat=MCP/settings; type=options[auto=auto,workspace=workspace,live=live]; label=MCP Write Mode:How MCP tools write data. auto = workspace if available, otherwise live. workspace = always workspace. live = always direct.
-mcpWriteMode = auto
+# cat=MCP/settings; type=options[auto=auto,workspace=workspace,live=live]; label=MCP Write Mode:How MCP tools write data. workspace (default) = always a draft workspace; if the user has none, a per-user workspace is created automatically (requires ext:workspaces). auto = workspace if available, otherwise live. live = always direct to live. ChEddi inherits this by default but can override it with its own chatWriteMode (cheddi).
+mcpWriteMode = workspace
 
 # cat=MCP/performance; type=int+; label=MCP Session Timeout (seconds):Drop idle MCP sessions after this many seconds. Lower values free PHP workers and reduce session-store bloat. 0 = SDK default (3600s).
 mcpSessionTimeoutSeconds = 1800

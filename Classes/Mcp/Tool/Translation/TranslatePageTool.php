@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Translation;
 
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\GlossarService;
@@ -45,10 +44,9 @@ class TranslatePageTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Translate a complete TYPO3 page (metadata + all content elements) to another language. Two approaches: '
-            .DescriptionSnippets::APPROACH_A
-            .'(B) Use localizeRecord to create translation shells → translate manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
-            .DescriptionSnippets::APPROACH_A_TRANSLATE_DIRECT_PERSIST;
+        return 'Translate a whole page — metadata and every content element — into a target language, using DeepL and the site glossary '
+            .DescriptionSnippets::COSTS_CREDITS.'. '
+            .'Writes the translation itself; localizeRecord only creates empty translation shells.';
     }
 
     public function getSchema(): array
@@ -57,9 +55,15 @@ class TranslatePageTool extends AbstractAiTool
             'type' => 'object',
             'properties' => [
                 'pageId' => ['type' => 'integer', 'description' => 'Page UID to translate'],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language code (de, en, fr, es, ...)'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language code.',
+                ]),
                 'model' => ['type' => 'string', 'description' => 'Translation model identifier. Omit to get a list of available models first.'],
-                'sourceLanguage' => ['type' => 'string', 'description' => 'ISO source language. Default: site default language.'],
+                'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO source language. Default: site default language.',
+                ]),
                 'translationScope' => [
                     'type' => 'string',
                     'enum' => ['all', 'metadata', 'content'],
@@ -84,7 +88,6 @@ class TranslatePageTool extends AbstractAiTool
                 GenerationLibraryEnumeration::TRANSLATE,
                 'translate',
                 ['text'],
-                CreditCostEnumeration::TRANSLATION,
                 ['text' => 'Translation models'],
             );
         }
@@ -213,7 +216,7 @@ class TranslatePageTool extends AbstractAiTool
             }
         }
 
-        $text .= "**Note:** Translated records are hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to verify.\n";
+        $text .= "**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
 
         return $this->appendCreditInfo($this->textResult($text), $result);
     }

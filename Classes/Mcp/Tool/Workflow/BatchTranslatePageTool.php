@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
@@ -22,7 +21,9 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslatePageTool extends AbstractAiTool
 {
-    protected ?string $requiredScope = 'mcp:translate';
+    // Gating scope = the mass-action scope the gate actually checks (TOOL_SCOPE_MAP).
+    // The AI feature permission is verified on top, in validatePermissions().
+    protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -41,8 +42,8 @@ class BatchTranslatePageTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Translate multiple pages using an external AI model — costs credits per page. '
-            .DescriptionSnippets::BATCH_ASYNC_FLOW;
+        return 'Translate multiple pages with an external AI model (costs credits). '
+            .DescriptionSnippets::BATCH_ASYNC;
     }
 
     public function getSchema(): array
@@ -55,8 +56,14 @@ class BatchTranslatePageTool extends AbstractAiTool
                     'items' => ['type' => 'integer'],
                     'description' => 'Array of page UIDs to translate.',
                 ],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language code (de, en, fr, es, ...).'],
-                'sourceLanguage' => ['type' => 'string', 'description' => 'ISO source language. Default: site default language.'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language code (de, en, fr, es, ...).',
+                ]),
+                'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO source language. Default: site default language.',
+                ]),
                 'translationScope' => [
                     'type' => 'string',
                     'enum' => ['all', 'metadata', 'content'],
@@ -67,6 +74,12 @@ class BatchTranslatePageTool extends AbstractAiTool
             ],
             'required' => ['pageIds', 'targetLanguage'],
         ];
+    }
+
+    protected function validatePermissions(): void
+    {
+        parent::validatePermissions();
+        $this->permissionService->validateFeatureScope('mcp:translate');
     }
 
     protected function doExecute(array $params): CallToolResult
@@ -100,7 +113,6 @@ class BatchTranslatePageTool extends AbstractAiTool
                 GenerationLibraryEnumeration::TRANSLATE,
                 'translate',
                 ['text'],
-                CreditCostEnumeration::TRANSLATION,
                 ['text' => 'Translation models'],
             );
 
@@ -123,6 +135,16 @@ class BatchTranslatePageTool extends AbstractAiTool
 
         $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $pageIds[0] ?? 1);
         $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageIds[0] ?? 1);
+
+        // resolveLanguageUid() answers 0 both for "the default language" and for "could not resolve
+        // this code" (unknown code, or the site lookup threw). Without this check an unresolvable
+        // target silently becomes the default language, and the batch spends credits translating
+        // every page into the language it is already in. The targetLanguage enum narrows this but
+        // does not close it: it is a union over all sites, so a code that is valid for another site
+        // still resolves to 0 here, and no enum is offered at all when the languages are unknown.
+        if (0 === $targetLanguageUid) {
+            return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
+        }
 
         // assertLanguageAccess once (target language is tool-global, fail-fast)
         $this->recordAccess->assertLanguageAccess($targetLanguageUid);
@@ -216,7 +238,7 @@ class BatchTranslatePageTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped pages: %s (not found, excluded from AI, or no translatable content)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
         return $this->textResult($text);
     }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
-use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
-use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
+use AutoDudes\AiSuiteMcp\Mcp\Service\RecordPreviewService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
@@ -13,6 +15,14 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 class PreviewRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
+    protected bool $readOnlyHint = true;
+
+    public function __construct(
+        ToolContext $mcpToolContext,
+        private readonly RecordPreviewService $recordPreview,
+    ) {
+        parent::__construct($mcpToolContext);
+    }
 
     public function getName(): string
     {
@@ -21,11 +31,9 @@ class PreviewRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Preview one or more records before writing to the database — only needed for manually composed content (Approach B). '
-            .'Not needed for external AI tools (generate*/translate*) — they return a preview directly in their response. '
-            .'Always pass a records array — even for a single record, wrap it in an array. '
-            .'For b13/container content, include `tx_container_parent` and `colPos` on child records (see getContentTypes / getColumnPositions). '
-            .'Display the preview to the user. After explicit user approval, persist via writeRecords.';
+        return 'Show what writeRecords would change, as an old/new diff per field, without touching the database. '
+            .'The AI tools already return their result in the response, so they need no preview. '
+            .'Always pass a records array, even for a single record; child records of a container carry `tx_container_parent` and `colPos`.';
     }
 
     public function getSchema(): array
@@ -34,9 +42,10 @@ class PreviewRecordTool extends AbstractDataTool
             'type' => 'object',
             'properties' => [
                 'records' => [
+                    // Kept in step with writeRecords: a union type here would train the model into the
+                    // string branch for the write that follows. See RecordsArgumentDecoder.
                     'type' => 'array',
-                    'description' => 'Array of records to preview. Each: {table, fields, pid?, uid?}. '
-                        .'Example: [{"table":"tt_content","pid":1,"fields":{"CType":"text","header":"Hi"}}]',
+                    'description' => 'The records writeRecords would receive. Each: {table, fields, pid?, uid?}. An uid diffs against that record; a pid previews a create.',
                     'items' => ['type' => 'object'],
                 ],
             ],
@@ -46,96 +55,153 @@ class PreviewRecordTool extends AbstractDataTool
 
     protected function doExecute(array $params): CallToolResult
     {
-        $records = $params['records'] ?? [];
+        $records = RecordsArgumentDecoder::decode($params['records'] ?? []);
 
-        if (!is_array($records) || empty($records)) {
+        if (empty($records)) {
             return $this->textError('records must be a non-empty array.');
         }
 
-        return $this->previewBatch($records);
+        $described = $this->recordPreview->describeWrite($records);
+
+        $invalid = array_values(array_filter(
+            $described,
+            static fn (array $record): bool => 'invalid' === ($record['action'] ?? 'invalid'),
+        ));
+        $invalidCount = count($invalid);
+        $validCount = count($described) - $invalidCount;
+
+        $preview = [
+            'preview' => [
+                'kind' => 'records',
+                'records' => $described,
+                'validCount' => $validCount,
+                'invalidCount' => $invalidCount,
+            ],
+        ];
+
+        $text = $this->render($described, $invalid, $validCount);
+
+        // Only when there is literally nothing to show. isError does not abort the turn -- the host
+        // appends the result as a failed tool message and the model gets another turn to correct
+        // itself -- but a mixed batch still has something worth rendering, so it stays a success.
+        if (0 === $validCount) {
+            return $this->errorResult($text, McpErrorType::InvalidParameter, [], $preview);
+        }
+
+        return $this->structuredResult($text, $preview);
     }
 
     /**
-     * @param array<string, mixed> $records
+     * @param list<array<string, mixed>> $described
+     * @param list<array<string, mixed>> $invalid   the subset of $described that cannot be written
      */
-    private function previewBatch(array $records): CallToolResult
+    private function render(array $described, array $invalid, int $validCount): string
     {
-        $text = sprintf("## Preview: %d record(s)\n\n", count($records));
+        $text = sprintf("## Preview: %d record(s)\n\n", count($described));
 
         $i = 0;
-        foreach ($records as $record) {
+        foreach ($described as $record) {
             ++$i;
-            $table = (string) ($record['table'] ?? '');
-            $uid = isset($record['uid']) ? (int) $record['uid'] : null;
-            $pid = isset($record['pid']) ? (int) $record['pid'] : null;
+            $action = (string) ($record['action'] ?? 'invalid');
+            $note = $record['note'] ?? null;
+
+            if ('invalid' === $action) {
+                $text .= sprintf("### Record %d: ❌ %s\n\n", $i, is_string($note) ? $note : 'Invalid');
+
+                continue;
+            }
+            if ('skipped' === $action) {
+                $text .= sprintf("### Record %d: ⛔ Skipped — %s\n\n", $i, is_string($note) ? $note : 'no permission');
+
+                continue;
+            }
+
+            $text .= sprintf(
+                "### Record %d: %s `%s` (%s)\n",
+                $i,
+                strtoupper($action),
+                (string) $record['table'],
+                (string) $record['tableLabel'],
+            );
+
+            if ('create' === $action) {
+                $text .= sprintf(
+                    "Page: %s | Position: %s\n",
+                    null === $record['pid'] ? '?' : (string) $record['pid'],
+                    (string) ($record['position'] ?? 'end'),
+                );
+            } else {
+                $text .= sprintf("UID: %s\n", (string) $record['uid']);
+            }
+
             $fields = $record['fields'] ?? [];
-
-            if ('' === $table || !is_array($fields) || empty($fields)) {
-                $text .= sprintf("### Record %d: ❌ Invalid (missing table or fields)\n\n", $i);
-
-                continue;
-            }
-
-            $isCreate = null === $uid;
-
-            try {
-                $this->recordAccess->validateTableReadAccess($table);
-                if ($isCreate && null !== $pid) {
-                    $this->recordAccess->assertRecordCreateAccess($table, $pid);
-                } elseif (!$isCreate) {
-                    $this->recordAccess->assertRecordEditAccess($table, $uid);
+            if (is_array($fields)) {
+                foreach ($fields as $field) {
+                    $text .= $this->renderField($field);
                 }
-                $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
-            } catch (InsufficientPermissionException $e) {
-                $this->logger->warning('PreviewRecord: skipping record — insufficient permission', [
-                    'table' => $table,
-                    'uid' => $uid,
-                    'pid' => $pid,
-                    'isCreate' => $isCreate,
-                    'reason' => $e->getMessage(),
-                ]);
-                $text .= sprintf("### Record %d: ⛔ Skipped — %s\n\n", $i, $e->getMessage());
-
-                continue;
-            } catch (InvalidParameterException|\RuntimeException $e) {
-                $this->logger->warning('PreviewRecord: skipping record — invalid input', [
-                    'table' => $table,
-                    'uid' => $uid,
-                    'pid' => $pid,
-                    'isCreate' => $isCreate,
-                    'reason' => $e->getMessage(),
-                ]);
-                $text .= sprintf("### Record %d: ❌ %s\n\n", $i, $e->getMessage());
-
-                continue;
-            }
-
-            $action = $isCreate ? 'CREATE' : 'UPDATE';
-
-            $text .= sprintf("### Record %d: %s `%s` (%s)\n", $i, $action, $table, $this->tcaLabel->getTableLabel($table));
-            if ($isCreate && null !== $pid) {
-                $text .= sprintf('Page: %d', $pid);
-                $position = (string) ($record['position'] ?? 'end');
-                $text .= sprintf(" | Position: %s\n", $position);
-            } elseif (!$isCreate) {
-                $text .= sprintf("UID: %d\n", $uid);
-            }
-
-            foreach ($fields as $field => $value) {
-                $label = $this->tcaLabel->getFieldLabel($table, (string) $field);
-                $displayValue = is_string($value) ? $value : json_encode($value);
-                if (is_string($displayValue) && mb_strlen($displayValue) > 300) {
-                    $displayValue = mb_substr($displayValue, 0, 300).'...';
-                }
-                $text .= sprintf("- **%s** (`%s`): %s\n", $label, $field, $displayValue);
             }
 
             $text .= "\n";
         }
 
         $text .= "---\n";
-        $text .= 'Show this preview to the user and wait for their confirmation before saving.';
 
-        return $this->textResult($text);
+        // An invalid record cannot be written, so inviting a write is worse than useless: it is what
+        // sent gpt-5.4-nano into writeRecords with a hallucinated CType and a record whose table was
+        // a placeholder string. The invitation is now tied to there being something writable.
+        if ([] !== $invalid) {
+            $notes = implode('; ', array_map(
+                static fn (array $record): string => is_string($record['note'] ?? null) ? $record['note'] : 'invalid',
+                $invalid,
+            ));
+
+            if (0 === $validCount) {
+                return $text.sprintf(
+                    '❌ Nothing can be written — every record is invalid: %s. Correct the record(s) and preview again.',
+                    $notes,
+                );
+            }
+
+            return $text.sprintf(
+                '⚠️ %d of %d record(s) are invalid and cannot be written: %s. Only the valid record(s) can be saved with writeRecords.',
+                count($invalid),
+                count($described),
+                $notes,
+            );
+        }
+
+        // Not "wait for their confirmation": measured, gpt-5.4-nano and gpt-oss-120b took that
+        // literally, ended the turn, and never called writeRecords. The host owns the approval
+        // gate; a tool result that tells the model to wait simply strands the task.
+        $text .= 'Show this preview to the user, then call writeRecords to save it.';
+
+        return $text;
+    }
+
+    /**
+     * @param array<string, mixed> $field
+     */
+    private function renderField(array $field): string
+    {
+        $label = (string) ($field['label'] ?? '');
+        $name = (string) ($field['name'] ?? '');
+        $new = $this->withEllipsis((string) ($field['new'] ?? ''), (bool) ($field['truncated'] ?? false));
+        $old = $field['old'] ?? null;
+
+        if (null === $old) {
+            return sprintf("- **%s** (`%s`): %s\n", $label, $name, $new);
+        }
+
+        $old = $this->withEllipsis((string) $old, (bool) ($field['truncated'] ?? false));
+        if (false === ($field['changed'] ?? true)) {
+            return sprintf("- **%s** (`%s`): %s _(unchanged)_\n", $label, $name, $new);
+        }
+
+        return sprintf("- **%s** (`%s`):\n    - old: %s\n    - new: %s\n", $label, $name, $old, $new);
+    }
+
+    private function withEllipsis(string $value, bool $truncated): string
+    {
+        return $truncated ? $value.'...' : $value;
     }
 }

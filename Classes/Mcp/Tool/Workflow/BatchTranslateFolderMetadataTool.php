@@ -19,9 +19,9 @@ class BatchTranslateFolderMetadataTool extends BatchTranslateFileMetadataTool
 
     public function getDescription(): string
     {
-        return 'Translate file metadata (alt text, title, description) for all files in one or more FAL folders using an external AI model — costs credits per file. '
+        return 'Translate file metadata (alt text, title, description) for every file in one or more FAL folders with an external AI model (costs credits). '
             .'For specific files by UID, use batchTranslateFileMetadata instead. '
-            .DescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC;
     }
 
     public function getSchema(): array
@@ -34,8 +34,14 @@ class BatchTranslateFolderMetadataTool extends BatchTranslateFileMetadataTool
                     'items' => ['type' => 'string'],
                     'description' => 'Array of FAL folder paths (e.g. ["1:/user_upload/", "1:/images/"]). Processes all files in these folders.',
                 ],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language code (de, en, fr, es, ...).'],
-                'sourceLanguage' => ['type' => 'string', 'description' => 'ISO source language. Default: site default language.'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language code (de, en, fr, es, ...).',
+                ]),
+                'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO source language. Default: site default language.',
+                ]),
                 'fields' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],

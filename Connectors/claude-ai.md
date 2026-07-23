@@ -58,7 +58,7 @@ Claude.ai is hosted by Anthropic — there is no local client to install. In ret
 
 3. Click **Connect** — Claude.ai performs OAuth Dynamic Client Registration against `<typo3-url>/aisuite-mcp/oauth/register`, then opens an authorization popup pointing at `<typo3-url>/aisuite-mcp/oauth/authorize?...`.
 4. If you are not yet logged in: TYPO3 backend login.
-5. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:workflow`, `mcp:easy-language`, `mcp:glossary`, `mcp:manage`) → confirm.
+5. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:media`, `mcp:workflow`) → confirm.
 6. Redirect back to Claude.ai → token is stored. Connector status: *"Connected"*.
 
 ## Step 3 — Activate the connector per chat

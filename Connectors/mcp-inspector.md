@@ -76,7 +76,7 @@ Click **Connect**. The Inspector performs OAuth Dynamic Client Registration agai
 ## Step 3 — Complete the OAuth flow
 
 1. If you are not yet logged in: TYPO3 backend login.
-2. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:workflow`, `mcp:easy-language`, `mcp:glossary`, `mcp:manage`) → confirm.
+2. The **consent screen** lists the requested scopes (`mcp:read`, `mcp:write`, `mcp:generate`, `mcp:translate`, `mcp:image`, `mcp:media`, `mcp:workflow`) → confirm.
 3. The browser redirects back to `http://localhost:6274/oauth/callback` with the authorization code → the Inspector exchanges it for an access token and stores it in localStorage.
 4. The connection panel switches to *"Connected"* and the **Tools**, **Resources**, **Prompts** tabs become available.
 

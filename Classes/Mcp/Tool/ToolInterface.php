@@ -20,6 +20,14 @@ interface ToolInterface
     public function getSchema(): array;
 
     /**
+     * MCP behavioural hints (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
+     * emitted in the tools/list response so clients can decide auto-approval.
+     *
+     * @return array<string, bool>
+     */
+    public function getAnnotations(): array;
+
+    /**
      * @param array<string, mixed> $params Validated parameters
      */
     public function execute(array $params): CallToolResult;

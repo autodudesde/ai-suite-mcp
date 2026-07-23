@@ -1,25 +1,23 @@
 {
   "name": "autodudes/ai-suite-mcp",
   "type": "typo3-cms-extension",
-  "description": "MCP (Model Context Protocol) server integration for TYPO3 and compatibility to EXT:ai_suite. Provides AI-powered tools for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients.",
+  "description": "AI Suite MCP - MCP (Model Context Protocol) server integration for TYPO3 and compatibility to EXT:ai_suite. Provides AI-powered tools for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients.",
   "homepage": "https://www.autodudes.de/",
   "license": [
     "GPL-2.0-or-later"
   ],
+  "version": "0.5.0",
   "keywords": [
     "TYPO3 CMS",
     "MCP",
     "Model Context Protocol"
   ],
-  "version": "0.4.0",
   "require": {
-    "autodudes/ai-suite": "^12.19.2 || ^13.13.2 || ^14.1.2",
-    "typo3/cms-reports": "^12.4.11 | ^13.4.1 || ^14.3.0",
+    "autodudes/ai-suite": "^12.21.0 || ^13.15.0 || ^14.3.0",
+    "typo3/cms-reports": "^12.4.11 || ^13.4.1 || ^14.3.0",
+    "typo3/cms-workspaces": "^12.4.11 || ^13.4.1 || ^14.3.0",
     "logiscape/mcp-sdk-php": "^1.7",
     "symfony/clock": "^6.4 || ^7.0 || ^8.0"
-  },
-  "suggest": {
-    "typo3/cms-workspaces": "^12.4.11 | ^13.4.1 || ^14.0.0"
   },
   "autoload": {
     "psr-4": {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
+use AutoDudes\AiSuite\Domain\Repository\PagesRepository;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
@@ -18,11 +18,16 @@ use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateMetadataTool extends AbstractAiTool
 {
-    protected ?string $requiredScope = 'mcp:generate';
+    private const MAX_SUBTREE_PAGES = 50;
+
+    private const DIRECT_CHILDREN_DEPTH = 1;
+
+    protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -31,6 +36,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
         private readonly WorkflowProcessingService $workflowProcessingService,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly ContentFetchService $contentFetchService,
+        private readonly PagesRepository $pagesRepository,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -42,8 +48,10 @@ class BatchGenerateMetadataTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Generate SEO metadata for multiple pages using an external AI model — costs credits per page. '
-            .DescriptionSnippets::BATCH_ASYNC_FLOW;
+        return 'Bulk-generates SEO metadata for many pages at once with an external AI model (costs credits). '
+            .'Takes either a UID list or a whole page subtree via rootPageId. '
+            .'Sized for many pages, not for a single one. '
+            .DescriptionSnippets::BATCH_ASYNC;
     }
 
     public function getSchema(): array
@@ -54,31 +62,48 @@ class BatchGenerateMetadataTool extends AbstractAiTool
                 'pageIds' => [
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
-                    'description' => 'Array of page UIDs to generate metadata for.',
+                    'description' => 'Array of page UIDs to generate metadata for. Alternative to rootPageId; give exactly one of the two.',
+                ],
+                'rootPageId' => [
+                    'type' => 'integer',
+                    'description' => 'A whole page subtree instead of a UID list: this page and everything below it, resolved server-side. '
+                        .'Capped at '.self::MAX_SUBTREE_PAGES.' pages. Alternative to pageIds; give exactly one of the two.',
+                ],
+                'recursive' => [
+                    'type' => 'boolean',
+                    'default' => true,
+                    'description' => 'Only meaningful with rootPageId: true walks the entire subtree, false stops at the direct children.',
                 ],
                 'fields' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
                     'default' => ['seo_title', 'description'],
-                    'description' => 'Metadata fields to generate: seo_title, description, og_title, og_description, twitter_title, twitter_description.',
+                    'description' => 'Metadata fields to generate: seo_title, description, og_title, og_description, twitter_title, twitter_description, abstract.',
                 ],
                 'model' => ['type' => 'string', 'description' => 'External AI model (e.g. ChatGPT). Omit to list available models.'],
                 'language' => ['type' => 'string', 'description' => 'ISO language code (e.g. de, en). Defaults to the site default language.'],
             ],
-            'required' => ['pageIds'],
+            'required' => [],
         ];
+    }
+
+    protected function validatePermissions(): void
+    {
+        parent::validatePermissions();
+        $this->permissionService->validateFeatureScope('mcp:generate');
     }
 
     protected function doExecute(array $params): CallToolResult
     {
-        $pageIds = $params['pageIds'] ?? [];
         $model = (string) ($params['model'] ?? '');
         $fields = $params['fields'] ?? ['seo_title', 'description'];
-        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $pageIds[0] ?? 1);
 
-        if (empty($pageIds)) {
-            return $this->textError('pageIds must be a non-empty array.');
+        $pageIds = $this->resolveTargetPages($params);
+        if ($pageIds instanceof CallToolResult) {
+            return $pageIds;
         }
+
+        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $pageIds[0] ?? 1);
 
         if ('' === $model) {
             $pageCount = count($pageIds);
@@ -100,7 +125,6 @@ class BatchGenerateMetadataTool extends AbstractAiTool
                 GenerationLibraryEnumeration::METADATA,
                 'createMetadata',
                 ['text'],
-                CreditCostEnumeration::METADATA,
                 ['text' => 'AI models for metadata generation'],
             );
 
@@ -213,8 +237,58 @@ class BatchGenerateMetadataTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped pages: %s (not found or excluded from AI)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
         return $this->textResult($text);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     *
+     * @return CallToolResult|list<int>
+     */
+    private function resolveTargetPages(array $params): array|CallToolResult
+    {
+        $pageIds = $params['pageIds'] ?? [];
+        $rootPageId = $params['rootPageId'] ?? null;
+
+        if (!empty($pageIds) && null !== $rootPageId) {
+            return $this->textError('Give either pageIds or rootPageId, not both — they are two ways to name the same thing, and which one wins would be a guess.');
+        }
+
+        if (null === $rootPageId) {
+            if (empty($pageIds)) {
+                return $this->textError('No pages targeted: pass pageIds (a UID list) or rootPageId (a subtree).');
+            }
+
+            return array_values(array_map('intval', $pageIds));
+        }
+
+        $rootPageId = (int) $rootPageId;
+        $this->recordAccess->assertPagePerm($rootPageId, Permission::PAGE_SHOW);
+
+        $recursive = (bool) ($params['recursive'] ?? true);
+        $resolved = $this->pagesRepository->getSubtreePageIds(
+            $rootPageId,
+            $recursive ? 20 : self::DIRECT_CHILDREN_DEPTH,
+        );
+
+        if (count($resolved) > self::MAX_SUBTREE_PAGES) {
+            $this->logger->warning('BatchGenerateMetadata: subtree exceeds the page cap', [
+                'rootPageId' => $rootPageId,
+                'resolved' => count($resolved),
+                'cap' => self::MAX_SUBTREE_PAGES,
+            ]);
+
+            return $this->textError(sprintf(
+                'rootPageId %d expands to %d pages, above the cap of %d. This tool bills per page. '
+                .'Pick a deeper root, set recursive to false, or pass an explicit pageIds list.',
+                $rootPageId,
+                count($resolved),
+                self::MAX_SUBTREE_PAGES,
+            ));
+        }
+
+        return array_values(array_map('intval', $resolved));
     }
 }

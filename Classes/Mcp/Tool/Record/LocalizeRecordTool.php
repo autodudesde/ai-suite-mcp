@@ -22,9 +22,11 @@ class LocalizeRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Create a translation of a record using TYPO3 built-in localization — no credits. '
+        // "no credits" is the disambiguator against translateRecord, which does the same thing with
+        // an external AI model and bills for it. The verb alone cannot carry that.
+        return 'Create a translation of a record with the built-in TYPO3 localization (writes, no credits). '
             .'Mode "localize" creates an empty linked shell; "copyToLanguage" creates an independent full copy. '
-            .'Returns the UID of the new translation record. Use that UID with writeRecords to fill in the translated content.';
+            .'Returns the UID of the new translation record, which is empty until content is written into it.';
     }
 
     public function getSchema(): array
@@ -34,7 +36,10 @@ class LocalizeRecordTool extends AbstractDataTool
             'properties' => [
                 'table' => ['type' => 'string', 'description' => 'TCA table name (e.g. pages, tt_content)'],
                 'uid' => ['type' => 'integer', 'description' => 'UID of the default-language record to translate'],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language code (de, en, fr, es, ...)'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language code (de, en, fr, es, ...)',
+                ]),
                 'mode' => [
                     'type' => 'string',
                     'enum' => ['localize', 'copyToLanguage'],
@@ -81,7 +86,7 @@ class LocalizeRecordTool extends AbstractDataTool
         $dh->process_cmdmap();
 
         if ([] !== $dh->errorLog) {
-            throw new \RuntimeException('Localization failed: '.implode(', ', $dh->errorLog));
+            throw $this->dataHandlerError->toException('localization', $table, $uid, $dh->errorLog);
         }
 
         $newUid = $dh->copyMappingArray[$table][$uid] ?? null;
@@ -100,7 +105,7 @@ class LocalizeRecordTool extends AbstractDataTool
         if (null !== $newUid) {
             $text .= sprintf("\n\nTranslation created: UID %d (table: %s, language: %s)", $newUid, $table, $targetLanguage);
             $text .= sprintf("\nUse writeRecords with uid: %d to edit the translation.", $newUid);
-            $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `getPageContent` with `includeHidden: true` to see it.");
+            $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to see it.");
         }
 
         return $this->textResult($text);

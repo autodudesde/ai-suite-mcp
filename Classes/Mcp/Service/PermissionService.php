@@ -18,9 +18,10 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
  *   mcp:translate  → enable_translation, enable_translation_whole_page
  *   mcp:image      → enable_image_generation
  *   mcp:workflow   → enable_massaction_generation, enable_background_task_handling
- *   mcp:glossary   → enable_translation, enable_translation_deepl_sync
- *   mcp:easy-language → enable_rte_aieasylanguageplugin
- *   mcp:manage     → enable_mcp_access
+ *
+ * On top of the scope layer, a single tool can require its own flag (TOOL_PERMISSION_MAP):
+ *
+ *   readRenderedPage → enable_mcp_rendered_page_read
  */
 class PermissionService
 {
@@ -29,22 +30,29 @@ class PermissionService
      */
     private const TOOL_SCOPE_MAP = [
         // Context tools
-        'getPageTree' => 'mcp:read',
-        'getPageContent' => 'mcp:read',
+        'readServerInfo' => 'mcp:read',
+        'readPageTree' => 'mcp:read',
+        'readRenderedPage' => 'mcp:read',
+        'readEditorialGuidelines' => 'mcp:read',
+        'readPageContent' => 'mcp:read',
         'searchContent' => 'mcp:read',
-        'getFileInfo' => 'mcp:read',
+        'readFileInfo' => 'mcp:read',
         'listFiles' => 'mcp:read',
-        'findStaleContent' => 'mcp:read',
-        'auditContent' => 'mcp:read',
+        'listStaleContent' => 'mcp:read',
 
         // Record tools
-        'getTables' => 'mcp:read',
-        'getRecordSchema' => 'mcp:read',
-        'getPageTypes' => 'mcp:read',
-        'getContentTypes' => 'mcp:read',
-        'getColumnPositions' => 'mcp:read',
+        'listTables' => 'mcp:read',
+        'readRecordSchema' => 'mcp:read',
+        'listPageTypes' => 'mcp:read',
+        'listContentTypes' => 'mcp:read',
+        'readChildren' => 'mcp:read',
+        'readFlexFormSchema' => 'mcp:read',
+        'readContentTree' => 'mcp:read',
         'previewRecords' => 'mcp:write',
         'writeRecords' => 'mcp:write',
+        'replaceText' => 'mcp:write',
+        'patchText' => 'mcp:write',
+        'bulkReplaceText' => 'mcp:write',
         'readRecords' => 'mcp:read',
         'compareWithLive' => 'mcp:read',
         'deleteRecords' => 'mcp:write',
@@ -54,11 +62,7 @@ class PermissionService
         'savePageTree' => 'mcp:write',
 
         // Generate tools
-        'generateMetadata' => 'mcp:generate',
         'generateFileMetadata' => 'mcp:generate',
-        'generateContent' => 'mcp:generate',
-        'generatePageTree' => 'mcp:generate',
-        'generateLandingPage' => 'mcp:generate',
 
         // Translation tools
         'translatePage' => 'mcp:translate',
@@ -70,9 +74,8 @@ class PermissionService
 
         // Media tools (upload existing media to FAL)
         'uploadMedia' => 'mcp:media',
-
-        // Content optimization
-        'optimizeContent' => 'mcp:generate',
+        'copyMediaReference' => 'mcp:write',
+        'replaceMediaReference' => 'mcp:write',
 
         // Batch tools (page/folder-wide async operations)
         'batchGenerateMetadata' => 'mcp:workflow',
@@ -81,16 +84,9 @@ class PermissionService
         'batchTranslatePage' => 'mcp:workflow',
         'batchTranslateFileMetadata' => 'mcp:workflow',
         'batchTranslateFolderMetadata' => 'mcp:workflow',
-        'getTaskStatus' => 'mcp:read',
-
-        // Glossary
-        'syncGlossary' => 'mcp:glossary',
-        'listGlossary' => 'mcp:read',
-
-        // Management
-        'manageGlobalInstructions' => 'mcp:manage',
-        'managePromptTemplates' => 'mcp:manage',
-        'manageBackgroundTasks' => 'mcp:workflow',
+        'readTaskStatus' => 'mcp:read',
+        'readTaskResults' => 'mcp:read',
+        'applyTaskResults' => 'mcp:write',
     ];
 
     /**
@@ -116,21 +112,44 @@ class PermissionService
         'mcp:workflow' => [
             'tx_aisuite_features:enable_massaction_generation',
         ],
-        'mcp:glossary' => [
-            'tx_aisuite_features:enable_translation',
-            'tx_aisuite_features:enable_translation_deepl_sync',
+    ];
+
+    /**
+     * Backend-group flags a single tool needs on top of its scope.
+     *
+     * An opt-in allowlist, not a completeness map: a tool that is absent needs no extra flag.
+     * `readRenderedPage` sits in the flag-free `mcp:read` scope but is far more powerful than the
+     * other read tools, because it renders through a backend preview session of the MCP user and so
+     * also returns hidden pages, unpublished pages and workspace drafts. Gating the whole `mcp:read`
+     * scope instead would revoke every read tool and change which scopes OAuth grants.
+     *
+     * @var array<string, list<string>>
+     */
+    private const TOOL_PERMISSION_MAP = [
+        'readRenderedPage' => [
+            'tx_aisuite_features:enable_mcp_rendered_page_read',
         ],
-        'mcp:easy-language' => [
-            'tx_aisuite_features:enable_rte_aieasylanguageplugin',
-        ],
-        'mcp:manage' => [
-            'tx_aisuite_features:enable_mcp_access',
-        ],
+    ];
+
+    /**
+     * The tools whose only purpose is moving content between languages.
+     *
+     * @var list<string>
+     */
+    private const TRANSLATION_TOOLS = [
+        'translatePage',
+        'translateRecord',
+        'translateFileMetadata',
+        'localizeRecord',
+        'batchTranslatePage',
+        'batchTranslateFileMetadata',
+        'batchTranslateFolderMetadata',
     ];
 
     public function __construct(
         private readonly BackendUserService $backendUserService,
         private readonly LocalizationService $localizationService,
+        private readonly SiteLanguageService $siteLanguages,
     ) {}
 
     /**
@@ -144,21 +163,60 @@ class PermissionService
     {
         $requiredScope = $this->getRequiredScope($toolName);
 
-        if (null !== $requiredScope && !in_array($requiredScope, $tokenScopes, true)) {
+        if (!in_array($requiredScope, $tokenScopes, true)) {
             throw new InsufficientScopeException(
                 $this->translate('hint.scope_required', [$requiredScope])
                     ?? sprintf('To use this feature, your API token needs the "%s" scope.', $requiredScope),
             );
         }
 
-        if (null !== $requiredScope) {
-            $this->validatePermissionForScope($requiredScope);
+        $this->validatePermissionForScope($requiredScope);
+        $this->validatePermissionForTool($toolName);
+    }
+
+    /**
+     * Whether the user may both see and call the tool. Single source of truth for the tools/list
+     * filter and for ChEddi's catalogue, so a tool can never be listed but rejected on call.
+     *
+     * @param list<string> $tokenScopes Scopes from the OAuth token
+     */
+    public function isToolAvailable(string $toolName, array $tokenScopes): bool
+    {
+        if ($this->isPointlessOnThisInstallation($toolName)) {
+            return false;
+        }
+
+        try {
+            $this->validateToolAccess($toolName, $tokenScopes);
+
+            return true;
+        } catch (InsufficientPermissionException|InsufficientScopeException|\LogicException) {
+            return false;
         }
     }
 
-    public function getRequiredScope(string $toolName): ?string
+    /**
+     * @return list<string>
+     */
+    public function getRequiredPermissions(string $toolName): array
     {
-        return self::TOOL_SCOPE_MAP[$toolName] ?? 'mcp:read';
+        return self::TOOL_PERMISSION_MAP[$toolName] ?? [];
+    }
+
+    /**
+     * Fail-closed: a tool that is missing from the map is a programming error, not a read-only tool.
+     *
+     * The previous `?? 'mcp:read'` default silently granted an unmapped tool the weakest scope —
+     * which is how `getTaskResults` (a DataHandler write behind an `apply` flag) ended up callable
+     * with a read-only token. `ToolScopeMapCompletenessTest` keeps the map exhaustive so this can
+     * never throw at runtime.
+     *
+     * @throws \LogicException If the tool has no explicit scope entry
+     */
+    public function getRequiredScope(string $toolName): string
+    {
+        return self::TOOL_SCOPE_MAP[$toolName]
+            ?? throw new \LogicException(sprintf('Tool "%s" has no entry in TOOL_SCOPE_MAP.', $toolName));
     }
 
     public function validateModelAccess(string $modelIdentifier): void
@@ -221,10 +279,59 @@ class PermissionService
         return false;
     }
 
+    /**
+     * Check the backend-group permissions of a scope the tool needs *in addition* to its own.
+     *
+     * A tool has exactly one gating scope, but the batch tools genuinely do two things: they are
+     * mass actions (`mcp:workflow`) *and* they spend AI credits on generation or translation.
+     * Gating them on `mcp:workflow` alone never checked `enable_translation` /
+     * `enable_*_generation`, so a workflow-scoped token could run a batch translation without the
+     * translation permission.
+     *
+     * @throws InsufficientPermissionException If the user lacks every permission of that scope
+     */
+    public function validateFeatureScope(string $scope): void
+    {
+        $this->validatePermissionForScope($scope);
+    }
+
+    /**
+     * Tools that cannot do anything useful here, regardless of permissions.
+     *
+     * On a single-language installation the seven translation tools have no target to translate into:
+     * every call ends at "Language X is not configured for this site". Listing them anyway costs
+     * seven tool schemas of context on every single turn and invites the model to try.
+     *
+     * Not folded into validateToolAccess(): this is not a permission decision, and the per-call
+     * failure is already correct and well-worded. Hiding is the whole benefit.
+     */
+    private function isPointlessOnThisInstallation(string $toolName): bool
+    {
+        if (!in_array($toolName, self::TRANSLATION_TOOLS, true)) {
+            return false;
+        }
+
+        // Fails open — see SiteLanguageService::isSingleLanguageInstallation().
+        return $this->siteLanguages->isSingleLanguageInstallation();
+    }
+
     private function validatePermissionForScope(string $scope): void
     {
-        $requiredPermissions = self::SCOPE_PERMISSION_MAP[$scope] ?? [];
+        $this->assertAnyPermission(self::SCOPE_PERMISSION_MAP[$scope] ?? []);
+    }
 
+    private function validatePermissionForTool(string $toolName): void
+    {
+        $this->assertAnyPermission(self::TOOL_PERMISSION_MAP[$toolName] ?? []);
+    }
+
+    /**
+     * @param list<string> $requiredPermissions Any one of them suffices; an empty list is no gate
+     *
+     * @throws InsufficientPermissionException
+     */
+    private function assertAnyPermission(array $requiredPermissions): void
+    {
         if (empty($requiredPermissions)) {
             return;
         }

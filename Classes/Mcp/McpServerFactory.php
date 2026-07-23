@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpPromptHandler;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpResourceHandler;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolInterface;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolRegistry;
 use Mcp\Server\Server;
@@ -24,6 +25,7 @@ class McpServerFactory
         private readonly McpUserContext $userContext,
         private readonly McpResourceHandler $resourceHandler,
         private readonly McpPromptHandler $promptHandler,
+        private readonly PermissionService $permissionService,
         private readonly SendRequestService $sendRequestService,
         private readonly LoggerInterface $logger,
         #[Autowire(service: 'cache.hash')]
@@ -58,9 +60,8 @@ class McpServerFactory
         $tools = [];
 
         foreach ($this->toolRegistry->getTools() as $tool) {
-            $requiredScope = $tool->getRequiredScope();
-
-            if (null !== $requiredScope && !in_array($requiredScope, $tokenScopes, true)) {
+            // Scope AND backend-group flags, so a tool is never listed that a call would reject.
+            if (!$this->permissionService->isToolAvailable($tool->getName(), $tokenScopes)) {
                 continue;
             }
 
@@ -74,6 +75,7 @@ class McpServerFactory
                 'name' => $tool->getName(),
                 'description' => $description,
                 'inputSchema' => $tool->getSchema(),
+                'annotations' => $tool->getAnnotations(),
             ];
         }
 
@@ -143,7 +145,7 @@ class McpServerFactory
     {
         $scope = $tool->getRequiredScope();
 
-        return null !== $scope && !in_array($scope, ['mcp:read', 'mcp:write', 'mcp:manage'], true);
+        return null !== $scope && !in_array($scope, ['mcp:read', 'mcp:write'], true);
     }
 
     /**

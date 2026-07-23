@@ -16,6 +16,7 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class DeleteRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
+    protected bool $destructiveHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -31,9 +32,11 @@ class DeleteRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Delete one or more records from any TCA table. Only soft-deletes — if the table does not support soft-delete, the operation is refused. '
-            .'Ask the user for confirmation before calling. '
-            .'Always pass a records array — even for a single record, wrap it in an array.';
+        // No "ask the user first" here: confirmation is a host concern (the chat drawer gates
+        // destructive calls, MCP clients raise an approval dialog). Telling the model to ask made
+        // it answer in prose instead of calling the tool at all.
+        return 'Delete one or more records from any TCA table (deletes). Soft-delete only — refused if the table does not support it. '
+            .'Always pass a records array, even for a single record.';
     }
 
     public function getSchema(): array
@@ -43,7 +46,7 @@ class DeleteRecordTool extends AbstractDataTool
             'properties' => [
                 'records' => [
                     'type' => 'array',
-                    'description' => 'Array of records to delete. Each: {table, uid}. Example: [{"table":"tt_content","uid":42}]',
+                    'description' => 'The records to soft-delete. Each: {table, uid}.',
                     'items' => ['type' => 'object'],
                 ],
             ],
@@ -86,10 +89,15 @@ class DeleteRecordTool extends AbstractDataTool
             $dh->process_cmdmap();
 
             if ([] !== $dh->errorLog) {
-                throw new \RuntimeException(sprintf('%s "%s" (UID: %d) failed: %s', $tableLabel, $recordLabel, $uid, implode(', ', $dh->errorLog)));
+                throw $this->dataHandlerError->toException('delete', $table, $uid, $dh->errorLog);
             }
 
-            return ['message' => sprintf('%s "%s" (UID: %d) deleted', $tableLabel, $recordLabel, $uid), 'uid' => $uid];
+            return [
+                'message' => sprintf('%s "%s" (UID: %d) deleted', $tableLabel, $recordLabel, $uid),
+                'uid' => $uid,
+                'table' => $table,
+                'action' => 'delete',
+            ];
         });
     }
 }

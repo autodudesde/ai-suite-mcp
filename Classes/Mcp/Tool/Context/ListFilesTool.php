@@ -19,6 +19,7 @@ use TYPO3\CMS\Core\Resource\ResourceStorage;
 class ListFilesTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
+    protected bool $readOnlyHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,

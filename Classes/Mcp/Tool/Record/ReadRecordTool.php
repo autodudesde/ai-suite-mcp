@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\FieldCurationService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\RelationResolutionService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -17,22 +19,16 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadRecordTool extends AbstractDataTool
 {
-    /**
-     * @var list<string>
-     */
-    private const SYSTEM_FIELDS = [
-        'uid', 'pid', 'tstamp', 'crdate', 'cruser_id', 'sorting',
-        'l10n_diffsource', 'l10n_source', 'l18n_parent', 'l18n_diffsource', 'l10n_state',
-        't3ver_oid', 't3ver_wsid', 't3ver_state', 't3ver_stage', 't3ver_count', 't3ver_timestamp', 't3_origuid',
-    ];
-
     private const HTML_STRIPPED_NOTE = "  ↳ ℹ️ HTML was stripped for this preview — re-read with `raw: true` to get the source markup before editing.\n";
 
     protected ?string $requiredScope = null;
+    protected bool $readOnlyHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly RecordRepository $recordRepository,
+        private readonly FieldCurationService $fieldCuration,
+        private readonly RelationResolutionService $relationResolver,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -44,12 +40,9 @@ class ReadRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Read one or more records from any TCA table. '
-            .'Provide uid for a single record, pid to list all records on a page, or filters for exact-match field queries (e.g. find records with empty fields). '
-            .'A single-uid read always returns full field values; list reads truncate long text fields by default (set fullText=true or maxLength to override). '
-            .'By default HTML tags are stripped to plain text; set raw=true to get the verbatim stored markup — do this before editing bodytext/RTE fields so you do not overwrite <h2>/<p>/<a>/<ul> structure with plain text. '
-            .'To inspect the children of a container/IRRE parent, filter by the relation field, e.g. {"table":"tx_bootstrappackage_card_group_item","filters":{"tt_content":PARENT_UID}}. '
-            .'Returns only records within your backend webmounts.';
+        return 'Read records of any TCA table — one by uid, a whole page by pid, or an exact-match query by filters. '
+            .'Reads the stored rows; readRenderedPage shows the page as a visitor sees it. '
+            .'Only records inside your backend webmounts are returned.';
     }
 
     public function getSchema(): array
@@ -61,14 +54,18 @@ class ReadRecordTool extends AbstractDataTool
                 'uid' => ['type' => 'integer', 'description' => 'Single record UID'],
                 'pid' => ['type' => 'integer', 'description' => 'Page UID — list all records on this page'],
                 'filters' => [
+                    // Stays a free-form object: the keys are TCA field names of the requested table.
                     'type' => 'object',
-                    'description' => 'Field=value filters for exact matches. Use empty string "" to find records with empty fields. Example: {"description": ""} finds all records with no description.',
+                    'description' => 'Field name => value, exact match. An empty string "" finds records whose field is empty, e.g. {"description": ""}. '
+                        .'To list the children of a container/IRRE parent, filter on the relation field, e.g. table "tx_bootstrappackage_card_group_item" with {"tt_content": PARENT_UID}.',
                 ],
                 'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max records. Default: 50, max: 200.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'description' => 'Skip first N records for pagination. Default: 0.'],
                 'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return long text fields untruncated. Ignored (always full) for a single-uid read.'],
                 'maxLength' => ['type' => 'integer', 'description' => 'Truncate text fields to this many characters in list mode (default 300). Use 0 or fullText=true for no truncation.'],
-                'raw' => ['type' => 'boolean', 'default' => false, 'description' => 'Return the raw stored database values with HTML/markup intact and untruncated (no tag stripping). REQUIRED before editing bodytext/RTE fields so you can round-trip the markup — the default (false) strips tags for a readable plain-text overview and would silently drop <h2>/<p>/<a>/<ul> structure if written back.'],
+                'raw' => ['type' => 'boolean', 'default' => false, 'description' => 'Return verbatim stored values (markup intact, untruncated, no tag stripping). Required before editing bodytext/RTE fields to round-trip the HTML.'],
+                'includeEmpty' => ['type' => 'boolean', 'default' => true, 'description' => 'Include empty-valued fields. Default true (enables finding records with empty fields); set false to show only populated fields.'],
+                'includeSystem' => ['type' => 'boolean', 'default' => false, 'description' => 'Include housekeeping/system fields (timestamps, versioning, sorting). Default false (hidden as noise).'],
             ],
             'required' => ['table'],
         ];
@@ -83,6 +80,8 @@ class ReadRecordTool extends AbstractDataTool
         $limit = min((int) ($params['limit'] ?? 50), 200);
         $offset = (int) ($params['offset'] ?? 0);
         $raw = (bool) ($params['raw'] ?? false);
+        $includeEmpty = (bool) ($params['includeEmpty'] ?? true);
+        $includeSystem = (bool) ($params['includeSystem'] ?? false);
 
         $listMaxLength = 300;
         if ((bool) ($params['fullText'] ?? false)) {
@@ -100,7 +99,7 @@ class ReadRecordTool extends AbstractDataTool
         if (null !== $uid) {
             $this->recordAccess->assertRecordReadAccess($table, $uid);
 
-            $formatted = $this->loadAndFormatRecord($table, $uid, null, $raw);
+            $formatted = $this->loadAndFormatRecord($table, $uid, null, $raw, $includeEmpty, $includeSystem, false);
             if (null === $formatted) {
                 return $this->textError(sprintf('%s:%d not found.', $table, $uid));
             }
@@ -160,7 +159,7 @@ class ReadRecordTool extends AbstractDataTool
         $context = null !== $pid ? sprintf('on page %d', $pid) : 'matching filters';
         $text = sprintf("%d record(s) `%s` %s:\n\n", count($uids), $table, $context);
         foreach ($uids as $recordUid) {
-            $formatted = $this->loadAndFormatRecord($table, (int) $recordUid, $listMaxLength, $raw);
+            $formatted = $this->loadAndFormatRecord($table, (int) $recordUid, $listMaxLength, $raw, $includeEmpty, $includeSystem, true);
             if (null !== $formatted) {
                 $text .= "---\n".$formatted."\n";
             }
@@ -180,11 +179,14 @@ class ReadRecordTool extends AbstractDataTool
     }
 
     /**
-     * @param ?int $maxLength truncate long text values to this many chars; null = no truncation
-     * @param bool $raw       return raw stored DB values (markup intact, untruncated) instead of
-     *                        FormDataCompiler-processed, tag-stripped plain text
+     * @param ?int $maxLength     truncate long text values to this many chars; null = no truncation
+     * @param bool $raw           return raw stored DB values (markup intact, untruncated) instead of
+     *                            FormDataCompiler-processed, tag-stripped plain text
+     * @param bool $includeEmpty  keep fields whose value is empty
+     * @param bool $includeSystem keep housekeeping/system fields
+     * @param bool $listMode      multi-record list read (bounds relation-title lookups)
      */
-    private function loadAndFormatRecord(string $table, int $uid, ?int $maxLength, bool $raw = false): ?string
+    private function loadAndFormatRecord(string $table, int $uid, ?int $maxLength, bool $raw, bool $includeEmpty, bool $includeSystem, bool $listMode): ?string
     {
         if ($raw) {
             $record = BackendUtility::getRecordWSOL($table, $uid);
@@ -192,7 +194,7 @@ class ReadRecordTool extends AbstractDataTool
                 return null;
             }
 
-            return $this->formatRecordRaw($table, $record);
+            return $this->formatRecordRaw($table, $record, $includeSystem, $listMode);
         }
 
         try {
@@ -219,7 +221,7 @@ class ReadRecordTool extends AbstractDataTool
                 return null;
             }
 
-            return $this->formatRecordFallback($table, $record, $maxLength);
+            return $this->formatRecordFallback($table, $record, $maxLength, $includeEmpty, $includeSystem, $listMode);
         }
 
         $databaseRow = $formData['databaseRow'] ?? [];
@@ -249,6 +251,9 @@ class ReadRecordTool extends AbstractDataTool
         $htmlStripped = false;
         foreach ($columnsToProcess as $field) {
             if (!$this->recordAccess->canAccessField($table, $field)) {
+                continue;
+            }
+            if (!$this->fieldCuration->shouldInclude($field, $databaseRow[$field] ?? null, $includeEmpty, $includeSystem)) {
                 continue;
             }
 
@@ -286,7 +291,7 @@ class ReadRecordTool extends AbstractDataTool
     /**
      * @param array<string, mixed> $record
      */
-    private function formatRecordFallback(string $table, array $record, ?int $maxLength): string
+    private function formatRecordFallback(string $table, array $record, ?int $maxLength, bool $includeEmpty, bool $includeSystem, bool $listMode): string
     {
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $text = sprintf("**UID %d** — %s\n", $record['uid'] ?? 0, $record[$labelField] ?? '?');
@@ -295,9 +300,19 @@ class ReadRecordTool extends AbstractDataTool
 
         $htmlStripped = false;
         foreach ($record as $field => $value) {
-            if (\in_array($field, self::SYSTEM_FIELDS, true) || !$this->recordAccess->canAccessField($table, $field)) {
+            if (!$this->recordAccess->canAccessField($table, (string) $field)
+                || !$this->fieldCuration->shouldInclude((string) $field, $value, $includeEmpty, $includeSystem)
+            ) {
                 continue;
             }
+
+            $resolved = $this->relationResolver->resolveFieldValue($table, (string) $field, $value, $record, $listMode);
+            if (null !== $resolved) {
+                $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $resolved);
+
+                continue;
+            }
+
             if (!$htmlStripped
                 && $this->previewWouldDropTags($value)
                 && $this->isEditorialRichtextField($table, $typeKey, (string) $field)
@@ -305,7 +320,7 @@ class ReadRecordTool extends AbstractDataTool
                 $htmlStripped = true;
             }
             $display = $this->outputFormatter->displayValue($value, $maxLength);
-            $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, $field), $display);
+            $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $display);
         }
 
         $text .= $this->renderContainerContext($table, $record);
@@ -350,20 +365,33 @@ class ReadRecordTool extends AbstractDataTool
     /**
      * @param array<string, mixed> $record
      */
-    private function formatRecordRaw(string $table, array $record): string
+    private function formatRecordRaw(string $table, array $record, bool $includeSystem, bool $listMode): string
     {
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $text = sprintf("**UID %d** — %s\n", (int) ($record['uid'] ?? 0), $this->outputFormatter->scalarize($record[$labelField] ?? ''));
 
         foreach ($record as $field => $value) {
-            if (\in_array($field, self::SYSTEM_FIELDS, true) || !$this->recordAccess->canAccessField($table, (string) $field)) {
+            if (!$this->recordAccess->canAccessField($table, (string) $field)) {
                 continue;
             }
+            if (!$includeSystem && $this->fieldCuration->isHousekeeping((string) $field)) {
+                continue;
+            }
+            // Raw mode is for round-tripping markup: empty fields carry nothing to edit.
             $rawValue = is_array($value) ? (string) json_encode($value) : (string) $value;
             if ('' === $rawValue) {
                 continue;
             }
-            $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $rawValue);
+
+            // Keep the verbatim value (round-trippable for a later write) and annotate
+            // relations with their resolved titles instead of replacing the UIDs.
+            $line = $rawValue;
+            $resolved = $this->relationResolver->resolveFieldValue($table, (string) $field, $value, $record, $listMode);
+            if (null !== $resolved && $resolved !== $rawValue) {
+                $line .= '  ↳ '.$resolved;
+            }
+
+            $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $line);
         }
 
         $text .= $this->renderContainerContext($table, $record);

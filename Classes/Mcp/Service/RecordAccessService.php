@@ -49,6 +49,16 @@ class RecordAccessService
     ];
 
     /**
+     * The tool that lists the valid type values per table, named in the rejection message.
+     */
+    private const TYPE_LOOKUP_TOOL = [
+        'tt_content' => 'listContentTypes',
+        'pages' => 'listPageTypes',
+    ];
+
+    private const MAX_LISTED_TYPE_VALUES = 20;
+
+    /**
      * @var array<string, list<int>> keyed by "{rootId}:{depth}"
      */
     private array $readablePageIdsCache = [];
@@ -165,7 +175,7 @@ class RecordAccessService
             $validFields = $this->getSchemaFieldNames($table);
 
             throw new InvalidParameterException(sprintf(
-                'Unknown field(s) for table "%s": %s. Use getRecordSchema to look up valid field names. Available fields: %s',
+                'Unknown field(s) for table "%s": %s. Use readRecordSchema to look up valid field names. Available fields: %s',
                 $table,
                 implode(', ', $unknownFields),
                 implode(', ', $validFields),
@@ -216,20 +226,77 @@ class RecordAccessService
     }
 
     /**
+     * A hallucinated type value used to disable validation instead of triggering it: an unknown CType
+     * fell back to $typeKey = null below, so the type-specific required-field check silently ran
+     * against the default type. DataHandler does not catch it either -- it validates `type: select`
+     * only for authMode/foreign_table/exclusiveKeys, never against a static items list -- so a
+     * one-character typo ("test" for "text") was written to the database as a real record.
+     *
+     * @param array<string, mixed> $fields the incoming write payload
+     *
+     * @throws InvalidParameterException when the payload sets the type field to a value that has no sub-schema
+     */
+    public function assertKnownRecordType(string $table, array $fields): void
+    {
+        $divisor = $this->tcaCompatibilityService->getSubSchemaDivisorFieldName($table);
+        if (null === $divisor || !array_key_exists($divisor, $fields)) {
+            // No type column at all, or a partial update that does not touch it.
+            return;
+        }
+
+        if ($this->tcaCompatibilityService->isSubSchemaDivisorForeignPointer($table)) {
+            return;
+        }
+
+        $value = $fields[$divisor];
+        if (!is_scalar($value) || '' === (string) $value) {
+            // Empty means "not provided" -- DataHandler applies the TCA default.
+            return;
+        }
+        $value = (string) $value;
+
+        if ($this->tcaCompatibilityService->hasSubSchema($table, $value)) {
+            return;
+        }
+
+        $allowed = $this->allowedTypeValues($table, $divisor);
+        if ([] === $allowed) {
+            // itemsProcFunc or foreign_table driven: no static list to check against, so fail open
+            // rather than reject a value we cannot prove wrong.
+            return;
+        }
+
+        throw (new InvalidParameterException($this->unknownTypeMessage($table, $divisor, $value, $allowed)))
+            ->withErrorContext(['table' => $table, 'field' => $divisor])
+        ;
+    }
+
+    /**
      * @param array<string, mixed> $fields
      *
      * @return list<string> missing required field names
      *
-     * @throws \RuntimeException when required-field introspection fails
+     * @throws InvalidParameterException when the payload carries an unknown type value
+     * @throws \RuntimeException         when required-field introspection fails
      */
     public function findMissingRequiredFields(string $table, ?string $typeValue, array $fields): array
     {
         $missing = [];
 
+        // Outside the try below on purpose: its catch(\Throwable) would swallow the
+        // InvalidParameterException and re-throw it as a RuntimeException, which AbstractTool then
+        // classifies as datahandler_error instead of invalid_parameter.
+        $this->assertKnownRecordType($table, $fields);
+
         try {
+            // The assert above already rejected an unknown type coming from the payload. This guard
+            // still matters for the value read off an *existing* row, which may predate the assert.
             $typeKey = (null !== $typeValue && '' !== $typeValue && $this->tcaCompatibilityService->hasSubSchema($table, $typeValue))
                 ? $typeValue
-                : null;
+                // A record written without a type value lands in the default sub-schema, so validate
+                // against that one. Leaving this null would validate against every sub-schema's
+                // fields at once and demand fields the record's own type never shows.
+                : $this->tcaCompatibilityService->resolveDefaultSubSchemaType($table);
 
             foreach ($this->tcaCompatibilityService->getFieldNamesForType($table, $typeKey) as $field) {
                 $config = $this->tcaCompatibilityService->getEffectiveFieldConfiguration($table, $typeKey, $field);
@@ -245,7 +312,10 @@ class RecordAccessService
                 }
 
                 $value = $fields[$field] ?? null;
-                $scalar = is_array($value) ? implode('', array_map(static fn ($v): string => (string) $v, $value)) : (string) $value;
+                // Nested values (FlexForm) are never empty and must not be cast to string.
+                $scalar = is_array($value)
+                    ? implode('', array_map(static fn ($v): string => is_scalar($v) ? (string) $v : '1', $value))
+                    : (string) $value;
                 if (null === $value || '' === $scalar) {
                     $missing[] = $field;
                 }
@@ -361,6 +431,44 @@ class RecordAccessService
 
         [$bit] = self::RECORD_PERMISSION_MAP[$table]['create'] ?? self::DEFAULT_RECORD_PERMISSION['create'];
         $this->assertPagePerm($pid, $bit);
+    }
+
+    public function canReadRecordTitle(string $foreignTable, int $uid): bool
+    {
+        if ($uid <= 0 || !$this->hasTableReadAccess($foreignTable)) {
+            return false;
+        }
+
+        $beUser = $this->getBackendUser();
+        if (null === $beUser || $beUser->isAdmin()) {
+            return true;
+        }
+
+        try {
+            if ('pages' === $foreignTable) {
+                return is_array(BackendUtility::readPageAccess($uid, $beUser->getPagePermsClause(Permission::PAGE_SHOW)));
+            }
+
+            $record = BackendUtility::getRecordWSOL($foreignTable, $uid);
+            if (null === $record) {
+                return false;
+            }
+
+            $pid = (int) ($record['pid'] ?? 0);
+            if ($pid <= 0) {
+                return $this->tcaCompatibilityService->isRootLevel($foreignTable);
+            }
+
+            return is_array(BackendUtility::readPageAccess($pid, $beUser->getPagePermsClause(Permission::PAGE_SHOW)));
+        } catch (\Throwable $e) {
+            $this->logger->warning('RecordAccessService::canReadRecordTitle: access check failed, denying', [
+                'table' => $foreignTable,
+                'uid' => $uid,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /**
@@ -523,6 +631,100 @@ class RecordAccessService
     public function getBackendUser(): ?BackendUserAuthentication
     {
         return $this->backendUserService->getBackendUser();
+    }
+
+    /**
+     * The values the type field may take, from the same TCA items list ListContentTypesTool renders.
+     *
+     * Page TSconfig `removeItems` is deliberately NOT applied here: it is an editorial restriction on
+     * the FormEngine wizard for one page tree, not a data-integrity rule. The value it hides still has
+     * a complete sub-schema and existing records use it, so rejecting it would break legitimate writes
+     * (imports, migrations) and make the MCP path stricter than the TYPO3 backend itself. Discovery
+     * filters removeItems; validation checks against the TCA truth.
+     *
+     * @return list<string>
+     */
+    private function allowedTypeValues(string $table, string $divisor): array
+    {
+        $values = [];
+
+        try {
+            $items = $this->tcaCompatibilityService->getFieldConfiguration($table, $divisor)['items'] ?? [];
+            if (is_array($items)) {
+                foreach ($items as $item) {
+                    if (!is_array($item) || !isset($item['value']) || !is_scalar($item['value'])) {
+                        continue;
+                    }
+                    $value = (string) $item['value'];
+                    if ('' === $value || '--div--' === $value) {
+                        continue;
+                    }
+                    $values[] = $value;
+                }
+            }
+
+            if ([] === $values) {
+                foreach (array_keys($this->tcaCompatibilityService->getTypes($table)) as $typeKey) {
+                    $values[] = (string) $typeKey;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('RecordAccessService::allowedTypeValues: TCA lookup failed, skipping type validation', [
+                'table' => $table,
+                'field' => $divisor,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        return array_values(array_unique($values));
+    }
+
+    /**
+     * @param list<string> $allowed
+     */
+    private function unknownTypeMessage(string $table, string $divisor, string $value, array $allowed): string
+    {
+        $message = sprintf('Unknown %s "%s" for table "%s".', $divisor, $value, $table);
+
+        $suggestion = $this->closestTypeValue($value, $allowed);
+        if (null !== $suggestion) {
+            $message .= sprintf(' Did you mean "%s"?', $suggestion);
+        }
+
+        $message .= ' '.sprintf(
+            'Call %s for the values available here.',
+            self::TYPE_LOOKUP_TOOL[$table] ?? sprintf('readRecordSchema(table: "%s")', $table),
+        );
+
+        // The full list only when it stays cheap. tt_content carries 40+ CTypes on a real site, and a
+        // small model reading a 40-item enum picks worse than one following the tool pointer.
+        if (count($allowed) <= self::MAX_LISTED_TYPE_VALUES) {
+            $message .= ' Valid values: '.implode(', ', $allowed).'.';
+        }
+
+        return $message;
+    }
+
+    /**
+     * @param list<string> $allowed
+     */
+    private function closestTypeValue(string $value, array $allowed): ?string
+    {
+        $threshold = max(2, (int) floor(mb_strlen($value) / 3));
+        $best = null;
+        $bestDistance = PHP_INT_MAX;
+
+        foreach ($allowed as $candidate) {
+            $distance = levenshtein($value, $candidate);
+            if ($distance < $bestDistance) {
+                $bestDistance = $distance;
+                $best = $candidate;
+            }
+        }
+
+        return $bestDistance <= $threshold ? $best : null;
     }
 
     /**

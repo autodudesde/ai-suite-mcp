@@ -43,8 +43,8 @@
                 <target>Du hast in dieser Session %d Credits genutzt — großartige Produktivität! Dein Session-Budget von %d Credits ist erreicht. Starte eine neue Session oder kontaktiere deinen Administrator für ein höheres Budget.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.internal_issue">
-                <source>Something unexpected happened while running "%s". Our team has been notified. Please try again or contact your administrator if the issue persists.</source>
-                <target>Bei der Ausführung von „%s" ist etwas Unerwartetes passiert. Unser Team wurde benachrichtigt. Bitte versuche es erneut oder kontaktiere deinen Administrator, falls das Problem bestehen bleibt.</target>
+                <source>Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.</source>
+                <target>Die Ausführung von „%s" ist unerwartet fehlgeschlagen. Ein identischer erneuter Aufruf wird wieder fehlschlagen. Prüfe die Argumente gegen das Tool-Schema; wenn sie korrekt sind, muss ein Administrator ran.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.page_excluded_from_ai">
                 <source>Page %d has been excluded from AI processing by its administrator. This page's content will not be sent to AI providers.</source>

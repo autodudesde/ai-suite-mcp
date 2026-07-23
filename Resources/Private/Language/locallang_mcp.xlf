@@ -34,7 +34,7 @@
                 <source>You've used %d credits in this session — great productivity! Your session budget of %d credits has been reached. Start a new session or contact your administrator for a higher budget.</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.internal_issue">
-                <source>Something unexpected happened while running "%s". Our team has been notified. Please try again or contact your administrator if the issue persists.</source>
+                <source>Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.page_excluded_from_ai">
                 <source>Page %d has been excluded from AI processing by its administrator. This page's content will not be sent to AI providers.</source>

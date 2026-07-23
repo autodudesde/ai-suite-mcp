@@ -23,6 +23,8 @@ class McpUserContext
 
     private ?ServerRequestInterface $serverRequest = null;
 
+    private string $sessionKey = '';
+
     /**
      * @param list<string> $scopes
      *
@@ -90,5 +92,15 @@ class McpUserContext
     public function getServerRequest(): ?ServerRequestInterface
     {
         return $this->serverRequest;
+    }
+
+    public function setSessionKey(string $sessionKey): void
+    {
+        $this->sessionKey = $sessionKey;
+    }
+
+    public function getSessionKey(): string
+    {
+        return '' !== $this->sessionKey ? $this->sessionKey : $this->tokenId;
     }
 }

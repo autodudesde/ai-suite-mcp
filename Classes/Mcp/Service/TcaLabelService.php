@@ -24,12 +24,18 @@ class TcaLabelService
         private readonly LoggerInterface $logger,
     ) {}
 
+    /**
+     * TYPO3 v14 short-form label references (Breaking #107789) carry no `LLL:` prefix: the core TCA
+     * now labels tt_content.colPos as `frontend.db.tt_content:column`. A prefix-only check lets those
+     * through untranslated, and the raw key ends up in front of an editor. LanguageService::sL()
+     * understands both forms, so route both at it.
+     */
     public function resolveLabel(string $label): string
     {
         if ('' === $label) {
             return '';
         }
-        if (str_starts_with($label, 'LLL:')) {
+        if (str_starts_with($label, 'LLL:') || $this->isShortFormReference($label)) {
             return $this->localizationService->getLanguageService()->sL($label) ?: $label;
         }
 
@@ -150,6 +156,16 @@ class TcaLabelService
         }
 
         return null;
+    }
+
+    /**
+     * `<alias>:<key>` with no whitespace. Deliberately strict: a literal label may well contain a
+     * colon ("Price: net"), and handing that to sL() would be a lookup for something that is already
+     * the answer.
+     */
+    private function isShortFormReference(string $label): bool
+    {
+        return 1 === preg_match('/^[a-z0-9_]+(?:\.[a-z0-9_]+)*:[A-Za-z0-9_.\-]+$/', $label);
     }
 
     /**

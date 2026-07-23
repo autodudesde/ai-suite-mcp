@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Image;
 
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\FileNameSanitizerService;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
@@ -27,6 +26,11 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class GenerateImageTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:image';
+    // Writes the generated file straight to FAL (no versioningWS) and spends credits — irreversible
+    // in every write mode. Flagged destructive so the client's approval dialog and ChEddi's card gate
+    // it like a deletion instead of a reversible workspace write. openWorldHint is inherited from
+    // AbstractAiTool.
+    protected bool $destructiveHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -46,9 +50,11 @@ class GenerateImageTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Generate an image using an external AI model (GPTImage, Midjourney, or Flux) — costs credits. '
-            .'Writes the image directly to FAL file storage. Ask the user for confirmation before calling. '
-            .'Returns the file UID of the created image plus a 256px preview thumbnail.';
+        // No "ask the user for confirmation before calling": the host gates the call. Told to ask,
+        // small models answer in prose instead of calling — measured on deleteRecords.
+        return 'Create a brand-new image from a text description (costs credits). '
+            .'Use it whenever the user asks to generate, create, draw or paint an image, picture, photo or illustration. '
+            .'Writes straight to FAL and returns the new file UID with a preview; to import an existing image use uploadMedia.';
     }
 
     public function getSchema(): array
@@ -189,7 +195,6 @@ class GenerateImageTool extends AbstractAiTool
             GenerationLibraryEnumeration::IMAGE,
             'createImage',
             ['image'],
-            CreditCostEnumeration::IMAGE,
             ['image' => 'Image generation models'],
         );
     }

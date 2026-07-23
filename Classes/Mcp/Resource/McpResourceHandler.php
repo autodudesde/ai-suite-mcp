@@ -9,6 +9,7 @@ use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use Mcp\Server\Server;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
@@ -17,6 +18,7 @@ use TYPO3\CMS\Core\Site\SiteFinder;
  * Registers MCP Resources (passive data for clients to read).
  *
  * Resources:
+ * - aisuite://guidelines — Operating guidelines (also sent in the `initialize` instructions)
  * - aisuite://instructions/page/{pid} — Global Instructions
  * - aisuite://config/site — Site languages and domains
  * - aisuite://credits/status — Credit balance + provider info
@@ -51,11 +53,9 @@ class McpResourceHandler
     }
 
     /**
-     * @param array<string, mixed> $params
-     *
      * @return array<string, mixed>
      */
-    private function handleList(?array $params): array
+    private function handleList(mixed $params): array
     {
         // Scope gate: a session without mcp:read sees no resources (mirrors tools/list filtering).
         if (!$this->canReadResources()) {
@@ -63,6 +63,15 @@ class McpResourceHandler
         }
 
         $resources = [];
+
+        // Operating guidelines. Passive re-read for a client that wants them again; the same text
+        // is already delivered in the `initialize` instructions, so no tool call is needed for it.
+        $resources[] = [
+            'uri' => 'aisuite://guidelines',
+            'name' => 'AI Suite Operating Guidelines',
+            'description' => 'Workflow rules the server expects clients to follow',
+            'mimeType' => 'text/markdown',
+        ];
 
         // Global Instructions per page
         foreach ($this->globalInstructionsRepository->findDistinctPidScopes() as $instr) {
@@ -102,18 +111,25 @@ class McpResourceHandler
     }
 
     /**
-     * @param array<string, mixed> $params
-     *
      * @return array<string, mixed>
      */
-    private function handleRead(?array $params): array
+    private function handleRead(mixed $params): array
     {
         // Scope gate: reading any resource requires mcp:read (the SDK turns this into a JSON-RPC error).
         if (!$this->canReadResources()) {
             throw new InsufficientScopeException('Reading AI Suite resources requires the "mcp:read" scope.');
         }
 
-        $uri = $params['uri'] ?? '';
+        $uri = (string) ($this->normalizeParams($params)['uri'] ?? '');
+
+        // Operating guidelines
+        if ('aisuite://guidelines' === $uri) {
+            return ['contents' => [[
+                'uri' => $uri,
+                'mimeType' => 'text/markdown',
+                'text' => OperatingGuidelines::get(),
+            ]]];
+        }
 
         // Global Instructions
         if (str_starts_with($uri, 'aisuite://instructions/page/')) {
@@ -229,5 +245,25 @@ class McpResourceHandler
         }
 
         return $providers;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeParams(mixed $params): array
+    {
+        if (is_array($params)) {
+            return $params;
+        }
+
+        if (is_object($params) && method_exists($params, 'jsonSerialize')) {
+            return (array) $params->jsonSerialize();
+        }
+
+        if (is_object($params)) {
+            return (array) $params;
+        }
+
+        return [];
     }
 }

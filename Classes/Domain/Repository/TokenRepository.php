@@ -141,6 +141,68 @@ class TokenRepository
         ;
     }
 
+    /**
+     * Atomically claim the right to rotate this refresh token.
+     *
+     * Exactly one of N concurrent refresh requests wins; the losers see false and
+     * fall into the grace window instead of tripping the reuse alarm.
+     */
+    public function claimRotation(int $uid, int $now): bool
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
+        $affectedRows = $qb
+            ->update(self::TOKEN_TABLE)
+            ->set('rotated_at', (string) $now)
+            ->where(
+                $qb->expr()->eq('uid', $qb->createNamedParameter($uid, Connection::PARAM_INT)),
+                $qb->expr()->eq('rotated_at', 0),
+                $qb->expr()->eq('deleted', 0),
+            )
+            ->executeStatement()
+        ;
+
+        return $affectedRows > 0;
+    }
+
+    public function linkSuccessor(int $uid, int $successorUid): void
+    {
+        $this->connectionPool
+            ->getConnectionForTable(self::TOKEN_TABLE)
+            ->update(
+                self::TOKEN_TABLE,
+                ['replaced_by' => $successorUid],
+                ['uid' => $uid],
+            )
+        ;
+    }
+
+    /**
+     * Revoke every live token of one rotation lineage.
+     *
+     * Unlike revokeAllTokensForUserAndClient() this targets the actual chain: dynamic
+     * client registration hands the same connector a fresh client_id, so (be_user, client_id)
+     * both misses siblings of the old id and sweeps up unrelated live sessions.
+     *
+     * @return int number of tokens actually revoked
+     */
+    public function revokeFamily(int $familyId): int
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
+
+        return $qb
+            ->update(self::TOKEN_TABLE)
+            ->set('deleted', 1)
+            ->where(
+                $qb->expr()->or(
+                    $qb->expr()->eq('family_id', $qb->createNamedParameter($familyId, Connection::PARAM_INT)),
+                    $qb->expr()->eq('uid', $qb->createNamedParameter($familyId, Connection::PARAM_INT)),
+                ),
+                $qb->expr()->eq('deleted', 0),
+            )
+            ->executeStatement()
+        ;
+    }
+
     public function markDeletedByHash(string $tokenHash): void
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);

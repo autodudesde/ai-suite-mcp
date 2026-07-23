@@ -14,6 +14,7 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 class CompareWithLiveTool extends AbstractDataTool
 {
     protected ?string $requiredScope = null;
+    protected bool $readOnlyHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -29,10 +30,9 @@ class CompareWithLiveTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Compare the workspace draft of a record (or a whole page/filter set) against the LIVE state — a field-level diff showing what this workspace changes. '
-            .'Provide uid for a single record (pass the live uid you see in the page module), or pid/filters to diff a set. '
-            .'For a set it reports CHANGED (differing fields), ADDED (new in the workspace, no live version) and REMOVED (deleted in the workspace) records; unchanged records are summarized as a count. '
-            .'Only usable when the session is bound to a non-live workspace. ADDED/REMOVED are always listed in full; CHANGED is capped by limit.';
+        return 'Field-level diff of a workspace draft against the LIVE state — what this workspace would change. '
+            .'Pass uid for a single record, or pid/filters for a set. Only usable when the session is bound to a '
+            .'non-live workspace; other read tools show the overlaid state, not the diff.';
     }
 
     public function getSchema(): array
@@ -42,12 +42,12 @@ class CompareWithLiveTool extends AbstractDataTool
             'properties' => [
                 'table' => ['type' => 'string', 'description' => 'TCA table name'],
                 'uid' => ['type' => 'integer', 'description' => 'Single record (the live UID as shown in the backend)'],
-                'pid' => ['type' => 'integer', 'description' => 'Page UID — diff all changed records on this page'],
+                'pid' => ['type' => 'integer', 'description' => 'Page UID — diff all changed records on this page. A set reports CHANGED (differing fields), ADDED (new in the workspace) and REMOVED (deleted in the workspace); unchanged records are summarized as a count.'],
                 'filters' => [
                     'type' => 'object',
                     'description' => 'Field=value filters (exact match; "" matches empty) to scope the set, same shape as readRecords.',
                 ],
-                'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max CHANGED records to render. Default: 50, max: 200.'],
+                'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max CHANGED records to render. Default: 50, max: 200. ADDED and REMOVED are always listed in full.'],
             ],
             'required' => ['table'],
         ];

@@ -4,4 +4,14 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Exception;
 
-class InsufficientPermissionException extends \RuntimeException {}
+use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
+
+class InsufficientPermissionException extends \RuntimeException implements McpException
+{
+    use McpExceptionTrait;
+
+    protected function defaultErrorType(): McpErrorType
+    {
+        return McpErrorType::InsufficientPermission;
+    }
+}

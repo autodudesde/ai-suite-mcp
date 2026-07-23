@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
-use AutoDudes\AiSuite\Enumeration\CreditCostEnumeration;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\MetadataService;
@@ -23,7 +22,9 @@ use TYPO3\CMS\Core\Resource\File;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateFileMetadataTool extends AbstractAiTool
 {
-    protected ?string $requiredScope = 'mcp:generate';
+    // Gating scope = the mass-action scope the gate actually checks (TOOL_SCOPE_MAP).
+    // The AI feature permission is verified on top, in validatePermissions().
+    protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -42,9 +43,9 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Generate file metadata (alt text, title, description) for specific files using an external AI model — costs credits per file. '
+        return 'Generate file metadata (alt text, title, description) for specific files with an external AI model (costs credits). '
             .'For processing all files in a folder, use batchGenerateFolderMetadata instead. '
-            .DescriptionSnippets::BATCH_ASYNC_FLOW;
+            .DescriptionSnippets::BATCH_ASYNC;
     }
 
     public function getSchema(): array
@@ -68,6 +69,12 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
             ],
             'required' => ['fileUids'],
         ];
+    }
+
+    protected function validatePermissions(): void
+    {
+        parent::validatePermissions();
+        $this->permissionService->validateFeatureScope('mcp:generate');
     }
 
     protected function doExecute(array $params): CallToolResult
@@ -100,7 +107,6 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
                 GenerationLibraryEnumeration::METADATA,
                 'createMetadata',
                 ['text'],
-                CreditCostEnumeration::METADATA,
                 ['text' => 'AI models for file metadata generation'],
             );
 
@@ -242,7 +248,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped files: %s (not found or not accessible)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **getTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
 
         return $this->textResult($text);
     }

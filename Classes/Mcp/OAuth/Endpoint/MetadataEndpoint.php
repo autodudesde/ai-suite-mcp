@@ -37,9 +37,6 @@ class MetadataEndpoint
                 'mcp:image',
                 'mcp:media',
                 'mcp:workflow',
-                'mcp:easy-language',
-                'mcp:glossary',
-                'mcp:manage',
             ],
         ]);
     }

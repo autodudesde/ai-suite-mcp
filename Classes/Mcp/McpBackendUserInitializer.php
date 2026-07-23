@@ -5,19 +5,16 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp;
 
 use AutoDudes\AiSuite\Service\LocalizationService;
-use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpWriteModeResolver;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TokenAuthenticatedBackendUserService;
-use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
-use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Context\UserAspect;
 use TYPO3\CMS\Core\Context\WorkspaceAspect;
 use TYPO3\CMS\Core\Core\Bootstrap;
 use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
 use TYPO3\CMS\Core\SingletonInterface;
-use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 class McpBackendUserInitializer implements SingletonInterface
 {
@@ -28,9 +25,7 @@ class McpBackendUserInitializer implements SingletonInterface
         private readonly Context $context,
         private readonly LanguageServiceFactory $languageServiceFactory,
         private readonly LocalizationService $localizationService,
-        private readonly SysWorkspaceRepository $sysWorkspaceRepository,
-        private readonly ExtensionConfiguration $extensionConfiguration,
-        private readonly LoggerInterface $logger,
+        private readonly McpWriteModeResolver $writeModeResolver,
     ) {}
 
     /**
@@ -48,15 +43,7 @@ class McpBackendUserInitializer implements SingletonInterface
 
         $this->loadExtTablesOnce();
 
-        $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
-        $writeMode = (string) ($extConf['mcpWriteMode'] ?? 'auto');
-        $workspaceId = match (true) {
-            null !== $workspaceUid => $workspaceUid,
-            'live' === $writeMode => 0,
-            'workspace' === $writeMode => $backendUser->workspace,
-            'auto' === $writeMode && ExtensionManagementUtility::isLoaded('workspaces') => $this->resolveAutoWorkspaceId($backendUser),
-            default => 0,
-        };
+        $workspaceId = $this->writeModeResolver->resolveWorkspaceId($backendUser, $workspaceUid);
 
         if ($workspaceId > 0 && !$backendUser->isAdmin() && false === $backendUser->checkWorkspace($workspaceId)) {
             $message = $this->localizationService->translate('mcp:hint.token_workspace_revoked', [$workspaceId]);
@@ -92,35 +79,5 @@ class McpBackendUserInitializer implements SingletonInterface
 
         Bootstrap::loadExtTables();
         $this->extTablesLoaded = true;
-    }
-
-    private function resolveAutoWorkspaceId(BackendUserAuthentication $backendUser): int
-    {
-        if ($backendUser->workspace > 0) {
-            return $backendUser->workspace;
-        }
-
-        try {
-            $rows = $this->sysWorkspaceRepository->findAllUids();
-        } catch (\Throwable $e) {
-            $this->logger->warning('Auto-workspace resolution: could not query sys_workspace, falling back to live', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return 0;
-        }
-
-        foreach ($rows as $wsUid) {
-            if ($wsUid > 0 && $backendUser->checkWorkspace($wsUid)) {
-                $this->logger->info('Auto-workspace resolution: user has no default workspace, picking first accessible', [
-                    'beUserUid' => $backendUser->user['uid'] ?? 0,
-                    'pickedWorkspace' => $wsUid,
-                ]);
-
-                return $wsUid;
-            }
-        }
-
-        return 0;
     }
 }

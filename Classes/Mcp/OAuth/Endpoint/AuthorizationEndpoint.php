@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint;
 
+use AutoDudes\AiSuite\Service\IconService;
 use AutoDudes\AiSuite\Service\ViewFactoryService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
@@ -33,7 +34,6 @@ use TYPO3\CMS\Core\SystemResource\SystemResourceFactory;
 use TYPO3\CMS\Core\SystemResource\Type\PublicResourceInterface;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
-use TYPO3\CMS\Core\Utility\PathUtility;
 
 /**
  * OAuth 2.1 Authorization Endpoint.
@@ -44,6 +44,8 @@ class AuthorizationEndpoint
 {
     private const MFA_TICKET_TTL = 60;
     private const MFA_TICKET_PURPOSE = 'mcp-oauth-mfa';
+    private const CONSENT_TICKET_TTL = 600;
+    private const CONSENT_TICKET_PURPOSE = 'mcp-oauth-consent';
 
     public function __construct(
         private readonly OAuthService $oauthService,
@@ -57,6 +59,7 @@ class AuthorizationEndpoint
         private readonly SysWorkspaceRepository $sysWorkspaceRepository,
         private readonly ClientIpService $clientIpService,
         private readonly TokenAuthenticatedBackendUserService $tokenAuthenticatedBackendUser,
+        private readonly IconService $iconService,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -130,9 +133,8 @@ class AuthorizationEndpoint
             return $this->processMfa($request, $body);
         }
 
-        // If this is a consent submission (user already authenticated)
-        if ('' !== $consentAction && isset($body['be_user_uid'])) {
-            return $this->handleConsent($body);
+        if ('' !== $consentAction) {
+            return $this->handleConsent($request, $body);
         }
 
         $beUserUid = $this->authenticateUser($username, $password);
@@ -323,9 +325,17 @@ class AuthorizationEndpoint
         string $resource,
         ?ServerRequestInterface $request = null,
     ): ResponseInterface {
+        $bindingError = $this->validateConsentBindings($clientId, $redirectUri, $codeChallenge, $resource);
+        if (null !== $bindingError) {
+            return $bindingError;
+        }
+
         $requestedScopes = array_filter(explode(' ', $scope));
         $availableScopes = $this->permissionService->getAvailableScopes();
         $grantableScopes = array_values(array_intersect($requestedScopes, $availableScopes));
+
+        $ip = null !== $request ? $this->clientIpService->resolve($request) : '';
+        $consentTicket = $this->createConsentTicket($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $resource, $ip);
 
         return new HtmlResponse($this->renderOAuthView('OAuth/Consent', [
             'clientId' => $clientId,
@@ -333,7 +343,7 @@ class AuthorizationEndpoint
             'codeChallenge' => $codeChallenge,
             'state' => $state,
             'resource' => $resource,
-            'beUserUid' => $beUserUid,
+            'consentTicket' => $consentTicket,
             'scopes' => $this->getScopeDescriptions($grantableScopes),
             'isLocalhost' => $this->isLocalhostRedirect($redirectUri),
             'availableWorkspaces' => $this->resolveAvailableWorkspaces($beUserUid),
@@ -426,14 +436,112 @@ class AuthorizationEndpoint
         return (int) $uid;
     }
 
-    private function getHmacSecret(): string
+    private function getHmacSecret(string $purpose = self::MFA_TICKET_PURPOSE): string
     {
         $key = (string) ($GLOBALS['TYPO3_CONF_VARS']['SYS']['encryptionKey'] ?? '');
         if ('' === $key) {
             throw new \RuntimeException('encryptionKey is not configured.', 1744800000);
         }
 
-        return $key.'|'.self::MFA_TICKET_PURPOSE;
+        return $key.'|'.$purpose;
+    }
+
+    private function createConsentTicket(
+        int $beUserUid,
+        string $clientId,
+        string $redirectUri,
+        string $codeChallenge,
+        string $scope,
+        string $resource,
+        string $ip,
+    ): string {
+        $payload = [
+            'uid' => $beUserUid,
+            'cid' => $clientId,
+            'ru' => $redirectUri,
+            'cc' => $codeChallenge,
+            'sc' => $scope,
+            'res' => $resource,
+            'ip' => $ip,
+            'exp' => time() + self::CONSENT_TICKET_TTL,
+        ];
+        $payloadEncoded = $this->base64UrlEncode((string) json_encode($payload));
+        $signature = $this->base64UrlEncode(hash_hmac('sha256', $payloadEncoded, $this->getHmacSecret(self::CONSENT_TICKET_PURPOSE), true));
+
+        return $payloadEncoded.'.'.$signature;
+    }
+
+    /**
+     * @return null|array{uid: int, cid: string, ru: string, cc: string, sc: string, res: string, ip: string, exp: int}
+     */
+    private function verifyConsentTicket(string $ticket, string $ip): ?array
+    {
+        $parts = explode('.', $ticket);
+        if (2 !== count($parts)) {
+            return null;
+        }
+        [$payloadEncoded, $signature] = $parts;
+
+        $expected = $this->base64UrlEncode(hash_hmac('sha256', $payloadEncoded, $this->getHmacSecret(self::CONSENT_TICKET_PURPOSE), true));
+        if (!hash_equals($expected, $signature)) {
+            return null;
+        }
+
+        $json = $this->base64UrlDecode($payloadEncoded);
+        if (null === $json) {
+            return null;
+        }
+
+        $payload = json_decode($json, true);
+        if (!is_array($payload)
+            || !isset($payload['uid'], $payload['cid'], $payload['ru'], $payload['cc'], $payload['res'], $payload['ip'], $payload['exp'])
+        ) {
+            return null;
+        }
+
+        if ((string) $payload['ip'] !== $ip || (int) $payload['exp'] < time()) {
+            return null;
+        }
+
+        return [
+            'uid' => (int) $payload['uid'],
+            'cid' => (string) $payload['cid'],
+            'ru' => (string) $payload['ru'],
+            'cc' => (string) $payload['cc'],
+            'sc' => (string) ($payload['sc'] ?? ''),
+            'res' => (string) $payload['res'],
+            'ip' => (string) $payload['ip'],
+            'exp' => (int) $payload['exp'],
+        ];
+    }
+
+    private function validateConsentBindings(string $clientId, string $redirectUri, string $codeChallenge, string $resource): ?ResponseInterface
+    {
+        if ('' === $clientId) {
+            return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'client_id is required.'], 400);
+        }
+
+        if ('' === $redirectUri || !$this->validateRedirectUri($redirectUri)) {
+            return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'A valid redirect_uri is required.'], 400);
+        }
+
+        if ('' === $codeChallenge) {
+            return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'code_challenge is required (PKCE).'], 400);
+        }
+
+        if ('' === $resource || !CanonicalResource::matches($resource)) {
+            return new JsonResponse(['error' => 'invalid_target', 'error_description' => 'resource parameter is missing or does not match this MCP server.'], 400);
+        }
+
+        $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
+        $allowedClientIds = array_filter(
+            array_map('trim', explode(',', (string) ($extConf['mcpAllowedClientIds'] ?? ''))),
+        );
+        if (!empty($allowedClientIds) && !in_array($clientId, $allowedClientIds, true)) {
+            return new JsonResponse(['error' => 'unauthorized_client', 'error_description' => 'This client is not authorized to use this server.'], 400);
+        }
+
+        return null;
     }
 
     private function base64UrlEncode(string $data): string
@@ -451,15 +559,27 @@ class AuthorizationEndpoint
     /**
      * @param array<string, mixed> $body
      */
-    private function handleConsent(array $body): ResponseInterface
+    private function handleConsent(ServerRequestInterface $request, array $body): ResponseInterface
     {
         $consentAction = (string) ($body['consent'] ?? '');
-        $beUserUid = (int) ($body['be_user_uid'] ?? 0);
-        $clientId = (string) ($body['client_id'] ?? '');
-        $redirectUri = (string) ($body['redirect_uri'] ?? '');
-        $codeChallenge = (string) ($body['code_challenge'] ?? '');
         $state = (string) ($body['state'] ?? '');
-        $resource = (string) ($body['resource'] ?? '');
+
+        $ip = $this->clientIpService->resolve($request);
+        $ticket = $this->verifyConsentTicket((string) ($body['consent_ticket'] ?? ''), $ip);
+        if (null === $ticket) {
+            $this->logger->warning('MCP OAuth: invalid or expired consent ticket', ['ip' => $ip]);
+
+            return new JsonResponse([
+                'error' => 'access_denied',
+                'error_description' => 'Consent session is invalid or has expired. Please restart the authorization flow.',
+            ], 403);
+        }
+
+        $beUserUid = (int) $ticket['uid'];
+        $clientId = (string) $ticket['cid'];
+        $redirectUri = (string) $ticket['ru'];
+        $codeChallenge = (string) $ticket['cc'];
+        $resource = (string) $ticket['res'];
 
         if ('deny' === $consentAction) {
             $separator = str_contains($redirectUri, '?') ? '&' : '?';
@@ -467,21 +587,15 @@ class AuthorizationEndpoint
             return new RedirectResponse($redirectUri.$separator.'error=access_denied&state='.urlencode($state));
         }
 
-        if ('' === $resource || !CanonicalResource::matches($resource)) {
-            $separator = str_contains($redirectUri, '?') ? '&' : '?';
-
-            return new RedirectResponse(
-                $redirectUri.$separator.'error=invalid_target&error_description='.urlencode('resource parameter is missing or does not match this MCP server.').'&state='.urlencode($state),
-            );
-        }
-
         $backendUser = $this->tokenAuthenticatedBackendUser->createForUid($beUserUid);
         $GLOBALS['BE_USER'] = $backendUser;
 
+        $availableScopes = $this->permissionService->getAvailableScopes();
         if ('all' === $consentAction) {
-            $grantedScopes = $this->permissionService->getAvailableScopes();
+            $grantedScopes = $availableScopes;
         } else {
-            $grantedScopes = (array) ($body['scopes'] ?? []);
+            // Only ever grant scopes the user is actually permitted to hold.
+            $grantedScopes = array_values(array_intersect((array) ($body['scopes'] ?? []), $availableScopes));
         }
 
         $workspaceUid = (int) ($body['workspace_uid'] ?? 0);
@@ -715,9 +829,6 @@ class AuthorizationEndpoint
             'mcp:image' => 'Bilder mit KI generieren (GPTImage, Midjourney, Flux)',
             'mcp:media' => 'Bilder und Videos in die Dateiablage hochladen (per URL, Upload oder YouTube/Vimeo-Link)',
             'mcp:workflow' => 'Massenaktionen und Hintergrund-Tasks für viele Seiten gleichzeitig durchführen',
-            'mcp:easy-language' => 'Inhalte in Leichte Sprache umwandeln (BFSG-konform)',
-            'mcp:glossary' => 'Glossar für konsistente Übersetzungen nutzen',
-            'mcp:manage' => 'Prompt-Vorlagen und Redaktionsrichtlinien verwalten',
         ];
 
         $result = [];
@@ -771,9 +882,8 @@ class AuthorizationEndpoint
             'hasCustomLogo' => '' !== $logoUrl,
             'faviconUrl' => $faviconUrl,
             'footerNote' => $this->authStyleInfo->getFooterNote(),
-            'aiSuiteIconUrl' => PathUtility::getPublicResourceWebPath(
-                'EXT:ai_suite/Resources/Public/Icons/Extension.svg',
-            ),
+            // Through the icon registry, so a white-label package re-registering the identifier wins.
+            'aiSuiteIconUrl' => $this->iconService->getPublicIconUrl('tx-aisuite-extension', $request),
             'siteName' => (string) ($GLOBALS['TYPO3_CONF_VARS']['SYS']['sitename'] ?? 'TYPO3 AI Suite'),
         ];
     }

@@ -39,10 +39,9 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
 
     public function getDescription(): string
     {
-        return 'Translate file metadata (alt text, title, description) to a target language. Two approaches: '
-            .DescriptionSnippets::APPROACH_A
-            .'(B) Use localizeRecord to create a translation shell → translate manually '.DescriptionSnippets::APPROACH_B_PERSIST.' '
-            .DescriptionSnippets::APPROACH_A_TRANSLATE_DIRECT_PERSIST;
+        return 'Translate a file\'s metadata — alt text, title, description — into a target language, using DeepL and the site glossary '
+            .DescriptionSnippets::COSTS_CREDITS.'. '
+            .'Writes the translation itself; localizeRecord only creates an empty translation shell.';
     }
 
     public function getSchema(): array
@@ -51,9 +50,15 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
             'type' => 'object',
             'properties' => [
                 'fileUid' => ['type' => 'integer', 'description' => 'sys_file UID'],
-                'targetLanguage' => ['type' => 'string', 'description' => 'ISO target language'],
+                'targetLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO target language',
+                ]),
                 'model' => ['type' => 'string', 'description' => 'Translation model identifier. Omit to get a list of available models first.'],
-                'sourceLanguage' => ['type' => 'string', 'description' => 'ISO source language. Default: site default language.'],
+                'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
+                    'type' => 'string',
+                    'description' => 'ISO source language. Default: site default language.',
+                ]),
             ],
             'required' => ['fileUid', 'targetLanguage'],
         ];

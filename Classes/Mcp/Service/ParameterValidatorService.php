@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 
 class ParameterValidatorService
 {
@@ -147,6 +148,15 @@ class ParameterValidatorService
      */
     private function validateArray(string $key, mixed $value, array $schema): array
     {
+        // A tool-calling layer that hands back an array argument JSON-encoded is common enough that
+        // rejecting it outright costs a whole turn. Decoding here keeps the leniency in one place and
+        // reports a truncated payload for what it is; doExecute then always sees a real array.
+        // Only strings that actually attempt JSON take this path — a plain scalar is a type error and
+        // deserves to be told so, not to be explained as a JSON syntax problem.
+        if (is_string($value) && $this->looksLikeJsonArray($value)) {
+            $value = RecordsArgumentDecoder::decode($value, $key);
+        }
+
         if (!is_array($value)) {
             throw new InvalidParameterException(
                 sprintf('%s must be an array', $key),
@@ -164,5 +174,18 @@ class ParameterValidatorService
         }
 
         return $value;
+    }
+
+    /**
+     * Whether the string is an attempt at a JSON array/object rather than a plain scalar. A truncated
+     * payload still opens with its bracket, so this stays true for exactly the case worth reporting.
+     */
+    private function looksLikeJsonArray(string $value): bool
+    {
+        $trimmed = ltrim($value);
+
+        return str_starts_with($trimmed, '[')
+            || str_starts_with($trimmed, '{')
+            || str_starts_with($trimmed, '```');
     }
 }
