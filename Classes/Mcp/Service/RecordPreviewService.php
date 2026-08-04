@@ -10,17 +10,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 
-/**
- * Turns a writeRecords payload into a structured old/new diff.
- *
- * Two consumers share it: previewRecords renders it as Markdown for the model, and ChEddi renders it
- * as the editor-facing part of the confirmation card. Keeping one builder means the editor and the
- * model are shown the same thing.
- *
- * The values are run through DataHandlerSanitizerService first, so the preview shows what the write
- * would actually store. Skipping that is how the bullets bug stayed invisible: the preview echoed the
- * client's multi-line value while the write collapsed it into a single line.
- */
 class RecordPreviewService
 {
     private const DEFAULT_MAX_VALUE_LENGTH = 300;
@@ -37,14 +26,12 @@ class RecordPreviewService
     ) {}
 
     /**
-     * @param array<mixed> $records a writeRecords `records` payload
+     * @param array<mixed> $records
      *
      * @return list<array<string, mixed>>
      */
     public function describeWrite(array $records, int $maxValueLength = self::DEFAULT_MAX_VALUE_LENGTH): array
     {
-        // Same `type` -> CType/doktype alias the write path applies, so the card and the invalid-record
-        // gate judge exactly what would be written, not the raw payload.
         $records = $this->typeAliasNormalizer->normalize($records);
 
         $described = [];
@@ -58,9 +45,6 @@ class RecordPreviewService
     }
 
     /**
-     * A record that is acted on as a whole (deleted, copied, moved, localized): no field diff, just
-     * enough to tell the editor which record it is.
-     *
      * @return array<string, mixed>
      */
     public function describeExisting(string $table, int $uid, string $action, ?string $note = null): array
@@ -124,8 +108,6 @@ class RecordPreviewService
                 $this->recordAccess->assertRecordEditAccess($table, $uid);
             }
             $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
-            // A hallucinated CType must surface as an invalid record here, not only when the write
-            // runs: the host's confirmation card is built from this descriptor.
             $this->recordAccess->assertKnownRecordType($table, $fields);
         } catch (InsufficientPermissionException $e) {
             $this->logger->warning('RecordPreview: skipping record, insufficient permission', [
@@ -165,24 +147,32 @@ class RecordPreviewService
                 : 'end';
         }
 
+        $report = $this->sanitize($table, $fields, $existing);
+        if ([] !== $report['blocked']) {
+            return $this->invalid(sprintf(
+                'Raw markup is not allowed in the code editor field(s) %s of %s (setting "%s"); this record cannot be written',
+                implode(', ', $report['blocked']),
+                $table,
+                RawMarkupPolicyService::SETTING_KEY,
+            ));
+        }
+
         $descriptor['pageLabel'] = $this->pageLabel(
             is_int($descriptor['pid']) ? $descriptor['pid'] : null,
         );
-        $descriptor['fields'] = $this->describeFields($table, $fields, $existing, $maxValueLength);
+        $descriptor['fields'] = $this->describeFields($table, $report['data'], $existing, $maxValueLength);
 
         return $descriptor;
     }
 
     /**
-     * @param array<string, mixed>      $fields
+     * @param array<string, mixed>      $sanitized
      * @param null|array<string, mixed> $existing
      *
      * @return list<array<string, mixed>>
      */
-    private function describeFields(string $table, array $fields, ?array $existing, int $maxValueLength): array
+    private function describeFields(string $table, array $sanitized, ?array $existing, int $maxValueLength): array
     {
-        $sanitized = $this->sanitize($table, $fields, $existing);
-
         $described = [];
         foreach ($sanitized as $field => $value) {
             $field = (string) $field;
@@ -211,21 +201,21 @@ class RecordPreviewService
      * @param array<string, mixed>      $fields
      * @param null|array<string, mixed> $existing
      *
-     * @return array<string, mixed>
+     * @return array{data: array<string, mixed>, blocked: list<string>}
      */
     private function sanitize(string $table, array $fields, ?array $existing): array
     {
         try {
-            return $this->sanitizer->sanitizeFields($table, $fields, null, $existing ?? []);
+            $report = $this->sanitizer->sanitizeFieldsWithReport($table, $fields, null, $existing ?? []);
+
+            return ['data' => $report['data'], 'blocked' => $report['blocked']];
         } catch (\Throwable $e) {
-            // A value the sanitizer rejects (malformed FlexForm, for instance) would fail the write
-            // as well. Showing it unsanitized is more useful than showing nothing.
             $this->logger->warning('RecordPreview: sanitizing failed, showing raw values', [
                 'table' => $table,
                 'reason' => $e->getMessage(),
             ]);
 
-            return $fields;
+            return ['data' => $fields, 'blocked' => []];
         }
     }
 
@@ -244,8 +234,6 @@ class RecordPreviewService
         $raw = is_scalar($value) || null === $value ? (string) $value : (string) json_encode($value);
         $text = $this->resolveItemLabel($table, $field, $raw);
 
-        // RTE fields keep their HTML in the database, which is right. Printing that HTML on a
-        // confirmation card is not: the editor is meant to read the content, not the markup.
         if (str_contains($text, '<')) {
             $text = $this->sanitizer->toPlainText($text);
         }
@@ -255,10 +243,6 @@ class RecordPreviewService
         return ['text' => $truncated['text'], 'raw' => $raw, 'truncated' => $truncated['truncated']];
     }
 
-    /**
-     * A select value like `bullets` means nothing to an editor. The TCA item label ("Bullet List")
-     * does.
-     */
     private function resolveItemLabel(string $table, string $field, string $value): string
     {
         if ('' === $value) {
@@ -294,9 +278,6 @@ class RecordPreviewService
     }
 
     /**
-     * A record without a header falls back to its bodytext, so the "title" can be a whole paragraph
-     * of HTML. It heads the card, so keep it to one readable line.
-     *
      * @param array<string, mixed> $row
      */
     private function recordTitle(string $table, array $row): string

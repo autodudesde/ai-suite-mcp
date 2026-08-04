@@ -42,12 +42,17 @@ class FieldCurationService
     }
 
     /**
-     * @param bool $includeEmpty  keep fields whose value is empty (default read behaviour:
-     *                            true, so the "find records with empty fields" use-case works)
-     * @param bool $includeSystem keep housekeeping/system fields (default: false)
+     * @param bool              $includeEmpty  keep fields whose value is empty (default read behaviour:
+     *                                         true, so the "find records with empty fields" use-case works)
+     * @param bool              $includeSystem keep housekeeping/system fields (default: false)
+     * @param null|list<string> $allow         when set, keep only these fields; null = no restriction
      */
-    public function shouldInclude(string $field, mixed $value, bool $includeEmpty, bool $includeSystem): bool
+    public function shouldInclude(string $field, mixed $value, bool $includeEmpty, bool $includeSystem, ?array $allow = null): bool
     {
+        if (null !== $allow) {
+            return in_array($field, $allow, true);
+        }
+
         if (!$includeSystem && $this->isHousekeeping($field)) {
             return false;
         }

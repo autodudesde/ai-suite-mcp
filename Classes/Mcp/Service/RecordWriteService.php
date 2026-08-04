@@ -24,6 +24,7 @@ class RecordWriteService
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly RecordAccessService $recordAccess,
+        private readonly WorkspaceRecordService $workspaceRecords,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -35,6 +36,7 @@ class RecordWriteService
         $this->recordAccess->assertKnownRecordType($table, $fields);
 
         $report = $this->dataHandlerSanitizer->sanitizeFieldsWithReport($table, $fields, null, ['uid' => 0, 'pid' => $pid]);
+        $this->assertNothingBlocked($table, null, $report['blocked']);
         $fields = $report['data'];
         $newId = 'NEW'.substr(md5((string) time().random_int(0, 100000)), 0, 22);
 
@@ -64,8 +66,6 @@ class RecordWriteService
             ;
         }
 
-        // An update that flips CType to a hallucinated value never reaches findMissingRequiredFields,
-        // so the assert has to run here too.
         $this->recordAccess->assertKnownRecordType($table, $fields);
 
         $typeKey = null;
@@ -80,6 +80,7 @@ class RecordWriteService
             ]);
         }
         $report = $this->dataHandlerSanitizer->sanitizeFieldsWithReport($table, $fields, $typeKey, $record);
+        $this->assertNothingBlocked($table, $uid, $report['blocked']);
         $fields = $report['data'];
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
@@ -107,6 +108,32 @@ class RecordWriteService
     }
 
     /**
+     * @param list<string> $blocked
+     */
+    private function assertNothingBlocked(string $table, ?int $uid, array $blocked): void
+    {
+        if ([] === $blocked) {
+            return;
+        }
+
+        $this->logger->warning('RecordWrite: rejected raw markup for code editor field(s)', [
+            'table' => $table,
+            'uid' => $uid,
+            'fields' => $blocked,
+        ]);
+
+        throw (new InvalidParameterException(sprintf(
+            'Field(s) %s of %s store raw markup (code editor field) and writing markup there is disabled. Nothing was written, the stored value is unchanged. An administrator can allow it with the "%s" setting of the ai_suite_mcp extension configuration.',
+            implode(', ', $blocked),
+            $table,
+            RawMarkupPolicyService::SETTING_KEY,
+        )))
+            ->withErrorType(McpErrorType::UnsupportedHtml)
+            ->withErrorContext(['table' => $table, 'field' => $blocked[0], 'uid' => $uid])
+        ;
+    }
+
+    /**
      * @param array<string, mixed> $fields
      */
     private function resolvePosition(string $table, int $pageId, array $fields, string $position): int
@@ -118,10 +145,23 @@ class RecordWriteService
         if (str_starts_with($position, 'after:')) {
             $afterUid = (int) substr($position, 6);
             if ($afterUid > 0) {
-                return -$afterUid;
+                return -$this->workspaceRecords->resolveWriteTarget($table, $afterUid);
             }
         }
 
+        if (str_starts_with($position, 'before:')) {
+            $beforeUid = (int) substr($position, 7);
+            if ($beforeUid > 0) {
+                $sortBy = (string) ($this->tcaCompatibilityService->getRawConfiguration($table)['sortby'] ?? '');
+                $previous = '' !== $sortBy
+                    ? $this->recordRepository->findPreviousSiblingUid($table, $pageId, $beforeUid, $sortBy)
+                    : null;
+
+                return null !== $previous ? -$this->workspaceRecords->resolveWriteTarget($table, $previous) : $pageId;
+            }
+        }
+
+        // pages are versioned in place, the version keeps the live pid, so $pageId is never remapped.
         $sortByField = $this->tcaCompatibilityService->getRawConfiguration($table)['sortby'] ?? '';
         if ('end' === $position && '' !== $sortByField) {
             $colPos = ('tt_content' === $table && isset($fields['colPos'])) ? (int) $fields['colPos'] : null;

@@ -6,11 +6,11 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
-use TYPO3\CMS\Backend\Utility\BackendUtility;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadChildrenTool extends AbstractTool
@@ -18,11 +18,13 @@ class ReadChildrenTool extends AbstractTool
     private const MAX_CHILDREN_PER_FIELD = 200;
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly ContentRepository $contentRepository,
         private readonly RecordRepository $recordRepository,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -77,7 +79,7 @@ class ReadChildrenTool extends AbstractTool
     }
 
     /**
-     * @return array<string, list<array{uid: int, label: string, type: string}>>
+     * @return array<string, list<array{uid: int, label: string, type: string, state: string}>>
      */
     private function containerChildren(int $uid, string $cType, int $language): array
     {
@@ -86,13 +88,18 @@ class ReadChildrenTool extends AbstractTool
             return [];
         }
 
-        $children = [];
+        $childUids = [];
         foreach ($this->contentRepository->findContainerChildren($uid, $language) as $child) {
-            $childUid = (int) ($child['uid'] ?? 0);
+            $childUids[] = (int) ($child['uid'] ?? 0);
+        }
+
+        $children = [];
+        foreach ($this->workspaceRecords->overlay('tt_content', $childUids) as $child) {
             $children[] = [
-                'uid' => $childUid,
+                'uid' => (int) ($child['uid'] ?? 0),
                 'label' => (string) ($child['header'] ?? '') ?: '(no header)',
                 'type' => sprintf('%s, colPos %d', (string) ($child['CType'] ?? ''), (int) ($child['colPos'] ?? 0)),
+                'state' => $this->workspaceRecords->stateLabel($child),
             ];
         }
 
@@ -102,11 +109,12 @@ class ReadChildrenTool extends AbstractTool
     /**
      * @param array<string, mixed> $record
      *
-     * @return array<string, list<array{uid: int, label: string, type: string}>>
+     * @return array<string, list<array{uid: int, label: string, type: string, state: string}>>
      */
     private function inlineChildren(string $table, array $record, int $uid): array
     {
         $groups = [];
+        $targets = $this->workspaceRecords->relationTargets($table, $uid);
 
         try {
             $typeKey = $this->tcaCompatibilityService->resolveSubSchemaType($table, $record);
@@ -121,25 +129,27 @@ class ReadChildrenTool extends AbstractTool
                 }
 
                 $foreignTable = (string) $config['foreign_table'];
-                $childUids = $this->recordRepository->findUidsByCriteria(
+                $foreignField = (string) $config['foreign_field'];
+                $childUids = $this->recordRepository->findUidsByRelation(
                     $foreignTable,
-                    null,
-                    [(string) $config['foreign_field'] => $uid],
-                    null,
-                    null,
-                    'uid',
+                    $foreignField,
+                    $targets,
                     self::MAX_CHILDREN_PER_FIELD,
-                    0,
                 );
 
                 $children = [];
                 $labelField = $this->tcaCompatibilityService->getLabelField($foreignTable);
-                foreach ($childUids as $childUid) {
-                    $childRecord = BackendUtility::getRecordWSOL($foreignTable, $childUid);
+                foreach ($this->workspaceRecords->overlay($foreignTable, $childUids) as $childRecord) {
+                    // A live row still names the live parent; only the overlaid value decides membership.
+                    if (!in_array((int) ($childRecord[$foreignField] ?? 0), $targets, true)) {
+                        continue;
+                    }
+
                     $children[] = [
-                        'uid' => $childUid,
+                        'uid' => (int) ($childRecord['uid'] ?? 0),
                         'label' => (string) ($childRecord[$labelField] ?? '') ?: '(no label)',
                         'type' => $foreignTable,
+                        'state' => $this->workspaceRecords->stateLabel($childRecord),
                     ];
                 }
 
@@ -159,7 +169,7 @@ class ReadChildrenTool extends AbstractTool
     }
 
     /**
-     * @param array<string, list<array{uid: int, label: string, type: string}>> $groups
+     * @param array<string, list<array{uid: int, label: string, type: string, state: string}>> $groups
      */
     private function render(string $table, int $uid, array $groups): string
     {
@@ -167,7 +177,8 @@ class ReadChildrenTool extends AbstractTool
         foreach ($groups as $groupLabel => $children) {
             $text .= sprintf("**%s** (%d):\n", $groupLabel, count($children));
             foreach ($children as $child) {
-                $text .= sprintf("- uid %d — %s [%s]\n", $child['uid'], $child['label'], $child['type']);
+                $marker = '' !== $child['state'] ? ' · '.$child['state'] : '';
+                $text .= sprintf("- uid %d — %s [%s%s]\n", $child['uid'], $child['label'], $child['type'], $marker);
             }
             $text .= "\n";
         }

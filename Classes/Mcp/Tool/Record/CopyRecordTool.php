@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -21,6 +22,7 @@ class CopyRecordTool extends AbstractDataTool
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly BatchResultBuilderService $batchResultBuilder,
+        private readonly BatchEntryValidator $batchEntryValidator,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -47,7 +49,15 @@ class CopyRecordTool extends AbstractDataTool
                 'copies' => [
                     'type' => 'array',
                     'description' => 'The records to copy. Each: {table, uid, targetPid}, all required. Pass one entry even for a single copy.',
-                    'items' => ['type' => 'object'],
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'table' => ['type' => 'string'],
+                            'uid' => ['type' => 'integer'],
+                            'targetPid' => ['type' => 'integer'],
+                        ],
+                        'required' => ['table', 'uid', 'targetPid'],
+                    ],
                 ],
             ],
             'required' => ['copies'],
@@ -61,6 +71,8 @@ class CopyRecordTool extends AbstractDataTool
         if (!is_array($copies) || empty($copies)) {
             return $this->textError('copies must be a non-empty array of {table, uid, targetPid}.');
         }
+
+        $this->batchEntryValidator->assertShape($copies, 'copies', ['table', 'uid', 'targetPid']);
 
         return $this->batchResultBuilder->run($copies, 'copy/copies', function (mixed $copy): array {
             if (!is_array($copy)) {

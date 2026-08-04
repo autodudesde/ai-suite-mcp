@@ -37,7 +37,7 @@ MCP tools delegate the actual generation / translation work to the parent AI Sui
 
 The exact model list available to a given BE user depends on the AI-model permissions configured on their BE group in AI Suite. The model picks itself up automatically from the AI Suite settings; no extra config in MCP.
 
-Beyond the AI-powered tools above, MCP also ships **discovery and editing tools** (no model calls): `readRenderedPage` (the page as a visitor sees it, including plugin output; needs the `enable_mcp_rendered_page_read` flag, see [Per-tool permissions](#per-tool-permissions)), `readEditorialGuidelines` (the tone / target audience / style the editors configured for a page subtree), `listTables`, `readRecordSchema` (with per-field content kind, read-only and relation metadata), `listContentTypes`, `readChildren` (list a record's container/IRRE children), `readPageContent`, `readRecords`, `searchContent` (optional single-`field` / `matchHtml` search), `previewRecords` (shows an old→new diff when editing), `writeRecords` (with optional `atomic:true` all-or-nothing batches), `copyRecords`, `moveRecords`, `deleteRecords`, `localizeRecord`, and the safe-edit tools `replaceText` / `patchText` / `bulkReplaceText` for small text corrections without resending whole fields. Media references can be reused/swapped with `copyMediaReference` / `replaceMediaReference`.
+Beyond the AI-powered tools above, MCP also ships **discovery and editing tools** (no model calls): `readRenderedPage` (the page as a visitor sees it, including plugin output; needs the `enable_mcp_rendered_page_read` flag, see [Per-tool permissions](#per-tool-permissions)), `readEditorialGuidelines` (the tone / target audience / style the editors configured for a page subtree), `listTables`, `readRecordSchema` (with per-field content kind, read-only and relation metadata), `listContentTypes`, `readChildren` (list a record's container/IRRE children), `readPageContent`, `readRecords`, `searchContent` (sweeps IRRE child tables automatically; optional `rootPageId` to search one page subtree, single-`field` / `matchHtml` search), `previewRecords` (shows an old→new diff when editing), `writeRecords` (with optional `atomic:true` all-or-nothing batches), `copyRecords`, `moveRecords`, `deleteRecords`, `localizeRecord`, and the safe-edit tools `replaceText` / `patchText` / `bulkReplaceText` for small text corrections without resending whole fields (they locate the match ignoring line-ending and spacing differences by default, since stored rich text keeps CRLF that no read shows verbatim; pass `normalizeWhitespace:false` to require a byte-exact match). Media references can be reused/swapped with `copyMediaReference` / `replaceMediaReference`.
 
 ## Requirements
 
@@ -73,9 +73,27 @@ All settings live under **Admin Tools → Settings → Extension Configuration �
 | `mcpSessionTimeoutSeconds` | `1800` | Drop idle MCP sessions after N seconds. `0` = SDK default (3600). Lower values free PHP workers and reduce session-store bloat. |
 | `mcpAllowedRedirectUris` | _(empty)_ | Comma-separated allowlist of external OAuth redirect URIs. Matched by **prefix** (`str_starts_with`). `http://localhost`, `http://127.0.0.1` and `http://[::1]` are always accepted regardless of this setting. |
 | `mcpExcludedTables` | _(empty)_ | Comma-separated list of tables that MCP tools must **not** read or write. Applied on top of TYPO3 backend permissions and **also blocks admins**: use to hide sensitive tables (e.g. `be_users`, `fe_users`, `sys_log`) from MCP clients regardless of the user's TYPO3 role. |
+| `mcpSearchAdditionalTables` | _(empty)_ | Comma-separated tables that `searchContent` sweeps **on top of** the automatically detected child tables. Only needed for standalone record tables that are not children of anything (e.g. `tx_news_domain_model_news`); IRRE child tables are found in the TCA by themselves. See [Which tables searchContent sweeps](#which-tables-searchcontent-sweeps). |
+| `mcpExcludeAdditionalTablesFromSearch` | _(empty)_ | Comma-separated tables to remove from the auto-detected set. Does **not** affect tables listed in `mcpSearchAdditionalTables`, and does not block MCP access — use `mcpExcludedTables` for that. |
+| `mcpAllowRawHtmlWrite` | `0` | Allow write tools to store raw markup verbatim in **code editor fields** — `tt_content.bodytext` of CType `html` and any other TCA `text` field with a code editor `renderType`/`format`. Those fields render unfiltered in the frontend, so an agent (or a prompt injection reaching it) can place arbitrary HTML/JavaScript on the site. While disabled, a write that carries markup into such a field is **rejected** (`unsupported_html`): nothing is stored and the existing value survives. Markup-free values are written either way. See [Code editor fields](#code-editor-fields). |
 | `mcpTrustedProxies` | _(empty)_ | Comma-separated reverse-proxy IPs / CIDRs (e.g. `10.0.0.0/8,192.168.0.0/16`). When set, OAuth audit-log entries resolve the real client IP from `X-Forwarded-For` instead of the proxy peer IP. Empty = `X-Forwarded-For` is ignored and the raw peer IP is logged. See [Reverse proxy & load balancer](#reverse-proxy--load-balancer). |
 
 Logging settings (`mcpLogVerbose`, `mcpLogRedactionPatterns`) are documented under [Logging & retention](#logging--retention); the media-upload settings (`mcpMediaDefaultFolder`, `mcpMediaMaxSizeMb`, `mcpMediaAllowedExtensions`, `mcpMediaAllowUrlFetch`, `mcpMediaHostDenylist`) under the [`uploadMedia`](#media-upload-mcpmedia) tool.
+
+### Which tables searchContent sweeps
+
+`searchContent` always searches `pages` and `tt_content`. Beyond those it sweeps the **IRRE child tables of your installation**, and it derives that list from the TCA instead of asking you to configure it: every table reachable through an `inline` or `file` field that carries both a `foreign_table` and a `foreign_field` is a child table. That covers Content Blocks collections, Bootstrap Package accordion/card items and any hand-written equivalent — without them a term rollout silently misses every child record.
+
+Four kinds of table are dropped from that set structurally: `sys_file_reference`, `pages` and `tt_content` (already searched or pure relation glue), every `rootLevel` table (it sits on `pid = 0` and can therefore never be inside a webmount — this is what keeps `sys_file_metadata` and `sys_workspace_stage` out), and every table without a searchable text column. `hideTable` is deliberately **not** a criterion: it means "no entry in the list module", not "secret", and every Content Blocks collection carries it.
+
+Precedence, strongest first:
+
+1. `mcpExcludedTables` — blocks the table from MCP entirely, search included.
+2. `mcpSearchAdditionalTables` — adds a table regardless of detection or search exclusion.
+3. `mcpExcludeAdditionalTablesFromSearch` — removes a table from the auto-detected set.
+4. The auto-detected set.
+
+The user's own backend permissions apply on top: a table the BE user cannot `tables_select` is skipped silently and does not appear in the response's `searchedTables`, which always names exactly the tables that were searched.
 
 ### Known MCP client callback URLs
 
@@ -87,7 +105,7 @@ Copy these into `mcpAllowedRedirectUris` / `mcpAllowedOrigins` for every client 
 | **ChatGPT** (MCP connector) | `https://chatgpt.com/connector_platform_oauth_redirect` | `https://chatgpt.com` |
 | **MCP Inspector** (dev tool) | `http://localhost:6274/oauth/callback`, `http://localhost:6274/oauth/callback/debug` | `http://localhost:6274` |
 | **Claude Code CLI** | `http://localhost:<ephemeral-port>/callback`: covered by the localhost exception, no entry needed | n/a (no browser) |
-| **Open WebUI** (self-hosted) | `https://<your-openwebui-host>/oauth/oidc/callback` | `https://<your-openwebui-host>` |
+| **Open WebUI** (self-hosted) | `https://<your-openwebui-host>/oauth/` | `https://<your-openwebui-host>` |
 
 **Notes**
 - Entries in `mcpAllowedRedirectUris` are matched by prefix, so e.g. `https://claude.ai/` covers any sub-path Claude may send (see `AuthorizationEndpoint::validateRedirectUri`).
@@ -125,6 +143,34 @@ Read tools transparently follow whatever workspace the request resolved to, so p
 > deciding whether it is contained. Separately, the credits spent by the `generate*` / `batch*`
 > tools are never refundable; those tools return suggestions and spend credits even though they
 > write no database row.
+
+## Why the client asks for approval
+
+Nothing in this server asks a user to confirm a call. When a client shows an approval dialog — or
+reports something like `No approval received` — that decision was made entirely on the client side.
+There is no server-side approval gate, no confirmation parameter and, in particular, **no
+batch-size threshold**: deleting one record and deleting eleven in one call take the identical code
+path. If single calls go through while a batch does not, that is a property of the client, not of
+this server.
+
+What the server does contribute are the MCP tool annotations, which is what a client typically bases
+its dialog on:
+
+| Annotation | Meaning here | Which tools |
+|---|---|---|
+| `readOnlyHint` | Reads only, never writes | all `read*` / `list*` tools, `searchContent`, `previewRecords`, `compareWithLive` |
+| `idempotentHint` | Repeating the call changes nothing further | the same read tools |
+| `destructiveHint` | Not undoable by discarding a workspace | `deleteRecords`, `uploadMedia`, `generateImage`, `applyTaskResults` |
+| `openWorldHint` | Reaches a system outside this TYPO3 | `generateImage`, `uploadMedia` |
+
+`writeRecords`, `copyRecords`, `moveRecords` and `savePageTree` are deliberately **not** marked
+destructive: under the default `mcpWriteMode = workspace` they land in a draft and are undone by
+discarding it. Marking them destructive would add approval friction for changes that are already
+reversible.
+
+If a client asks too often or too rarely, the setting to change is in the client. `previewRecords`
+is available for a read-only look at what a write would do, and `dryRun` on `bulkReplaceText`
+reports the blast radius of a bulk edit without writing.
 
 ## Connectors
 
@@ -200,7 +246,7 @@ A useful starter sequence:
 
 ## OAuth scopes
 
-Each tool requires a scope, and each scope is only granted to users whose BE group has at least one of the matching AI Suite feature flags. See `McpPermissionService::SCOPE_PERMISSION_MAP`.
+Each tool requires a scope, and each scope is only granted to users whose BE group has at least one of the matching AI Suite feature flags. See `PermissionService::SCOPE_PERMISSION_MAP`.
 
 | Scope | Required BE-group permission(s) | Covers |
 |---|---|---|
@@ -211,6 +257,11 @@ Each tool requires a scope, and each scope is only granted to users whose BE gro
 | `mcp:image` | `enable_image_generation` | AI image generation |
 | `mcp:media` | `enable_mcp_media_upload` | `uploadMedia` (URL / base64 / online-media import into FAL) |
 | `mcp:workflow` | `enable_massaction_generation` | Batch / background task tools |
+
+These seven are the complete list. In particular there is no `mcp:glossary`, no `mcp:easy-language`
+and no `mcp:manage` scope — those appeared in an outdated document and have never existed in any
+released version. Glossary handling and Easy Language rewrites ride along with `mcp:translate`, and
+there is no management scope at all. Requesting an unknown scope fails the authorization request.
 
 ## Tools
 
@@ -224,7 +275,7 @@ Each tool requires a scope, and each scope is only granted to users whose BE gro
 | `readRenderedPage` | The page as a visitor sees it, incl. plugin output; needs `enable_mcp_rendered_page_read` (see [Per-tool permissions](#per-tool-permissions)) |
 | `readEditorialGuidelines` | The tone / target audience / style the editors configured for a page subtree |
 | `readChildren` | List a record's container / IRRE children, grouped by relation |
-| `searchContent` | Full-text search across pages and content elements |
+| `searchContent` | Full-text search across pages, content elements and the auto-detected IRRE child tables |
 | `listFiles` | List files in a FAL storage / folder |
 | `readFileInfo` | Metadata for a single sys_file / sys_file_metadata record |
 | `listStaleContent` | Detect pages / content that have not been updated for N days |
@@ -251,6 +302,23 @@ Each tool requires a scope, and each scope is only granted to users whose BE gro
 | `bulkReplaceText` | The same replacement across all child records of a parent |
 | `copyMediaReference` | Copy a file reference from a source field onto a target field |
 | `replaceMediaReference` | Swap the file behind an existing file reference |
+
+#### Code editor fields
+
+Write tools do not store markup a field cannot hold: a value going into a plain TCA `text` or `input`
+field has its tags removed and its whitespace normalised, so a model that answers in HTML does not
+put `<p>` into a page title. Two kinds of field are exempt, because there the markup **is** the value:
+
+- **Rich text fields** (`enableRichtext`, e.g. `bodytext` of `textmedia`) are stored as sent. They pass
+  through TYPO3's own `RteHtmlParser` + HTML sanitizer on save, exactly like manual backend editing.
+- **Code editor fields** — TCA `text` with a code editor `renderType`/`format`, the prominent one being
+  `tt_content.bodytext` of CType `html`. TYPO3 renders those unfiltered, so they are gated by
+  `mcpAllowRawHtmlWrite` (default off): with the setting on the source round-trips byte for byte, with
+  it off a write carrying markup is rejected with `unsupported_html` and the stored value is left alone.
+
+`readRecordSchema` reports the distinction per field as `kind:rte`, `kind:html` or `kind:text`. When
+editing such a field, read it with `readRecords(raw: true)` — a normal read returns a tag-stripped
+preview — or, better, change it in place with `patchText` / `replaceText`.
 
 ### Generation (`mcp:generate`)
 | Tool | Purpose |
@@ -355,8 +423,8 @@ For tools that legitimately belong here (built-in tools), the pattern is:
 1. Create a class under `Classes/Mcp/Tool/<Category>/MyNewTool.php` extending `AbstractTool` (or `AbstractAiTool` / `AbstractTranslateTool` for AI-powered tools that need credit accounting and model routing).
 2. Add `#[AutoconfigureTag('aisuite.mcp.tool')]` if your class doesn't pick it up via `ToolInterface` (in practice it does automatically).
 3. Implement `getName()`, `getDescription()`, `getSchema()`, `getRequiredScope()`, and `doExecute()`: never `execute()`, which is `final` on `AbstractTool` and runs the validation / permissions / error-handling pipeline.
-4. Inject any extra services through your own constructor; the bundled context (`McpToolContext`) already covers the common ones (`McpUserContext`, `McpPermissionService`, logger, `LocalizationService`, `BackendUserService`, …).
-5. Map your scope to the right BE-group flag in `McpPermissionService::SCOPE_PERMISSION_MAP` if you introduce a new scope.
+4. Inject any extra services through your own constructor; the bundled context (`ToolContext`) already covers the common ones (`McpUserContext`, `PermissionService`, logger, `LocalizationService`, `BackendUserService`, …).
+5. Map your scope to the right BE-group flag in `PermissionService::SCOPE_PERMISSION_MAP` if you introduce a new scope.
 
 Run the test suite (`phpunit -c Tests/UnitTests.xml`, `phpunit -c Tests/FunctionalTests.xml`) and verify the tool shows up in `readServerInfo` and on a connector smoke test.
 
@@ -470,6 +538,7 @@ Enforced by `McpServerMiddleware` and the OAuth endpoints:
 - **Password change revokes all tokens** for that BE user (`PasswordChangeHook` on `processDatamapClass`).
 - **Live backend-user status check** on every request: disabled / deleted users are rejected even if their token is still valid.
 - **Scope + permission double check**: an OAuth scope alone is not sufficient; the BE user group must also carry the matching AI Suite feature flag.
+- **Raw markup is refused by default**: a write that would put HTML/JavaScript into an unfiltered [code editor field](#code-editor-fields) fails unless `mcpAllowRawHtmlWrite` is enabled.
 - **Reports module** surfaces misconfigurations: HTTP allowed, empty allowlists in production. Check **System → Reports → AI Suite MCP Security**.
 
 ## Production deployment

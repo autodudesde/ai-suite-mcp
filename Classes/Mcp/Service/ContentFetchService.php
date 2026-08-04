@@ -8,11 +8,11 @@ use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuite\Service\BasicAuthService;
 use AutoDudes\AiSuite\Service\SiteService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Routing\PreviewUriBuilder;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
-use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Domain\Repository\PageRepository;
 use TYPO3\CMS\Core\Http\RequestFactory;
 use TYPO3\CMS\Core\Session\UserSessionManager;
@@ -58,14 +58,14 @@ class ContentFetchService
         private readonly SiteService $siteService,
         private readonly BasicAuthService $basicAuthService,
         private readonly TcaCompatibilityService $tcaCompatibilityService,
-        private readonly Context $context,
+        private readonly WorkspaceContextService $workspaceContextService,
         private readonly LoggerInterface $logger,
     ) {}
 
     public function fetchPageContent(int $pageId, int $languageUid = 0): string
     {
         // Skip HTTP preview when in a workspace
-        if (0 === $this->currentWorkspaceId()) {
+        if (0 === $this->workspaceContextService->getWorkspaceId()) {
             try {
                 $html = $this->fetchViaPreviewUrl($pageId, $languageUid);
                 if ('' !== $html) {
@@ -83,19 +83,6 @@ class ContentFetchService
         }
 
         return $this->fetchFromDatabase($pageId, $languageUid);
-    }
-
-    private function currentWorkspaceId(): int
-    {
-        try {
-            return (int) $this->context->getPropertyFromAspect('workspace', 'id', 0);
-        } catch (\Throwable $e) {
-            $this->logger->warning('ContentFetchService: could not resolve workspace aspect, falling back to live workspace (0)', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return 0;
-        }
     }
 
     private function fetchViaPreviewUrl(int $pageId, int $languageUid): string
@@ -190,7 +177,7 @@ class ContentFetchService
 
     private function fetchFromDatabase(int $pageId, int $languageUid): string
     {
-        $workspaceId = $this->currentWorkspaceId();
+        $workspaceId = $this->workspaceContextService->getWorkspaceId();
 
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page || [] === $page) {

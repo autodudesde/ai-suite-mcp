@@ -28,7 +28,7 @@ The infrastructure side (containers, networking, TLS, optional GPU acceleration)
    | Setting | Value |
    |---|---|
    | `enableMcp` | `1` |
-   | `mcpAllowedRedirectUris` | leave empty in development (any redirect URI is accepted) — for production: `<openwebui-url>/oauth/clients/` |
+   | `mcpAllowedRedirectUris` | leave empty in development (any redirect URI is accepted) — for production: `<openwebui-url>/oauth/` (matching is prefix-based, so this one entry covers every Open WebUI callback shape) |
    | `mcpAllowedOrigins` | leave empty in development (any origin is accepted) — for production: `<openwebui-url>` |
    | `mcpAllowedClientIds` | leave empty (otherwise the DCR-generated client_id has to be added manually) |
 

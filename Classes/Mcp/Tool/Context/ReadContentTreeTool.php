@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -26,10 +27,12 @@ class ReadContentTreeTool extends AbstractTool
 
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly ContentRepository $contentRepository,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -105,7 +108,10 @@ class ReadContentTreeTool extends AbstractTool
 
             $text .= sprintf("### Page %d: \"%s\" (%s)\n", (int) $pid, (string) ($page['title'] ?? ''), (string) ($page['slug'] ?? ''));
 
-            $rows = $this->contentRepository->findByPage((int) $pid, $languageUid, $includeHidden, self::ELEMENTS_PER_PAGE_CAP, 0);
+            $rows = $this->workspaceRecords->overlayRows(
+                'tt_content',
+                $this->contentRepository->findByPage((int) $pid, $languageUid, $includeHidden, self::ELEMENTS_PER_PAGE_CAP, 0),
+            );
             if ([] === $rows) {
                 $text .= "_(no content elements)_\n\n";
 

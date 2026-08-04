@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
+use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
@@ -15,9 +17,13 @@ class McpWriteModeResolver implements SingletonInterface
     public function __construct(
         private readonly SysWorkspaceRepository $sysWorkspaceRepository,
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly LocalizationService $localizationService,
         private readonly LoggerInterface $logger,
     ) {}
 
+    /**
+     * @throws InsufficientPermissionException when write mode "workspace" cannot provide a draft workspace
+     */
     public function resolveWorkspaceId(BackendUserAuthentication $backendUser, ?int $boundWorkspaceUid = null, ?string $writeModeOverride = null): int
     {
         if (null !== $boundWorkspaceUid) {
@@ -77,13 +83,24 @@ class McpWriteModeResolver implements SingletonInterface
 
             return $newUid;
         } catch (\Throwable $e) {
-            $this->logger->error('Workspace mode: failed to auto-create user workspace, falling back to live', [
+            $this->logger->error('Workspace mode: failed to auto-create user workspace, aborting instead of writing to live', [
                 'beUserUid' => $beUserUid,
                 'error' => $e->getMessage(),
             ]);
 
-            return 0;
+            throw new InsufficientPermissionException($this->workspaceUnavailableMessage(), 1753900001, $e);
         }
+    }
+
+    private function workspaceUnavailableMessage(): string
+    {
+        $message = $this->localizationService->translate('mcp:hint.workspace_unavailable');
+
+        if ('' === $message) {
+            $message = 'Write mode "workspace" requires a draft workspace, but none could be resolved or created for this backend user. Nothing was written to the live site. Contact a TYPO3 administrator or adjust the MCP write mode.';
+        }
+
+        return $message;
     }
 
     private function resolveAutoWorkspaceId(BackendUserAuthentication $backendUser): int

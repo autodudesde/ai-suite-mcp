@@ -11,7 +11,7 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class PatchTextTool extends AbstractSafeEditTool
 {
-    private const MAX_REPLACEMENTS = 50;
+    private const MAX_REPLACEMENTS = 200;
 
     public function getName(): string
     {
@@ -38,6 +38,7 @@ class PatchTextTool extends AbstractSafeEditTool
                     'description' => 'Ordered list of edits, applied top to bottom on the running raw stored value. Each: {search, replace, all?}. `all` defaults to false, meaning the search text must occur exactly once.',
                     'items' => ['type' => 'object'],
                 ],
+                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating each match. The replacement is spliced into the original, so text outside the match keeps its exact bytes. Default: true.'],
             ],
             'required' => ['table', 'uid', 'field', 'replacements'],
         ];
@@ -57,6 +58,7 @@ class PatchTextTool extends AbstractSafeEditTool
             return $this->textError(sprintf('Too many replacements (max %d).', self::MAX_REPLACEMENTS));
         }
 
+        $this->normalizeWhitespace = (bool) ($params['normalizeWhitespace'] ?? true);
         $value = $this->loadEditableField($table, $uid, $field)['value'];
 
         $applied = 0;
@@ -69,7 +71,7 @@ class PatchTextTool extends AbstractSafeEditTool
             $all = (bool) ($replacement['all'] ?? false);
 
             try {
-                $outcome = $this->applyReplacement($value, $search, $replace, $all);
+                $outcome = $this->applyReplacement($value, $search, $replace, $all, $this->normalizeWhitespace);
             } catch (InvalidParameterException $e) {
                 throw (new InvalidParameterException(sprintf('Replacement #%d: %s', (int) $i + 1, $e->getMessage())))
                     ->withErrorType($e->getErrorType())

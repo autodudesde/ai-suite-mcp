@@ -15,6 +15,7 @@ class CompareWithLiveTool extends AbstractDataTool
 {
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -104,15 +105,34 @@ class CompareWithLiveTool extends AbstractDataTool
         }
 
         $sanitizedFilters = [];
+        $droppedFilters = [];
         foreach ($filters as $field => $value) {
             if (is_string($field) && $this->recordAccess->canAccessField($table, $field)) {
                 $sanitizedFilters[$field] = is_scalar($value) ? $value : null;
+
+                continue;
             }
+
+            $droppedFilters[] = (string) $field;
+        }
+
+        // Dropping every filter silently would diff the whole page under a "matching filters" header.
+        if ([] !== $filters && [] === $sanitizedFilters) {
+            return $this->textError(sprintf(
+                'None of the given filters can be used on %s: %s. Check the field names with readRecordSchema.',
+                $table,
+                implode(', ', $droppedFilters),
+            ));
         }
 
         $set = $this->comparison->compareSet($table, $pid, $sanitizedFilters, $allowedPids, $currentWs, $limit);
 
-        return $this->textResult($this->renderSet($table, $set, $currentWs, $pid));
+        $text = $this->renderSet($table, $set, $currentWs, $pid);
+        if ([] !== $droppedFilters) {
+            $text .= sprintf("\n⚠️ Ignored filter(s) you cannot use on this table: %s.\n", implode(', ', $droppedFilters));
+        }
+
+        return $this->textResult($text);
     }
 
     /**

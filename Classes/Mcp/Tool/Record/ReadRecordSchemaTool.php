@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
+use AutoDudes\AiSuite\Service\RichtextPresetService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FieldFormatHintService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\RawMarkupPolicyService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -13,13 +15,18 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadRecordSchemaTool extends AbstractDataTool
 {
+    private const MAX_LISTED_TAGS = 20;
+
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly RecordRepository $recordRepository,
         private readonly FieldFormatHintService $fieldFormatHints,
+        private readonly RawMarkupPolicyService $rawMarkupPolicy,
+        private readonly RichtextPresetService $richtextPresets,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -41,7 +48,7 @@ class ReadRecordSchemaTool extends AbstractDataTool
         return [
             'type' => 'object',
             'properties' => [
-                'table' => ['type' => 'string', 'description' => 'Table name (e.g. tt_content, pages). Content kinds reported per field: rte = HTML honoured; text/plaintext = markup stripped on write; lines = line-based, see the Format note on the field; json; relation.'],
+                'table' => ['type' => 'string', 'description' => 'Table name (e.g. tt_content, pages). Content kinds reported per field: rte = HTML honoured; html = code editor field, raw markup stored verbatim; text/plaintext = markup stripped on write; lines = line-based, see the Format note on the field; json; relation.'],
                 'type' => ['type' => 'string', 'description' => 'Record type filter (e.g. "textmedia" for tt_content CType)'],
                 'suggestValues' => ['type' => 'boolean', 'default' => true, 'description' => 'Suggest the most common existing value for configuration select fields (appearance, frame, layout), sampled from existing records, so a new record matches the site conventions.'],
             ],
@@ -56,9 +63,6 @@ class ReadRecordSchemaTool extends AbstractDataTool
         $suggestValues = (bool) ($params['suggestValues'] ?? true);
         $this->recordAccess->validateTableReadAccess($table);
 
-        // Without an explicit type, describe the default sub-schema — the one a record gets when it
-        // is written without a type value. Describing the whole table instead would report every
-        // sub-schema's required fields, which writeRecords then does not ask for.
         $typeKey = ('' !== $type && $this->tcaCompatibilityService->hasSubSchema($table, $type))
             ? $type
             : $this->tcaCompatibilityService->resolveDefaultSubSchemaType($table);
@@ -95,6 +99,7 @@ class ReadRecordSchemaTool extends AbstractDataTool
             if ($this->tcaCompatibilityService->isRichTextFieldConfig($config)) {
                 $info['isRichText'] = true;
                 $info['richtextConfiguration'] = (string) ($config['richtextConfiguration'] ?? 'default');
+                $info['allowedTags'] = $this->richtextPresets->getAllowedTags($table, $fieldName, (string) $typeKey, $config);
             }
             if (isset($config['default']) && '' !== (string) $config['default']) {
                 $info['default'] = (string) $config['default'];
@@ -126,6 +131,11 @@ class ReadRecordSchemaTool extends AbstractDataTool
                 $info['eval'] = (string) $config['eval'];
             }
             $info['kind'] = $this->classifyFieldKind($config, $fieldType);
+            if ('html' === $info['kind']) {
+                $info['format'] = $this->rawMarkupPolicy->isRawMarkupWriteAllowed()
+                    ? 'source code — stored verbatim, nothing is escaped or reformatted. Send complete, valid markup.'
+                    : sprintf('source code — stored verbatim, but writing markup here is disabled ("%s"): such a write is rejected, not stripped.', RawMarkupPolicyService::SETTING_KEY);
+            }
 
             $formatHint = $this->fieldFormatHints->forField($table, $typeKey, $fieldName);
             if (null !== $formatHint) {
@@ -159,6 +169,7 @@ class ReadRecordSchemaTool extends AbstractDataTool
             }
             if ($f['isRichText'] ?? false) {
                 $flags[] = 'richtext:'.($f['richtextConfiguration'] ?? 'default');
+                $flags[] = $this->renderAllowedTags($f['allowedTags'] ?? []);
             }
             if (isset($f['maxLength'])) {
                 $flags[] = 'max:'.$f['maxLength'];
@@ -201,6 +212,24 @@ class ReadRecordSchemaTool extends AbstractDataTool
     }
 
     /**
+     * @param list<string> $tags
+     */
+    private function renderAllowedTags(array $tags): string
+    {
+        if ([] === $tags) {
+            return 'allowed tags: unknown';
+        }
+
+        $shown = array_slice($tags, 0, self::MAX_LISTED_TAGS);
+        $suffix = count($tags) > self::MAX_LISTED_TAGS
+            ? sprintf(', +%d more', count($tags) - self::MAX_LISTED_TAGS)
+            : '';
+
+        // No parentheses: this string sits inside the parenthesised per-field flag list.
+        return sprintf('tags surviving a backend save: %s%s', implode(', ', $shown), $suffix);
+    }
+
+    /**
      * @param array<string, mixed> $config
      */
     private function classifyFieldKind(array $config, string $fieldType): string
@@ -212,7 +241,11 @@ class ReadRecordSchemaTool extends AbstractDataTool
             return 'json';
         }
         if ('text' === $fieldType) {
-            return $this->tcaCompatibilityService->isRichTextFieldConfig($config) ? 'rte' : 'text';
+            if ($this->tcaCompatibilityService->isRichTextFieldConfig($config)) {
+                return 'rte';
+            }
+
+            return $this->tcaCompatibilityService->isRawMarkupFieldConfig($config) ? 'html' : 'text';
         }
 
         return 'plaintext';

@@ -84,6 +84,10 @@
                 <source>Token is bound to workspace %d, but the backend user no longer has access to it. Generate a new MCP token via the AI Suite backend module.</source>
                 <target>Der Token ist an Workspace %d gebunden, der Backend-Benutzer hat aber keinen Zugriff mehr darauf. Bitte über das AI-Suite-Backend-Modul einen neuen MCP-Token erzeugen.</target>
             </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.workspace_unavailable">
+                <source>Write mode "workspace" requires a draft workspace, but none could be resolved or created for this backend user. Nothing was written to the live site. Contact a TYPO3 administrator or adjust the MCP write mode.</source>
+                <target>Der Write-Mode "workspace" benötigt einen Draft-Workspace, für diesen Backend-Benutzer konnte aber keiner ermittelt oder angelegt werden. Es wurde nichts in die Live-Seite geschrieben. Bitte kontaktiere einen TYPO3-Administrator oder passe den MCP-Write-Mode an.</target>
+            </trans-unit>
 
             <!-- Success Messages -->
             <trans-unit id="aiSuite.mcp.success.metadata_applied">

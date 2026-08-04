@@ -24,6 +24,7 @@ class ReadServerInfoTool extends AbstractTool
 
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -144,11 +145,14 @@ class ReadServerInfoTool extends AbstractTool
                 $warnings[] = sprintf('Session directory is not writable: %s', $sessionPath);
             }
             if ($sessionFiles > self::SESSION_FILE_WARN_THRESHOLD) {
-                $warnings[] = sprintf(
+                $message = sprintf(
                     '%d session files are stored. Stateless clients leave one behind per request; '
                     .'run ai-suite-mcp:cleanup (ideally on a schedule).',
                     $sessionFiles,
                 );
+                $warnings[] = $message;
+                // The response reaches admins only, and only when they ask. Monitoring tails the log.
+                $this->logger->warning($message, ['sessionFiles' => $sessionFiles, 'path' => $sessionPath]);
             }
 
             if (!empty($warnings)) {

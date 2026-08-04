@@ -9,6 +9,9 @@ use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 
 class ParameterValidatorService
 {
+    /** @var list<string> */
+    private array $unknownParameters = [];
+
     /**
      * @param array<string, mixed> $params Raw parameters from the MCP client
      * @param array<string, mixed> $schema The tool's getSchema() result
@@ -19,6 +22,7 @@ class ParameterValidatorService
      */
     public function validate(array $params, array $schema): array
     {
+        $this->unknownParameters = [];
         $properties = $schema['properties'] ?? [];
 
         /** @var list<string> $knownKeys */
@@ -40,6 +44,7 @@ class ParameterValidatorService
         foreach ($params as $key => $value) {
             $propSchema = $schema['properties'][$key] ?? null;
             if (null === $propSchema) {
+                $this->unknownParameters[] = (string) $key;
                 unset($params[$key]);
 
                 continue;
@@ -62,6 +67,14 @@ class ParameterValidatorService
         }
 
         return $params;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function getUnknownParameters(): array
+    {
+        return $this->unknownParameters;
     }
 
     /**

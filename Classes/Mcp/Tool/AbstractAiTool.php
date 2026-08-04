@@ -6,6 +6,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
@@ -13,7 +14,6 @@ use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
-use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -23,13 +23,11 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  */
 abstract class AbstractAiTool extends AbstractTool
 {
-    // AI tools contact the external AI Suite Server (cost credits) → never read-only.
     protected bool $openWorldHint = true;
-
     protected readonly SendRequestService $sendRequestService;
     protected readonly SessionTrackerService $creditTracker;
     protected readonly ExtensionConfiguration $extensionConfiguration;
-    protected readonly Context $typo3Context;
+    protected readonly WorkspaceContextService $workspaceContextService;
     protected readonly DataHandlerSanitizerService $dataHandlerSanitizer;
     private bool $dataFlowNotified = false;
 
@@ -39,7 +37,7 @@ abstract class AbstractAiTool extends AbstractTool
         $this->sendRequestService = $mcpToolContext->sendRequestService;
         $this->creditTracker = $mcpToolContext->creditTracker;
         $this->extensionConfiguration = $mcpToolContext->extensionConfiguration;
-        $this->typo3Context = $mcpToolContext->typo3Context;
+        $this->workspaceContextService = $mcpToolContext->workspaceContextService;
         $this->dataHandlerSanitizer = $mcpToolContext->dataHandlerSanitizer;
     }
 
@@ -47,9 +45,9 @@ abstract class AbstractAiTool extends AbstractTool
      * @param array<string, mixed> $data
      * @param array<string, mixed> $models
      *
-     * @return array<string, mixed> Server response body
+     * @return array<string, mixed>
      *
-     * @throws \RuntimeException On server error
+     * @throws \RuntimeException
      */
     protected function sendAiRequest(string $endpoint, array $data, array $models = [], string $langIsoCode = '', string $prompt = ''): array
     {
@@ -71,8 +69,11 @@ abstract class AbstractAiTool extends AbstractTool
             ]);
 
             throw new \RuntimeException(
-                $this->translate('hint.server_temporarily_unavailable')
-                    ?? 'The AI Suite Server is temporarily unavailable. Please try again in a few moments.',
+                $this->translateOrFallback(
+                    'hint.server_temporarily_unavailable',
+                    [],
+                    'The AI Suite Server is temporarily unavailable. Please try again in a few moments.',
+                ),
             );
         }
 
@@ -93,11 +94,20 @@ abstract class AbstractAiTool extends AbstractTool
     /**
      * @param array<string, mixed> $data
      *
-     * @throws \RuntimeException On DataHandler errors
+     * @throws \RuntimeException
      */
     protected function writeViaDataHandler(string $table, int $uid, array $data): void
     {
-        $data = $this->dataHandlerSanitizer->sanitizeFields($table, $data);
+        $existing = BackendUtility::getRecordWSOL($table, $uid);
+        $report = $this->dataHandlerSanitizer->sanitizeFieldsWithReport($table, $data, null, is_array($existing) ? $existing : []);
+        if ([] !== $report['blocked']) {
+            throw new \RuntimeException(sprintf(
+                'The changes could not be saved: field(s) %s of %s store raw markup, which is disabled for MCP writes.',
+                implode(', ', $report['blocked']),
+                $table,
+            ));
+        }
+        $data = $report['data'];
 
         $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
         $dataHandler->start([$table => [$uid => $data]], []);
@@ -105,8 +115,11 @@ abstract class AbstractAiTool extends AbstractTool
 
         if ([] !== $dataHandler->errorLog) {
             throw new \RuntimeException(
-                $this->translate('hint.save_issue', [implode(', ', $dataHandler->errorLog)])
-                    ?? 'The changes could not be saved: '.implode(', ', $dataHandler->errorLog),
+                $this->translateOrFallback(
+                    'hint.save_issue',
+                    [implode(', ', $dataHandler->errorLog)],
+                    'The changes could not be saved: '.implode(', ', $dataHandler->errorLog),
+                ),
             );
         }
     }
@@ -165,12 +178,10 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * @param int $perm one of Permission::PAGE_SHOW | PAGE_EDIT | PAGE_NEW | CONTENT_EDIT
+     * @return array<string, mixed>|CallToolResult
      *
-     * @return array<string, mixed>|CallToolResult page record array, or error result
-     *
-     * @throws InsufficientPermissionException permission denied
-     * @throws \RuntimeException               when admin requests a non-existent page (assertPagePerm admin path)
+     * @throws InsufficientPermissionException
+     * @throws \RuntimeException
      */
     protected function validatePageForAi(int $pageId, int $perm = Permission::PAGE_SHOW): array|CallToolResult
     {
@@ -211,19 +222,17 @@ abstract class AbstractAiTool extends AbstractTool
 
     protected function getWorkspaceInfo(): string
     {
-        try {
-            $workspaceId = $this->typo3Context->getPropertyFromAspect('workspace', 'id');
-            if ($workspaceId > 0) {
-                return "\n\n".($this->translate('success.written_to_workspace', [$workspaceId])
-                    ?? sprintf('Changes saved to workspace %d. They must be published to become visible.', $workspaceId));
-            }
-        } catch (\Throwable $e) {
-            $this->logger->warning('AbstractAiTool: could not resolve workspace aspect for workspace info hint', [
-                'error' => $e->getMessage(),
-            ]);
+        $workspaceId = $this->workspaceContextService->getWorkspaceId();
+
+        if ($workspaceId <= 0) {
+            return '';
         }
 
-        return '';
+        return "\n\n".$this->translateOrFallback(
+            'success.written_to_workspace',
+            [$workspaceId],
+            sprintf('Changes saved to workspace %d. They must be published to become visible.', $workspaceId),
+        );
     }
 
     /**
@@ -249,8 +258,11 @@ abstract class AbstractAiTool extends AbstractTool
         if ('Error' === $librariesAnswer->getType()) {
             return new CallToolResult(
                 [new TextContent(
-                    $this->translate('hint.model_list_unavailable')
-                        ?? 'Could not fetch available models. The AI Suite Server may be temporarily unavailable.',
+                    $this->translateOrFallback(
+                        'hint.model_list_unavailable',
+                        [],
+                        'Could not fetch available models. The AI Suite Server may be temporarily unavailable.',
+                    ),
                 )],
                 isError: true,
             );
@@ -289,8 +301,11 @@ abstract class AbstractAiTool extends AbstractTool
         if (!$hasAny) {
             return new CallToolResult(
                 [new TextContent(
-                    $this->translate('hint.no_models_available')
-                        ?? 'No models available. Check your backend user permissions.',
+                    $this->translateOrFallback(
+                        'hint.no_models_available',
+                        [],
+                        'No models available. Check your backend user permissions.',
+                    ),
                 )],
             );
         }

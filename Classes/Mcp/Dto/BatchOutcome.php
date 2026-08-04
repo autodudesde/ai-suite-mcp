@@ -17,6 +17,7 @@ final class BatchOutcome
      * @param ?McpErrorType                                               $errorType type of the first failed item, so a partial
      *                                                                               failure can be classified machine-readably.
      *                                                                               Null when nothing failed.
+     * @param int                                                         $skipped   items that had nothing to do; never a failure
      */
     public function __construct(
         public readonly string $text,
@@ -25,6 +26,7 @@ final class BatchOutcome
         public readonly int $failedCount,
         public readonly array $records = [],
         public readonly ?McpErrorType $errorType = null,
+        public readonly int $skipped = 0,
     ) {}
 
     public function hadError(): bool

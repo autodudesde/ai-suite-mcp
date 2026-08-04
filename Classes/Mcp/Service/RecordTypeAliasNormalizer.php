@@ -24,7 +24,7 @@ final class RecordTypeAliasNormalizer
     ) {}
 
     /**
-     * @param array<int, mixed> $records
+     * @param array<array-key, mixed> $records
      *
      * @return array<int, mixed>
      */

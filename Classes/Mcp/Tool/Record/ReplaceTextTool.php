@@ -33,6 +33,7 @@ class ReplaceTextTool extends AbstractSafeEditTool
                 'search' => ['type' => 'string', 'description' => 'Literal text to find (not a regular expression). Matched against the raw stored value, so in an RTE/HTML field a phrase that spans tags will not match.'],
                 'replace' => ['type' => 'string', 'description' => 'Replacement text.'],
                 'all' => ['type' => 'boolean', 'default' => false, 'description' => 'Replace every occurrence. Default false = require a single unique match.'],
+                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating the match. The replacement is spliced into the original, so text outside the match keeps its exact bytes. Default: true.'],
             ],
             'required' => ['table', 'uid', 'field', 'search', 'replace'],
         ];
@@ -50,7 +51,7 @@ class ReplaceTextTool extends AbstractSafeEditTool
         $current = $this->loadEditableField($table, $uid, $field)['value'];
         $oldSnippet = $this->snippet($current, $search);
 
-        $applied = $this->applyReplacement($current, $search, $replace, $all);
+        $applied = $this->applyReplacement($current, $search, $replace, $all, (bool) ($params['normalizeWhitespace'] ?? true));
         $result = $this->recordWrite->update($table, $uid, [$field => $applied['result']]);
 
         $newSnippet = $this->snippet($applied['result'], $replace);

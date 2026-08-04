@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -21,6 +23,8 @@ class MoveRecordTool extends AbstractDataTool
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly BatchResultBuilderService $batchResultBuilder,
+        private readonly BatchEntryValidator $batchEntryValidator,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -45,7 +49,16 @@ class MoveRecordTool extends AbstractDataTool
                 'moves' => [
                     'type' => 'array',
                     'description' => 'The records to move. Each: {table, uid, targetPid?, afterUid?}. Give each entry targetPid or afterUid. Pass one entry even for a single move.',
-                    'items' => ['type' => 'object'],
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'table' => ['type' => 'string'],
+                            'uid' => ['type' => 'integer'],
+                            'targetPid' => ['type' => 'integer'],
+                            'afterUid' => ['type' => 'integer'],
+                        ],
+                        'required' => ['table', 'uid'],
+                    ],
                 ],
             ],
             'required' => ['moves'],
@@ -59,6 +72,8 @@ class MoveRecordTool extends AbstractDataTool
         if (!is_array($moves) || empty($moves)) {
             return $this->textError('moves must be a non-empty array of {table, uid, targetPid|afterUid}.');
         }
+
+        $this->batchEntryValidator->assertShape($moves, 'moves', ['table', 'uid'], ['targetPid', 'afterUid']);
 
         return $this->batchResultBuilder->run($moves, 'move(s)', function (mixed $move): array {
             if (!is_array($move)) {
@@ -104,7 +119,9 @@ class MoveRecordTool extends AbstractDataTool
         }
         $this->recordAccess->assertRecordCreateAccess($table, $resolvedTargetPid);
 
-        $destination = null !== $afterUid ? -1 * abs($afterUid) : $targetPid;
+        $destination = null !== $afterUid
+            ? -1 * abs($this->workspaceRecords->resolveWriteTarget($table, $afterUid))
+            : $targetPid;
 
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $recordLabel = $record[$labelField] ?? $uid;

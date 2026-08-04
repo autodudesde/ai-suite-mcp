@@ -8,6 +8,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Dto\BatchOutcome;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\SkippedItemException;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Psr\Log\LoggerInterface;
@@ -16,6 +17,7 @@ class BatchResultBuilderService
 {
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {}
 
     /**
@@ -36,6 +38,7 @@ class BatchResultBuilderService
             'total' => $outcome->total,
             'succeededUids' => $outcome->succeeded,
             'failedCount' => $outcome->failedCount,
+            'skippedCount' => $outcome->skipped,
         ];
         if ([] !== $outcome->records) {
             $batch['records'] = $outcome->records;
@@ -75,6 +78,7 @@ class BatchResultBuilderService
         $succeeded = [];
         $records = [];
         $failedCount = 0;
+        $skippedCount = 0;
         $count = 0;
         $errorType = null;
 
@@ -97,6 +101,9 @@ class BatchResultBuilderService
                         ];
                     }
                 }
+            } catch (SkippedItemException $e) {
+                ++$skippedCount;
+                $lines[] = sprintf('#%d: ⏭️ %s', $index, $e->getMessage());
             } catch (InsufficientPermissionException $e) {
                 ++$failedCount;
                 $errorType ??= $e->getErrorType();
@@ -120,15 +127,26 @@ class BatchResultBuilderService
         // The verdict belongs in the first line. A small model skims the head of a tool result, and
         // "## Batch result" above a list that mixes ✅ and ❌ reads as success -- measured: gpt-5.4-nano
         // reported "done" after writing one of two records. The success-path header stays byte-identical.
-        $text = $hadError
-            ? sprintf(
-                "## Batch FAILED: %d of %d %s could not be written, %d succeeded\n\n",
+        if ($hadError) {
+            $text = sprintf(
+                "## Batch FAILED: %d of %d %s could not be written, %d succeeded%s\n\n",
                 $failedCount,
                 $count,
                 $summaryNoun,
-                $count - $failedCount,
-            )
-            : sprintf("## Batch result: %d %s\n\n", $count, $summaryNoun);
+                $count - $failedCount - $skippedCount,
+                $skippedCount > 0 ? sprintf(', %d skipped', $skippedCount) : '',
+            );
+        } elseif ($skippedCount > 0) {
+            $text = sprintf(
+                "## Batch result: %d %s, %d written, %d skipped (nothing to do)\n\n",
+                $count,
+                $summaryNoun,
+                $count - $skippedCount,
+                $skippedCount,
+            );
+        } else {
+            $text = sprintf("## Batch result: %d %s\n\n", $count, $summaryNoun);
+        }
         $text .= implode("\n", $lines);
 
         if ($hadError) {
@@ -143,6 +161,13 @@ class BatchResultBuilderService
                 : '❌ This call failed. Nothing was written.';
         }
 
-        return new BatchOutcome($text, $count, $succeeded, $failedCount, $records, $errorType);
+        if ([] !== $succeeded && $this->workspaceRecords->isActive()) {
+            $text .= sprintf(
+                "\n\nℹ️ Written to workspace %d — not visible on the live site until the workspace is published.",
+                $this->workspaceRecords->getWorkspaceId(),
+            );
+        }
+
+        return new BatchOutcome($text, $count, $succeeded, $failedCount, $records, $errorType, $skippedCount);
     }
 }

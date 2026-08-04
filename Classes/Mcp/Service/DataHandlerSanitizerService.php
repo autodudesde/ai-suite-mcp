@@ -11,11 +11,12 @@ class DataHandlerSanitizerService
     public function __construct(
         private TcaCompatibilityService $tcaCompatibilityService,
         private FlexFormValueNormalizer $flexFormValueNormalizer,
+        private RawMarkupPolicyService $rawMarkupPolicy,
     ) {}
 
     /**
      * @param array<string, mixed> $data
-     * @param array<string, mixed> $row  existing record row, used to resolve FlexForm data structures
+     * @param array<string, mixed> $row
      *
      * @return array<string, mixed>
      */
@@ -26,23 +27,24 @@ class DataHandlerSanitizerService
 
     /**
      * @param array<string, mixed> $data
-     * @param array<string, mixed> $row  existing record row, used to resolve FlexForm data structures
+     * @param array<string, mixed> $row
      *
-     * @return array{data: array<string, mixed>, stripped: list<string>}
+     * @return array{data: array<string, mixed>, stripped: list<string>, blocked: list<string>}
      */
     public function sanitizeFieldsWithReport(string $table, array $data, ?string $typeKey = null, array $row = []): array
     {
         if (null === $typeKey) {
             try {
-                $typeKey = $this->tcaCompatibilityService->resolveSubSchemaType($table, $data);
+                $typeKey = $this->tcaCompatibilityService->resolveSubSchemaType($table, $data + $row);
             } catch (\Throwable $e) {
                 $typeKey = null;
             }
         }
 
         $stripped = [];
+        $blocked = [];
         foreach ($data as $field => $value) {
-            if ($this->isFlexField($table, (string) $field)) {
+            if ($this->isFlexField($table, (string) $field, $typeKey)) {
                 $data[$field] = $this->flexFormValueNormalizer->normalize($table, (string) $field, $data + $row, $value);
 
                 continue;
@@ -58,7 +60,16 @@ class DataHandlerSanitizerService
 
             $hadMarkup = 1 === preg_match('/<[^>]+>/', $value);
 
-            $cleaned = $this->isMultilineField($table, (string) $field)
+            if ($this->isRawMarkupField($table, (string) $field, $typeKey)) {
+                if ($hadMarkup && !$this->rawMarkupPolicy->isRawMarkupWriteAllowed()) {
+                    unset($data[$field]);
+                    $blocked[] = (string) $field;
+                }
+
+                continue;
+            }
+
+            $cleaned = $this->isMultilineField($table, (string) $field, $typeKey)
                 ? $this->sanitizeMultiline($value)
                 : $this->sanitizeSingleLine($value);
 
@@ -68,24 +79,14 @@ class DataHandlerSanitizerService
             $data[$field] = $cleaned;
         }
 
-        return ['data' => $data, 'stripped' => $stripped];
+        return ['data' => $data, 'stripped' => $stripped, 'blocked' => $blocked];
     }
 
-    /**
-     * A readable, line-preserving rendition of a value that may carry markup.
-     *
-     * Used to show an RTE field to a human: the stored value keeps its HTML (RTE fields are never
-     * sanitized), but a confirmation card that prints raw <ul><li> asks the editor to read markup.
-     */
     public function toPlainText(string $value): string
     {
         return $this->sanitizeMultiline($value);
     }
 
-    /**
-     * Collapses every whitespace run, including newlines, into a single space.
-     * Correct for TCA `input` fields, which cannot hold more than one line anyway.
-     */
     private function sanitizeSingleLine(string $value): string
     {
         $value = $this->decodeEntities($value);
@@ -94,14 +95,6 @@ class DataHandlerSanitizerService
         return trim((string) preg_replace('/\s+/u', ' ', $value));
     }
 
-    /**
-     * Keeps newlines intact and turns block-level markup into them.
-     *
-     * Line-based CTypes read the field line by line (`bullets` renders one <li> per line,
-     * `table` one row per line), so collapsing newlines the way sanitizeSingleLine() does
-     * silently merges every item into one. Block markup is mapped onto newlines as well,
-     * so a model that sends <ul><li>…</li></ul> instead of plain lines still lands correctly.
-     */
     private function sanitizeMultiline(string $value): string
     {
         $value = $this->decodeEntities($value);
@@ -111,7 +104,6 @@ class DataHandlerSanitizerService
         $value = preg_replace('/<[^>]+>/', ' ', $value) ?? $value;
 
         $value = str_replace(["\r\n", "\r"], "\n", $value);
-        // Horizontal whitespace only. \s would swallow the newlines we just protected.
         $value = preg_replace('/[^\S\n]+/u', ' ', $value) ?? $value;
 
         $lines = array_map(static fn (string $line): string => trim($line), explode("\n", $value));
@@ -124,24 +116,36 @@ class DataHandlerSanitizerService
     {
         $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-        // A decoded &nbsp; is not matched by \s, so it would survive every whitespace collapse.
         return str_replace("\u{00A0}", ' ', $value);
     }
 
-    private function isMultilineField(string $table, string $field): bool
+    private function isMultilineField(string $table, string $field, ?string $typeKey): bool
     {
-        return 'text' === $this->getFieldType($table, $field);
+        return 'text' === $this->getFieldType($table, $field, $typeKey);
     }
 
-    private function isFlexField(string $table, string $field): bool
+    private function isFlexField(string $table, string $field, ?string $typeKey): bool
     {
-        return 'flex' === $this->getFieldType($table, $field);
+        return 'flex' === $this->getFieldType($table, $field, $typeKey);
     }
 
-    private function getFieldType(string $table, string $field): string
+    private function isRawMarkupField(string $table, string $field, ?string $typeKey): bool
     {
         try {
-            $type = $this->tcaCompatibilityService->getFieldConfiguration($table, $field)['type'] ?? '';
+            return $this->tcaCompatibilityService->isRawMarkupField($table, $field, $typeKey);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function getFieldType(string $table, string $field, ?string $typeKey): string
+    {
+        try {
+            $config = $this->tcaCompatibilityService->getEffectiveFieldConfiguration($table, $typeKey, $field);
+            if ([] === $config) {
+                $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+            }
+            $type = $config['type'] ?? '';
 
             return is_string($type) ? $type : '';
         } catch (\Throwable) {

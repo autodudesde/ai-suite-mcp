@@ -8,6 +8,7 @@ use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
@@ -21,7 +22,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\SiteLanguageService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TcaLabelService;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
-use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Resource\ResourceFactory;
 use TYPO3\CMS\Core\SingletonInterface;
 use TYPO3\CMS\Core\Site\SiteFinder;
@@ -39,7 +39,7 @@ class ToolContext implements SingletonInterface
         public readonly SendRequestService $sendRequestService,
         public readonly SessionTrackerService $creditTracker,
         public readonly ExtensionConfiguration $extensionConfiguration,
-        public readonly Context $typo3Context,
+        public readonly WorkspaceContextService $workspaceContextService,
         public readonly DataHandlerSanitizerService $dataHandlerSanitizer,
         public readonly DataHandlerErrorFormatter $dataHandlerError,
         public readonly ResourceFactory $resourceFactory,

@@ -284,11 +284,14 @@ class TokenRepository
         return (int) $result;
     }
 
-    public function revokeOldestTokenForUser(int $beUserUid): void
+    /**
+     * @return null|array{uid: int, client_id: string}
+     */
+    public function revokeOldestTokenForUser(int $beUserUid): ?array
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
         $oldest = $qb
-            ->select('uid')
+            ->select('uid', 'client_id')
             ->from(self::TOKEN_TABLE)
             ->where(
                 $qb->expr()->eq('be_user_uid', $qb->createNamedParameter($beUserUid, Connection::PARAM_INT)),
@@ -298,17 +301,18 @@ class TokenRepository
             ->addOrderBy('uid', 'ASC')
             ->setMaxResults(1)
             ->executeQuery()
-            ->fetchOne()
+            ->fetchAssociative()
         ;
 
-        if (false !== $oldest) {
-            $this->markDeleted((int) $oldest);
+        if (false === $oldest) {
+            return null;
         }
+
+        $this->markDeleted((int) $oldest['uid']);
+
+        return ['uid' => (int) $oldest['uid'], 'client_id' => (string) $oldest['client_id']];
     }
 
-    /**
-     * @return int the new total credits used after this increment
-     */
     public function incrementSessionCreditsUsed(int $uid, int $delta): int
     {
         $connection = $this->connectionPool->getConnectionForTable(self::TOKEN_TABLE);

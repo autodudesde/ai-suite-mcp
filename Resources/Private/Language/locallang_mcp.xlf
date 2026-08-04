@@ -65,6 +65,9 @@
             <trans-unit id="aiSuite.mcp.hint.token_workspace_revoked">
                 <source>Token is bound to workspace %d, but the backend user no longer has access to it. Generate a new MCP token via the AI Suite backend module.</source>
             </trans-unit>
+            <trans-unit id="aiSuite.mcp.hint.workspace_unavailable">
+                <source>Write mode "workspace" requires a draft workspace, but none could be resolved or created for this backend user. Nothing was written to the live site. Contact a TYPO3 administrator or adjust the MCP write mode.</source>
+            </trans-unit>
 
             <!-- Success Messages -->
             <trans-unit id="aiSuite.mcp.success.metadata_applied">

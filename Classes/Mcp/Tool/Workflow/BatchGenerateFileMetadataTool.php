@@ -66,6 +66,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
                 ],
                 'model' => ['type' => 'string', 'description' => 'AI model identifier (e.g. Vision). Omit to list available models.'],
                 'language' => ['type' => 'string', 'description' => 'ISO language code (e.g. de, en). Defaults to the site default language.'],
+                'prompt' => ['type' => 'string', 'description' => 'Own instruction for the generation. Replaces the predefined instruction of the field, so it has to state the wanted length and style itself. Omit to keep the predefined one.'],
             ],
             'required' => ['fileUids'],
         ];
@@ -196,6 +197,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
                 'parentUuid' => $parentUuid,
                 'column' => $field,
                 'textAiModel' => $model,
+                'customPrompt' => trim((string) ($params['prompt'] ?? '')),
             ];
 
             $result = $this->workflowProcessingService->processFilelistFilesForMetadataGeneration(

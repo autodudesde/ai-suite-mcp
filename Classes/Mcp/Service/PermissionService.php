@@ -165,8 +165,11 @@ class PermissionService
 
         if (!in_array($requiredScope, $tokenScopes, true)) {
             throw new InsufficientScopeException(
-                $this->translate('hint.scope_required', [$requiredScope])
-                    ?? sprintf('To use this feature, your API token needs the "%s" scope.', $requiredScope),
+                $this->translateOrFallback(
+                    'hint.scope_required',
+                    [$requiredScope],
+                    sprintf('To use this feature, your API token needs the "%s" scope.', $requiredScope),
+                ),
             );
         }
 
@@ -224,8 +227,11 @@ class PermissionService
         $permission = 'tx_aisuite_models:'.$modelIdentifier;
         if (!$this->backendUserService->checkPermissions($permission)) {
             throw new InsufficientPermissionException(
-                $this->translate('hint.model_not_available', [$modelIdentifier, ''])
-                    ?? sprintf('The AI model "%s" is not available for your user group.', $modelIdentifier),
+                $this->translateOrFallback(
+                    'hint.model_not_available',
+                    [$modelIdentifier, ''],
+                    sprintf('The AI model "%s" is not available for your user group.', $modelIdentifier),
+                ),
             );
         }
     }
@@ -343,11 +349,14 @@ class PermissionService
         }
 
         throw new InsufficientPermissionException(
-            $this->translate('hint.permission_required', [implode(', ', $requiredPermissions)])
-                ?? sprintf(
+            $this->translateOrFallback(
+                'hint.permission_required',
+                [implode(', ', $requiredPermissions)],
+                sprintf(
                     'Your user group needs the permission "%s" to use this tool.',
                     implode('" or "', $requiredPermissions),
                 ),
+            ),
         );
     }
 
@@ -357,5 +366,15 @@ class PermissionService
     private function translate(string $key, array $arguments = []): string
     {
         return $this->localizationService->translate('mcp:'.$key, $arguments);
+    }
+
+    /**
+     * @param list<mixed> $arguments
+     */
+    private function translateOrFallback(string $key, array $arguments, string $fallback): string
+    {
+        $translated = $this->translate($key, $arguments);
+
+        return '' !== $translated ? $translated : $fallback;
     }
 }

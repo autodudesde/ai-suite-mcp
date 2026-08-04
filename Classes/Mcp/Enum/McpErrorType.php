@@ -10,6 +10,7 @@ enum McpErrorType: string
     case InsufficientScope = 'insufficient_scope';
     case InsufficientPermission = 'insufficient_permission';
     case NotFound = 'not_found';
+    case OrphanedRecord = 'orphaned_record';
     case ReadOnlyField = 'read_only_field';
     case UnsupportedHtml = 'unsupported_html';
     case DataHandlerError = 'datahandler_error';

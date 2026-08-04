@@ -12,6 +12,7 @@ class ListPageTypesTool extends AbstractDataTool
 {
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function getName(): string
     {

@@ -18,13 +18,22 @@ class DataHandlerErrorFormatter
         $subject = null !== $uid ? sprintf('%s:%d', $table, $uid) : $table;
         $message = sprintf('%s failed for %s: %s', ucfirst($operation), $subject, $joined);
 
+        $errorType = $this->classify($joined);
+        if (McpErrorType::OrphanedRecord === $errorType) {
+            $message .= sprintf(
+                ' — the pid of %s points to a page that does not exist, so no workspace version can be created.'
+                .' Retrying, switching tools or requesting more permissions will not help; report the record to the editor.',
+                $subject,
+            );
+        }
+
         $context = ['table' => $table];
         if (null !== $uid) {
             $context['uid'] = $uid;
         }
 
         return (new DataHandlerException($message))
-            ->withErrorType($this->classify($joined))
+            ->withErrorType($errorType)
             ->withErrorContext($context)
         ;
     }
@@ -47,6 +56,9 @@ class DataHandlerErrorFormatter
 
     private function classify(string $joined): McpErrorType
     {
+        if (1 === preg_match('/not assigned to a valid page/i', $joined)) {
+            return McpErrorType::OrphanedRecord;
+        }
         if (1 === preg_match('/attempt to (modify|insert|delete|move|copy)|no permission|not allowed|access denied|recordEditAccessInternals/i', $joined)) {
             return McpErrorType::InsufficientPermission;
         }

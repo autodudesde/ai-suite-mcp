@@ -20,6 +20,7 @@ class ListFilesTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,

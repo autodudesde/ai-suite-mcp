@@ -18,6 +18,12 @@
             <trans-unit id="aiSuite.module.mcp.createToken">
                 <source>Create Token</source>
             </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenLimitReached">
+                <source>Token limit reached</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenLimitRevoked">
+                <source>The oldest token ("%s") was revoked to make room. Any MCP client using it has lost access.</source>
+            </trans-unit>
             <trans-unit id="aiSuite.module.mcp.revoke">
                 <source>Revoke</source>
             </trans-unit>

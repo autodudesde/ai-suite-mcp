@@ -120,6 +120,7 @@ class McpController extends AbstractBackendController
             'token' => $tokenResult['access_token'],
             'scope' => $tokenResult['scope'],
             'expiresIn' => $tokenResult['expires_in'],
+            'revokedClientId' => $tokenResult['revoked_client_id'],
             'claudeDesktopConfig' => $claudeConfig,
             'configPaths' => [
                 'macOS' => '~/Library/Application Support/Claude/claude_desktop_config.json',
@@ -144,6 +145,7 @@ class McpController extends AbstractBackendController
     private function indexAction(ServerRequestInterface $request): ResponseInterface
     {
         $this->initialize($request);
+        $this->pageRenderer->addInlineLanguageLabelFile('EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf');
         $this->pageRenderer->loadJavaScriptModule('@autodudes/ai-suite-mcp/mcp/dashboard.js');
         $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
         $mcpEnabled = (bool) ($extConf['enableMcp'] ?? false);

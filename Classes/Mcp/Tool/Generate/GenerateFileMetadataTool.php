@@ -57,6 +57,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
                     'description' => 'Metadata fields to generate: alternative (alt text), title, description. Default: alternative, title.',
                 ],
                 'language' => ['type' => 'string', 'description' => 'ISO language code (e.g. de, en). Defaults to the site default language.'],
+                'prompt' => ['type' => 'string', 'description' => 'Own instruction for the generation. Replaces the predefined instruction of the field, so it has to state the wanted length and style itself. Omit to keep the predefined one.'],
             ],
             'required' => ['fileUid'],
         ];
@@ -108,6 +109,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
                 'request_content' => $fileContent,
                 'global_instructions' => $globalInstructions,
                 'override_predefined_prompt' => $globalInstructionsOverride,
+                'custom_prompt' => trim((string) ($params['prompt'] ?? '')),
                 'filename' => $filename,
             ];
 

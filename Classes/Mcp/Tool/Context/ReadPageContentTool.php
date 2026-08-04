@@ -6,6 +6,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -25,12 +26,14 @@ class ReadPageContentTool extends AbstractTool
     private const RECORD_OVERVIEW_SKIP_PREFIXES = ['sys_', 'be_', 'fe_', 'cache_', 'cf_', 'index_', 'tx_extensionmanager', 'tx_scheduler'];
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly ContentRepository $contentRepository,
         private readonly RecordRepository $recordRepository,
         private readonly BackendLayoutView $backendLayoutView,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -103,7 +106,10 @@ class ReadPageContentTool extends AbstractTool
         }
 
         $total = $this->contentRepository->countByPage($pageId, $languageUid, $includeHidden);
-        $rows = $this->contentRepository->findByPage($pageId, $languageUid, $includeHidden, $limit, $offset);
+        $rows = $this->workspaceRecords->overlayRows(
+            'tt_content',
+            $this->contentRepository->findByPage($pageId, $languageUid, $includeHidden, $limit, $offset),
+        );
 
         $grouped = [];
         foreach ($rows as $row) {

@@ -10,6 +10,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Resource\McpResourceHandler;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolInterface;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolRegistry;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -84,7 +85,7 @@ class McpServerFactory
 
     private function handleToolsCall(mixed $params): CallToolResult
     {
-        $params = $this->normalizeParams($params);
+        $params = RequestParamsNormalizer::toArray($params);
         $toolName = $params['name'] ?? '';
         $arguments = (array) ($params['arguments'] ?? []);
         $startTime = microtime(true);
@@ -146,26 +147,6 @@ class McpServerFactory
         $scope = $tool->getRequiredScope();
 
         return null !== $scope && !in_array($scope, ['mcp:read', 'mcp:write'], true);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function normalizeParams(mixed $params): array
-    {
-        if (is_array($params)) {
-            return $params;
-        }
-
-        if (is_object($params) && method_exists($params, 'jsonSerialize')) {
-            return (array) $params->jsonSerialize();
-        }
-
-        if (is_object($params)) {
-            return (array) $params;
-        }
-
-        return [];
     }
 
     private function getDurationMs(float $startTime): int

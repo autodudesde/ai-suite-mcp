@@ -10,6 +10,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Core\Utility\RootlineUtility;
 
 /**
  * Exposes the editors' Global Instructions (tone, target audience, style) for a page subtree.
@@ -37,6 +39,7 @@ class ReadEditorialGuidelinesTool extends AbstractTool
 
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -95,9 +98,34 @@ class ReadEditorialGuidelinesTool extends AbstractTool
         $instructions = $this->globalInstructionService->buildGlobalInstruction('pages', $scope, $pageId);
 
         if ('' === trim($instructions)) {
-            return $this->textResult(sprintf('No editorial guidelines configured for page %d (scope: %s).', $pageId, $scope));
+            return $this->textResult(sprintf(
+                'No editorial guidelines apply to page %d (scope: %s). Guidelines set on an ancestor page reach this one '
+                    ."only when their record has \"use for subtree\" enabled. Rootline checked: %s.\nProceed with the "
+                    .'house style visible in the existing content of the page.',
+                $pageId,
+                $scope,
+                implode(' → ', $this->rootlineUids($pageId)),
+            ));
         }
 
         return $this->textResult(sprintf("## Editorial guidelines for page %d (%s, including the general rules)\n\n%s", $pageId, $scope, $instructions));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function rootlineUids(int $pageId): array
+    {
+        try {
+            $rootline = GeneralUtility::makeInstance(RootlineUtility::class, $pageId, '')->get();
+        } catch (\Throwable) {
+            // A broken or inaccessible rootline must not turn an empty result into an error.
+            return [(string) $pageId];
+        }
+
+        return array_map(
+            static fn (array $page): string => (string) ($page['uid'] ?? '?'),
+            array_reverse($rootline),
+        );
     }
 }

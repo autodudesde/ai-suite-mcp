@@ -16,6 +16,7 @@ class PreviewRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,

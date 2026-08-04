@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Command;
 
+use AutoDudes\AiSuite\Command\Trait\CliBackendBootstrapTrait;
 use AutoDudes\AiSuiteMcp\Mcp\McpBackendUserInitializer;
 use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
@@ -27,6 +28,8 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  */
 class McpServerCommand extends Command
 {
+    use CliBackendBootstrapTrait;
+
     public function __construct(
         private readonly McpServerFactory $serverFactory,
         private readonly McpBackendUserInitializer $backendUserInitializer,
@@ -90,6 +93,9 @@ class McpServerCommand extends Command
             '',
             ExtensionManagementUtility::getExtensionVersion('ai_suite_mcp') ?: '0.0.0',
         );
+
+        $this->initializeFakeRequest();
+        $this->userContext->setServerRequest($GLOBALS['TYPO3_REQUEST']);
 
         $stderr->writeln(sprintf(
             '<info>AI Suite MCP stdio server ready (user uid %d, scopes: %s). Reading JSON-RPC on stdin…</info>',

@@ -75,7 +75,7 @@ class OAuthService
     /**
      * @param string $resource the `resource` parameter sent on the token request (RFC 8707)
      *
-     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string}
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      *
      * @throws InvalidGrantException
      */
@@ -137,7 +137,7 @@ class OAuthService
     /**
      * @param list<string> $scopes
      *
-     * @return array{access_token: string, token_type: string, expires_in: int, scope: string}
+     * @return array{access_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      */
     public function createAccessToken(
         int $beUserUid,
@@ -198,7 +198,7 @@ class OAuthService
      * @param string $resource optional `resource` parameter from the refresh request. When set,
      *                         must match the audience the original token was bound to (RFC 8707);
      *
-     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string}
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      *
      * @throws InvalidGrantException
      */
@@ -317,7 +317,7 @@ class OAuthService
     /**
      * Someone else already rotated this token — decide between a concurrent retry and real reuse.
      *
-     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string}
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      *
      * @throws InvalidGrantException
      */
@@ -376,7 +376,7 @@ class OAuthService
      * @param int          $familyId       uid of the lineage root; 0 makes the new token its own root
      * @param null|int     $predecessorUid the rotated token this pair replaces, linked for auditability
      *
-     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string}
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      */
     private function createTokenPair(
         int $beUserUid,
@@ -387,9 +387,17 @@ class OAuthService
         int $familyId = 0,
         ?int $predecessorUid = null,
     ): array {
+        $displaced = null;
         $activeCount = $this->tokenRepository->countActiveTokensForUser($beUserUid);
         if ($activeCount >= self::MAX_ACTIVE_TOKENS_PER_USER) {
-            $this->tokenRepository->revokeOldestTokenForUser($beUserUid);
+            $displaced = $this->tokenRepository->revokeOldestTokenForUser($beUserUid);
+            if (null !== $displaced) {
+                $this->logger->warning('MCP token limit reached, revoked the oldest token', [
+                    'be_user_uid' => $beUserUid,
+                    'revoked_client_id' => $displaced['client_id'],
+                    'limit' => self::MAX_ACTIVE_TOKENS_PER_USER,
+                ]);
+            }
         }
 
         $rawAccessToken = bin2hex(random_bytes(32));
@@ -425,6 +433,7 @@ class OAuthService
             'token_type' => 'Bearer',
             'expires_in' => $expiresIn,
             'scope' => implode(' ', $scopes),
+            'revoked_client_id' => $displaced['client_id'] ?? '',
         ];
     }
 }

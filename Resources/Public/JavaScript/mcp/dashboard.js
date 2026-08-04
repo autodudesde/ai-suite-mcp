@@ -2,9 +2,6 @@ import Notification from '@typo3/backend/notification.js';
 import Modal from '@typo3/backend/modal.js';
 import Severity from '@typo3/backend/severity.js';
 
-/**
- * AI Suite MCP Dashboard — Token Management
- */
 class McpDashboard {
     constructor() {
         this.initCreateToken();
@@ -74,6 +71,14 @@ class McpDashboard {
                 configPre.textContent = data.claudeDesktopConfig;
                 resultDiv.style.display = 'block';
                 resultDiv.dataset.config = data.claudeDesktopConfig;
+
+                if (data.revokedClientId) {
+                    Notification.warning(
+                        TYPO3.lang['aiSuite.module.mcp.tokenLimitReached'],
+                        TYPO3.lang['aiSuite.module.mcp.tokenLimitRevoked'].replace('%s', data.revokedClientId),
+                        15
+                    );
+                }
             } else {
                 Notification.error(
                     TYPO3.lang['aiSuite.module.mcp.createToken'],

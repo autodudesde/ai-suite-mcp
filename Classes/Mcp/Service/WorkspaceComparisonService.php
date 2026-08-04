@@ -159,9 +159,11 @@ class WorkspaceComparisonService
             }
         }
 
+        // countLiveRecords() cannot honour the filters, so a filtered run reports no count at all.
         $unchangedCount = null;
-        if (null !== $pid) {
+        if (null !== $pid && [] === $sanitizedFilters) {
             $liveCount = $this->recordRepository->countLiveRecords($table, $pid);
+            // `added` records exist only in the workspace, so they were never part of the live count.
             $unchangedCount = max(0, $liveCount - count($changed) - count($removed));
         }
 

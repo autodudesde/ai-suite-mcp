@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
+use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
@@ -16,6 +19,14 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class SavePageTreeTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
+
+    public function __construct(
+        ToolContext $mcpToolContext,
+        private readonly RecordRepository $recordRepository,
+        private readonly WorkspaceRecordService $workspaceRecords,
+    ) {
+        parent::__construct($mcpToolContext);
+    }
 
     public function getName(): string
     {
@@ -42,6 +53,11 @@ class SavePageTreeTool extends AbstractDataTool
                     'description' => 'The pages to create under parentPageId. Each: {title, seoTitle?, seoDescription?, doktype?, children?}. `children` nests the same shape to any depth and creates SUBPAGES. Use children only when the editor asked for a page hierarchy: a page\'s content is content elements (writeRecords), not a subpage. "A landing page" is one page whose sections are content elements, not a page with an "Inhalte"/"Content" subpage under it. Only `title` is required.',
                     'items' => ['type' => 'object'],
                 ],
+                'position' => [
+                    'type' => 'string',
+                    'default' => 'end',
+                    'description' => 'Where the new top-level pages go among the existing subpages of parentPageId: "end" (default, after all of them), "start", "after:UID" or "before:UID". Nested children always keep their array order under their new parent.',
+                ],
             ],
             'required' => ['parentPageId', 'pages'],
         ];
@@ -67,7 +83,8 @@ class SavePageTreeTool extends AbstractDataTool
         }
 
         $datamap = ['pages' => []];
-        $planned = $this->collectPagesIntoDatamap($pages, $parentPageId, $datamap);
+        $anchor = $this->resolveAnchor($parentPageId, (string) ($params['position'] ?? 'end'));
+        $planned = $this->collectPagesIntoDatamap($pages, $parentPageId, $datamap, $anchor);
         $count = $this->countNodes($planned);
 
         if (0 === $count) {
@@ -109,9 +126,12 @@ class SavePageTreeTool extends AbstractDataTool
      *
      * @return list<array{newId: string, title: string, children: list<mixed>}>
      */
-    private function collectPagesIntoDatamap(array $pages, int|string $parentRef, array &$datamap): array
+    private function collectPagesIntoDatamap(array $pages, int|string $parentRef, array &$datamap, int|string|null $anchor = null): array
     {
         $planned = [];
+        // Core resolves a "-NEW…" pid as "after that new record", which is what keeps the payload order.
+        $nextRef = $anchor ?? $parentRef;
+
         foreach ($pages as $pageData) {
             $title = (string) ($pageData['title'] ?? '');
             if ('' === $title) {
@@ -119,7 +139,7 @@ class SavePageTreeTool extends AbstractDataTool
             }
             $newId = $this->generateNewId();
             $datamap['pages'][$newId] = [
-                'pid' => $parentRef,
+                'pid' => $nextRef,
                 'title' => $title,
                 'doktype' => (int) ($pageData['doktype'] ?? 1),
                 'seo_title' => (string) ($pageData['seoTitle'] ?? ''),
@@ -133,9 +153,36 @@ class SavePageTreeTool extends AbstractDataTool
             }
 
             $planned[] = ['newId' => $newId, 'title' => $title, 'children' => $children];
+            $nextRef = '-'.$newId;
         }
 
         return $planned;
+    }
+
+    private function resolveAnchor(int $parentPageId, string $position): int
+    {
+        if ('start' === $position) {
+            return $parentPageId;
+        }
+
+        if (str_starts_with($position, 'after:')) {
+            $afterUid = (int) substr($position, 6);
+
+            return $afterUid > 0 ? -$this->workspaceRecords->resolveWriteTarget('pages', $afterUid) : $parentPageId;
+        }
+
+        if (str_starts_with($position, 'before:')) {
+            $beforeUid = (int) substr($position, 7);
+            $previous = $beforeUid > 0
+                ? $this->recordRepository->findPreviousSiblingUid('pages', $parentPageId, $beforeUid, 'sorting')
+                : null;
+
+            return null !== $previous ? -$this->workspaceRecords->resolveWriteTarget('pages', $previous) : $parentPageId;
+        }
+
+        $lastUid = $this->recordRepository->findLastUidOnPage('pages', $parentPageId, 'sorting');
+
+        return null !== $lastUid ? -$lastUid : $parentPageId;
     }
 
     /**

@@ -96,13 +96,23 @@ class ApplyTaskResultsTool extends AbstractTool
         $text = sprintf("## Batch translations applied: `%s`\n\n", $taskId);
         $text .= sprintf("**Applied:** %d\n", $result['applied']);
 
+        if ($result['skipped'] > 0) {
+            $text .= sprintf("**Skipped (nothing to apply):** %d\n", $result['skipped']);
+        }
+        if ($result['failed'] > 0) {
+            $text .= sprintf("**Failed:** %d\n", $result['failed']);
+        }
+
         if (!empty($result['errors'])) {
             $text .= "\n### Errors\n";
             foreach ($result['errors'] as $error) {
                 $text .= "- {$error}\n";
             }
-        } else {
+            $text .= "\nFailed tasks are kept and marked for retry; they were not discarded.\n";
+        } elseif ($result['applied'] > 0) {
             $text .= "\nAll translations applied successfully.";
+        } else {
+            $text .= "\nNothing was applied.";
         }
 
         $text .= "\n\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.";

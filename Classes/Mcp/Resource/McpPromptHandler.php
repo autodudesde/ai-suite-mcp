@@ -8,6 +8,7 @@ use AutoDudes\AiSuite\Domain\Repository\CustomPromptTemplateRepository;
 use AutoDudes\AiSuite\Domain\Repository\ServerPromptTemplateRepository;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
 use Psr\Log\LoggerInterface;
 
@@ -34,11 +35,9 @@ class McpPromptHandler
     }
 
     /**
-     * @param array<string, mixed> $params
-     *
      * @return array<string, mixed>
      */
-    private function handleList(?array $params): array
+    private function handleList(mixed $params): array
     {
         $prompts = [];
 
@@ -68,12 +67,11 @@ class McpPromptHandler
     }
 
     /**
-     * @param array<string, mixed> $params
-     *
      * @return array<string, mixed>
      */
-    private function handleGet(?array $params): array
+    private function handleGet(mixed $params): array
     {
+        $params = RequestParamsNormalizer::toArray($params);
         $name = $params['name'] ?? '';
         $args = (array) ($params['arguments'] ?? []);
 

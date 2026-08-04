@@ -79,24 +79,25 @@ abstract class AbstractTool implements ToolInterface
     {
         try {
             $params = $this->parameterValidator->validate($params, $this->getSchema());
+            $unknownParameters = $this->parameterValidator->getUnknownParameters();
             $this->validatePermissions();
             $this->initialize();
 
-            return $this->doExecute($params);
+            return $this->noteUnknownParameters($this->doExecute($params), $unknownParameters);
         } catch (InvalidParameterException $e) {
             $this->logger->warning('MCP tool received invalid input', [
                 'tool' => $this->getName(),
                 'beUserUid' => $this->getBackendUser()?->user['uid'] ?? null,
                 'message' => $e->getMessage(),
-                // Without this the log cannot tell two rejections of the same kind apart: every
-                // `records` syntax error logged identical bytes, so the payload that caused it was
-                // never recoverable after the fact.
                 'context' => $e->getErrorContext(),
             ]);
 
             return $this->errorResult(
-                $this->translate('hint.invalid_input', [$e->getMessage()])
-                    ?? 'Please check the input: '.$e->getMessage(),
+                $this->translateOrFallback(
+                    'hint.invalid_input',
+                    [$e->getMessage()],
+                    'Please check the input: '.$e->getMessage(),
+                ),
                 $e->getErrorType(),
                 $e->getErrorContext(),
             );
@@ -133,11 +134,14 @@ abstract class AbstractTool implements ToolInterface
             // The reader here is a model, not a person. "Please try again" was taken literally:
             // it re-sent an identical, still-broken payload instead of correcting it.
             return $this->errorResult(
-                $this->translate('hint.internal_issue', [$this->getName()])
-                    ?? sprintf(
+                $this->translateOrFallback(
+                    'hint.internal_issue',
+                    [$this->getName()],
+                    sprintf(
                         'Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.',
                         $this->getName(),
                     ),
+                ),
                 McpErrorType::InternalError,
             );
         }
@@ -228,6 +232,37 @@ abstract class AbstractTool implements ToolInterface
             [new TextContent($text)],
             isError: true,
             structuredContent: ['error' => ['type' => $errorType->value] + $context] + $structured,
+        );
+    }
+
+    /**
+     * @param list<string> $unknown
+     */
+    private function noteUnknownParameters(CallToolResult $result, array $unknown): CallToolResult
+    {
+        if ([] === $unknown) {
+            return $result;
+        }
+
+        $this->logger->warning('MCP tool received unknown parameter(s)', [
+            'tool' => $this->getName(),
+            'parameters' => $unknown,
+        ]);
+
+        $first = $result->content[0] ?? null;
+        if (!$first instanceof TextContent) {
+            return $result;
+        }
+
+        $note = sprintf(
+            "\n\n⚠️ Ignored unknown parameter(s): %s. This tool does not accept them — check its schema before relying on the result.",
+            implode(', ', $unknown),
+        );
+
+        return new CallToolResult(
+            [new TextContent($first->text.$note)],
+            isError: $result->isError,
+            structuredContent: $result->structuredContent,
         );
     }
 }

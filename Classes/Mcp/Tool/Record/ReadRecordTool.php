@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FieldCurationService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RelationResolutionService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -23,12 +24,17 @@ class ReadRecordTool extends AbstractDataTool
 
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
+
+    /** @var null|list<string> */
+    private ?array $allowedFields = null;
 
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly RecordRepository $recordRepository,
         private readonly FieldCurationService $fieldCuration,
         private readonly RelationResolutionService $relationResolver,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -66,6 +72,11 @@ class ReadRecordTool extends AbstractDataTool
                 'raw' => ['type' => 'boolean', 'default' => false, 'description' => 'Return verbatim stored values (markup intact, untruncated, no tag stripping). Required before editing bodytext/RTE fields to round-trip the HTML.'],
                 'includeEmpty' => ['type' => 'boolean', 'default' => true, 'description' => 'Include empty-valued fields. Default true (enables finding records with empty fields); set false to show only populated fields.'],
                 'includeSystem' => ['type' => 'boolean', 'default' => false, 'description' => 'Include housekeeping/system fields (timestamps, versioning, sorting). Default false (hidden as noise).'],
+                'fields' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                    'description' => 'Return only these fields. uid and the label field are always included. Cuts a tt_content read from 60+ lines to a handful — use it whenever you know which field you are after.',
+                ],
             ],
             'required' => ['table'],
         ];
@@ -95,9 +106,19 @@ class ReadRecordTool extends AbstractDataTool
         }
 
         $this->recordAccess->validateTableReadAccess($table);
+        $this->allowedFields = $this->resolveAllowedFields($table, $params);
 
         if (null !== $uid) {
-            $this->recordAccess->assertRecordReadAccess($table, $uid);
+            $record = $this->recordAccess->assertRecordReadAccess($table, $uid);
+
+            if ($this->workspaceRecords->isDeletePlaceholder($record)) {
+                return $this->textResult(sprintf(
+                    '%s:%d is deleted in workspace %d. The live record still exists and reappears if the deletion is discarded.',
+                    $table,
+                    $uid,
+                    $this->workspaceRecords->getWorkspaceId(),
+                ));
+            }
 
             $formatted = $this->loadAndFormatRecord($table, $uid, null, $raw, $includeEmpty, $includeSystem, false);
             if (null === $formatted) {
@@ -145,6 +166,8 @@ class ReadRecordTool extends AbstractDataTool
             $offset,
         );
 
+        $uids = $this->visibleUids($table, $uids);
+
         if (empty($uids)) {
             $context = null !== $pid ? sprintf('on page %d', $pid) : 'matching filters';
 
@@ -179,13 +202,43 @@ class ReadRecordTool extends AbstractDataTool
     }
 
     /**
-     * @param ?int $maxLength     truncate long text values to this many chars; null = no truncation
-     * @param bool $raw           return raw stored DB values (markup intact, untruncated) instead of
-     *                            FormDataCompiler-processed, tag-stripped plain text
-     * @param bool $includeEmpty  keep fields whose value is empty
-     * @param bool $includeSystem keep housekeeping/system fields
-     * @param bool $listMode      multi-record list read (bounds relation-title lookups)
+     * @param array<string, mixed> $params
+     *
+     * @return null|list<string>
      */
+    private function resolveAllowedFields(string $table, array $params): ?array
+    {
+        $requested = $params['fields'] ?? null;
+        if (!is_array($requested) || [] === $requested) {
+            return null;
+        }
+
+        $names = array_values(array_unique(array_map(static fn ($v): string => (string) $v, $requested)));
+
+        // Reuses the write-path validator so an unknown name gets the same "Available fields:" reply.
+        $this->recordAccess->filterAccessibleFields($table, array_fill_keys($names, ''));
+
+        $names[] = 'uid';
+        $names[] = $this->tcaCompatibilityService->getLabelField($table);
+
+        return array_values(array_unique(array_filter($names, static fn (string $n): bool => '' !== $n)));
+    }
+
+    /**
+     * @param list<int> $uids
+     *
+     * @return list<int>
+     */
+    private function visibleUids(string $table, array $uids): array
+    {
+        $visible = [];
+        foreach ($this->workspaceRecords->overlay($table, $uids) as $row) {
+            $visible[] = (int) ($row['uid'] ?? 0);
+        }
+
+        return $visible;
+    }
+
     private function loadAndFormatRecord(string $table, int $uid, ?int $maxLength, bool $raw, bool $includeEmpty, bool $includeSystem, bool $listMode): ?string
     {
         if ($raw) {
@@ -203,7 +256,7 @@ class ReadRecordTool extends AbstractDataTool
                 [
                     'request' => $this->userContext->getServerRequest(),
                     'tableName' => $table,
-                    'vanillaUid' => $uid,
+                    'vanillaUid' => $this->workspaceRecords->resolveWriteTarget($table, $uid),
                     'command' => 'edit',
                     'returnUrl' => '',
                     'defaultValues' => [],
@@ -230,6 +283,9 @@ class ReadRecordTool extends AbstractDataTool
         }
 
         $columnsToProcess = array_values(array_unique($formData['columnsToProcess'] ?? []));
+        if (null !== $this->allowedFields) {
+            $columnsToProcess = array_values(array_intersect($columnsToProcess, $this->allowedFields));
+        }
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
 
         $label = $databaseRow[$labelField] ?? '';
@@ -246,14 +302,14 @@ class ReadRecordTool extends AbstractDataTool
         $rawRecord = BackendUtility::getRecordWSOL($table, $uid) ?? [];
         $typeKey = $this->richtextTypeKey($table, $rawRecord);
 
-        $text = sprintf("**UID %d** — %s\n", $uid, $label);
+        $text = $this->headerLine($uid, (string) $label, $rawRecord);
 
         $htmlStripped = false;
         foreach ($columnsToProcess as $field) {
             if (!$this->recordAccess->canAccessField($table, $field)) {
                 continue;
             }
-            if (!$this->fieldCuration->shouldInclude($field, $databaseRow[$field] ?? null, $includeEmpty, $includeSystem)) {
+            if (!$this->fieldCuration->shouldInclude($field, $databaseRow[$field] ?? null, $includeEmpty, $includeSystem, $this->allowedFields)) {
                 continue;
             }
 
@@ -294,14 +350,14 @@ class ReadRecordTool extends AbstractDataTool
     private function formatRecordFallback(string $table, array $record, ?int $maxLength, bool $includeEmpty, bool $includeSystem, bool $listMode): string
     {
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
-        $text = sprintf("**UID %d** — %s\n", $record['uid'] ?? 0, $record[$labelField] ?? '?');
+        $text = $this->headerLine((int) ($record['uid'] ?? 0), (string) ($record[$labelField] ?? '?'), $record);
 
         $typeKey = $this->richtextTypeKey($table, $record);
 
         $htmlStripped = false;
         foreach ($record as $field => $value) {
             if (!$this->recordAccess->canAccessField($table, (string) $field)
-                || !$this->fieldCuration->shouldInclude((string) $field, $value, $includeEmpty, $includeSystem)
+                || !$this->fieldCuration->shouldInclude((string) $field, $value, $includeEmpty, $includeSystem, $this->allowedFields)
             ) {
                 continue;
             }
@@ -356,7 +412,8 @@ class ReadRecordTool extends AbstractDataTool
     private function isEditorialRichtextField(string $table, ?string $typeKey, string $field): bool
     {
         try {
-            return $this->tcaCompatibilityService->isRichTextField($table, $field, $typeKey);
+            return $this->tcaCompatibilityService->isRichTextField($table, $field, $typeKey)
+                || $this->tcaCompatibilityService->isRawMarkupField($table, $field, $typeKey);
         } catch (\Throwable $e) {
             return false;
         }
@@ -368,23 +425,29 @@ class ReadRecordTool extends AbstractDataTool
     private function formatRecordRaw(string $table, array $record, bool $includeSystem, bool $listMode): string
     {
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
-        $text = sprintf("**UID %d** — %s\n", (int) ($record['uid'] ?? 0), $this->outputFormatter->scalarize($record[$labelField] ?? ''));
+        $text = $this->headerLine(
+            (int) ($record['uid'] ?? 0),
+            (string) $this->outputFormatter->scalarize($record[$labelField] ?? ''),
+            $record,
+        );
 
         foreach ($record as $field => $value) {
             if (!$this->recordAccess->canAccessField($table, (string) $field)) {
                 continue;
             }
-            if (!$includeSystem && $this->fieldCuration->isHousekeeping((string) $field)) {
+            if (null !== $this->allowedFields) {
+                if (!in_array((string) $field, $this->allowedFields, true)) {
+                    continue;
+                }
+            } elseif (!$includeSystem && $this->fieldCuration->isHousekeeping((string) $field)) {
                 continue;
             }
-            // Raw mode is for round-tripping markup: empty fields carry nothing to edit.
+
             $rawValue = is_array($value) ? (string) json_encode($value) : (string) $value;
             if ('' === $rawValue) {
                 continue;
             }
 
-            // Keep the verbatim value (round-trippable for a later write) and annotate
-            // relations with their resolved titles instead of replacing the UIDs.
             $line = $rawValue;
             $resolved = $this->relationResolver->resolveFieldValue($table, (string) $field, $value, $record, $listMode);
             if (null !== $resolved && $resolved !== $rawValue) {
@@ -394,9 +457,51 @@ class ReadRecordTool extends AbstractDataTool
             $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $line);
         }
 
+        if ($includeSystem) {
+            $text .= $this->renderWorkspaceState($table, $record);
+        }
+
         $text .= $this->renderContainerContext($table, $record);
 
         return $text;
+    }
+
+    /**
+     * t3ver_* are not TCA columns, so canAccessField() drops them before `includeSystem` is consulted.
+     *
+     * @param array<string, mixed> $record
+     */
+    private function renderWorkspaceState(string $table, array $record): string
+    {
+        if (!array_key_exists('t3ver_wsid', $record)) {
+            return '';
+        }
+
+        $state = $this->workspaceRecords->stateLabel($record);
+        $uid = (int) ($record['uid'] ?? 0);
+        $liveUid = $this->workspaceRecords->resolveLiveUid($table, $uid);
+
+        return sprintf(
+            "  `workspace state`: %s (t3ver_wsid: %d, t3ver_oid: %d, t3ver_state: %d, deleted: %d, live uid: %d)\n",
+            '' !== $state ? $state : 'live',
+            (int) ($record['t3ver_wsid'] ?? 0),
+            (int) ($record['t3ver_oid'] ?? 0),
+            (int) ($record['t3ver_state'] ?? 0),
+            (int) ($record['deleted'] ?? 0),
+            $liveUid,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function headerLine(int $uid, string $label, array $row): string
+    {
+        $state = $this->workspaceRecords->stateLabel($row);
+
+        return '' !== $state
+            ? sprintf("**UID %d** — %s [%s]\n", $uid, $label, $state)
+            : sprintf("**UID %d** — %s\n", $uid, $label);
     }
 
     /**

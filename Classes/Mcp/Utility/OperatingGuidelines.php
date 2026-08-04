@@ -6,39 +6,10 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Utility;
 
 /**
  * The single source of the normative text every front end sends to the model.
- *
- * There used to be an "Approach A (external AI) vs Approach B (manual)" fork here, mirrored into
- * eight tool descriptions. It forced the model to make a meta-decision *before* it could pick a
- * tool, and whether credits are spent is a property of the installation, not something the model
- * should deliberate. The fork is gone: tools are described by what they uniquely do, and the model
- * picks one the way it picks any other tool.
- *
- * ## Approval is the host's job. Never write a rule that tells the model to wait for it.
- *
- * A rule saying "get explicit user approval before writing" outlived the server-side preview gate it
- * belonged to. Measured against a benchmark with no human present: gpt-5.4-nano and gpt-oss-120b
- * obeyed it — they called previewRecords, then stopped and waited forever. The task never completed.
- * claude-haiku-4-5 ignored the rule and finished. The rule did not protect anything (there is no gate
- * to satisfy any more); it only cost the two weaker models the task.
- *
- * This is the third instance of one failure mode. `getOperatingGuidelines` said "REQUIRED FIRST STEP"
- * and burned a turn. deleteRecords said "ask the user for confirmation before calling" and the model
- * answered in prose instead of calling the tool. Both were removed after measurement showed the model
- * was doing exactly what it was told.
- *
- * Confirmation happens outside the model: ChEddi's ChatService stops Write/Destructive calls with
- * needsConfirm, and MCP clients raise their own approval dialog. The model's job is to call the tool.
- * Prose that inserts a human into that loop makes the model hang, not the system safe.
  */
 class OperatingGuidelines
 {
     /**
-     * The normative text, one entry per section, in the order it is sent.
-     *
-     * Keys are stable so a front end can reason about the set; the *text* is what the model sees.
-     * A tool description must never repeat any of this (see ToolDescriptionConventionTest): a
-     * section is sent once per session and cached, a description is sent on every single turn.
-     *
      * @return array<string, string>
      */
     public static function sections(): array
@@ -61,25 +32,11 @@ class OperatingGuidelines
         return implode("\n\n", self::sections());
     }
 
-    /**
-     * The full normative set for the MCP `initialize` instructions.
-     *
-     * Sent once per session and cached by the provider alongside the tool definitions, which is
-     * strictly cheaper than making the model spend a reasoning turn on a bootstrap tool call.
-     */
     public static function getForInstructions(): string
     {
         return self::get();
     }
 
-    /**
-     * Same text for the chat drawer.
-     *
-     * The two front ends may only ever differ in *which operational sections* apply — never in
-     * whether the normative ones are present. The chat prompt once omitted them entirely, so the
-     * drawer's model was never told the rules at all. Today both send everything;
-     * OperatingGuidelinesSectionsTest keeps it that way.
-     */
     public static function contentRulesForChat(): string
     {
         return self::get();
@@ -120,10 +77,10 @@ class OperatingGuidelines
             Some CTypes keep that look in a configuration, a flex field such as pi_flexform: a card group's column count lives there, not in a plain column. listContentTypes marks such a CType with `config: pi_flexform`. If the editor asked for a layout that a flex field controls — three-column cards, for instance — you MUST call readFlexFormSchema for that CType, find the setting (the column count, say), and write pi_flexform with it. Never invent the structure and never pass XML. Leaving pi_flexform empty ships the element on its default — a two-column card group — which is not what was asked.
             A layout the editor asked for applies to EVERY element of that kind, not just the first. If they want three-column card groups, set columns to 3 on all the card groups you create, not only the opening one — a page with one three-column group and the rest on the default looks like a mistake.
             A container element holds its children through `tx_container_parent` + `colPos`. Create the container and its children in the SAME writeRecords call: the container is record 0, each child sets `tx_container_parent: "$ref:0"` and a colPos from that container's grid. A container written without children renders as an empty box and is rejected.
-            readRecordSchema reports each field's content kind (rte = HTML honoured; text/plaintext = markup stripped on write; lines = line-based, see below; json; relation), its read-only status and its relation kind — check it before writing.
+            readRecordSchema reports each field's content kind (rte = HTML honoured; html = code editor field, raw markup stored verbatim; text/plaintext = markup stripped on write; lines = line-based, see below; json; relation), its read-only status and its relation kind — check it before writing.
             Some fields are line-based: one newline separates one entry. The bullets CType renders one list item per line of bodytext, the table CType one row per line. Send those as plain text with real newlines, one entry per line — no <ul>/<li>, no bullet glyphs, no <br>. readRecordSchema and listContentTypes print a Format note on every field that works this way.
             Before you write or translate content for a page, call readEditorialGuidelines(pageId) with the page the content will live on — not the page you looked at before it: it returns the tone, target audience and style the editors configured for that subtree, both the general rules and the ones for the scope you ask about. Honour them. They are the only channel for those rules; nothing else feeds them to you.
-            When EDITING an existing rich-text (RTE) field, first read it with readRecords(raw: true) and edit that raw HTML. A normal read strips tags to a plain-text preview; writing that flattened text back would destroy the stored <h2>/<p>/<a>/<ul> markup.
+            When EDITING an existing rich-text (RTE) field or a code editor field (kind html, e.g. the bodytext of an "html" element), first read it with readRecords(raw: true) and edit that raw source. A normal read strips tags to a plain-text preview; writing that flattened text back would destroy the stored markup. For a small change prefer patchText/replaceText, which edit the stored value in place and never make you resend the whole field.
             readRenderedPage(pageId) returns the page as a visitor sees it, including plugin output; readPageContent returns the stored tt_content rows and cannot show that.
             SECTION;
     }

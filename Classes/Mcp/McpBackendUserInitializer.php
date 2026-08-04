@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp;
 
 use AutoDudes\AiSuite\Service\LocalizationService;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpWriteModeResolver;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TokenAuthenticatedBackendUserService;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Context\UserAspect;
-use TYPO3\CMS\Core\Context\WorkspaceAspect;
 use TYPO3\CMS\Core\Core\Bootstrap;
 use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
 use TYPO3\CMS\Core\SingletonInterface;
@@ -26,6 +26,7 @@ class McpBackendUserInitializer implements SingletonInterface
         private readonly LanguageServiceFactory $languageServiceFactory,
         private readonly LocalizationService $localizationService,
         private readonly McpWriteModeResolver $writeModeResolver,
+        private readonly WorkspaceContextService $workspaceContextService,
     ) {}
 
     /**
@@ -57,7 +58,7 @@ class McpBackendUserInitializer implements SingletonInterface
             throw new InsufficientPermissionException($message);
         }
 
-        if (false === $backendUser->setTemporaryWorkspace($workspaceId)) {
+        if (false === $this->workspaceContextService->applyWorkspace($backendUser, $workspaceId)) {
             $message = $this->localizationService->translate('mcp:hint.workspace_access_denied', [$workspaceId]);
             if ('' === $message) {
                 $message = sprintf('Backend user has no access to workspace %d.', $workspaceId);
@@ -65,8 +66,6 @@ class McpBackendUserInitializer implements SingletonInterface
 
             throw new InsufficientPermissionException($message);
         }
-
-        $this->context->setAspect('workspace', new WorkspaceAspect($workspaceId));
 
         return $backendUser;
     }

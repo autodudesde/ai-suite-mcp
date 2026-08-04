@@ -21,6 +21,7 @@ use Mcp\Server\Transport\Http\HttpMessage;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
@@ -35,6 +36,8 @@ class AiSuiteMcpEndpoint
      * — Server MUST respond 400 for unknown values; SHOULD assume 2025-03-26 when header is absent.
      */
     private const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
+
+    private ?FileSessionStore $sessionStore = null;
 
     public function __construct(
         private readonly McpServerFactory $serverFactory,
@@ -87,6 +90,7 @@ class AiSuiteMcpEndpoint
             $rawBody = (string) $request->getBody();
             $payload = json_decode($rawBody);
             $payload = $payload instanceof \stdClass ? $payload : null;
+            $rawBody = $this->stripInitializeMeta($rawBody, $payload);
 
             // Build HttpMessage from PSR-7 request
             $httpMessage = new HttpMessage($rawBody);
@@ -127,10 +131,11 @@ class AiSuiteMcpEndpoint
 
             return $response;
         } catch (InvalidTokenException $e) {
-            $this->logger->warning('MCP endpoint rejected request: invalid token', [
+            $hasAuthHeader = '' !== $this->resolveAuthorizationHeader($request);
+            $this->logger->log($hasAuthHeader ? LogLevel::WARNING : LogLevel::INFO, 'MCP endpoint rejected request: invalid token', [
                 'reason' => $e->getMessage(),
                 'path' => $request->getUri()->getPath(),
-                'has_auth_header' => '' !== $request->getHeaderLine('Authorization'),
+                'has_auth_header' => $hasAuthHeader,
             ]);
 
             $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
@@ -163,15 +168,7 @@ class AiSuiteMcpEndpoint
     {
         $server = $this->serverFactory->createServer();
 
-        $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
-        $sessionTimeout = (int) ($extConf['mcpSessionTimeoutSeconds'] ?? 1800);
-
         $initOptions = $server->createInitializationOptions();
-
-        $sessionPath = Environment::getVarPath().'/aisuite_mcp_sessions/';
-        if (!is_dir($sessionPath)) {
-            GeneralUtility::mkdir_deep($sessionPath);
-        }
 
         // Stateless HTTP only: no long-lived SSE streams that would pin a
         // PHP-FPM worker per client. auto_detect would otherwise flip
@@ -180,7 +177,7 @@ class AiSuiteMcpEndpoint
             'auto_detect' => false,
             'enable_sse' => false,
             'shared_hosting' => true,
-            'session_timeout' => $sessionTimeout > 0 ? $sessionTimeout : 3600,
+            'session_timeout' => $this->sessionTimeout(),
         ];
 
         return new HttpServerRunner(
@@ -188,8 +185,30 @@ class AiSuiteMcpEndpoint
             $initOptions,
             $httpOptions,
             null,
-            new FileSessionStore($sessionPath),
+            $this->sessionStore(),
         );
+    }
+
+    private function sessionStore(): FileSessionStore
+    {
+        if (null === $this->sessionStore) {
+            $sessionPath = Environment::getVarPath().'/aisuite_mcp_sessions/';
+            if (!is_dir($sessionPath)) {
+                GeneralUtility::mkdir_deep($sessionPath);
+            }
+
+            $this->sessionStore = new FileSessionStore($sessionPath);
+        }
+
+        return $this->sessionStore;
+    }
+
+    private function sessionTimeout(): int
+    {
+        $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
+        $sessionTimeout = (int) ($extConf['mcpSessionTimeoutSeconds'] ?? 1800);
+
+        return $sessionTimeout > 0 ? $sessionTimeout : 3600;
     }
 
     private function mintSessionForStatelessClient(
@@ -198,12 +217,16 @@ class AiSuiteMcpEndpoint
         string $mcpSessionId,
         ?\stdClass $payload,
     ): void {
-        if ('POST' !== $request->getMethod() || '' !== $mcpSessionId) {
+        if ('POST' !== $request->getMethod()) {
             return;
         }
 
         // `initialize` is the one request that is allowed to create a session itself.
         if ('initialize' === $this->rpcMethod($payload)) {
+            return;
+        }
+
+        if ('' !== $mcpSessionId && !$this->needsSessionRecovery($mcpSessionId, $payload)) {
             return;
         }
 
@@ -214,6 +237,17 @@ class AiSuiteMcpEndpoint
 
         $httpMessage->setHeader('Mcp-Session-Id', $sessionId);
         $this->userContext->setSessionKey('mcp:'.$sessionId);
+    }
+
+    private function needsSessionRecovery(string $mcpSessionId, ?\stdClass $payload): bool
+    {
+        if ('tools/call' !== $this->rpcMethod($payload)) {
+            return false;
+        }
+
+        $session = $this->sessionStore()->load($mcpSessionId);
+
+        return null === $session || $session->isExpired($this->sessionTimeout());
     }
 
     private function establishSessionId(ServerRequestInterface $request): ?string
@@ -241,6 +275,23 @@ class AiSuiteMcpEndpoint
         $sessionId = $this->createRunner()->handleRequest($initMessage)->getHeader('Mcp-Session-Id');
 
         return \is_string($sessionId) && '' !== $sessionId ? $sessionId : null;
+    }
+
+    private function stripInitializeMeta(string $rawBody, ?\stdClass $payload): string
+    {
+        if (null === $payload || 'initialize' !== $this->rpcMethod($payload)) {
+            return $rawBody;
+        }
+
+        $params = $payload->params ?? null;
+        if (!$params instanceof \stdClass || !property_exists($params, '_meta')) {
+            return $rawBody;
+        }
+
+        unset($params->_meta);
+        $sanitized = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return false === $sanitized ? $rawBody : $sanitized;
     }
 
     private function rpcMethod(?\stdClass $payload): string
@@ -371,7 +422,7 @@ class AiSuiteMcpEndpoint
         ], 400);
     }
 
-    private function extractBearerToken(ServerRequestInterface $request): string
+    private function resolveAuthorizationHeader(ServerRequestInterface $request): string
     {
         $authHeader = $request->getHeaderLine('Authorization');
 
@@ -398,6 +449,13 @@ class AiSuiteMcpEndpoint
                 }
             }
         }
+
+        return $authHeader;
+    }
+
+    private function extractBearerToken(ServerRequestInterface $request): string
+    {
+        $authHeader = $this->resolveAuthorizationHeader($request);
 
         if ('' === $authHeader || !str_starts_with($authHeader, 'Bearer ')) {
             throw new InvalidTokenException('Please provide a valid API token using the Authorization: Bearer header.');

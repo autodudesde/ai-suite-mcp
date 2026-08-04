@@ -8,11 +8,13 @@ use AutoDudes\AiSuiteMcp\Mcp\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\McpException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ContainerBatchValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NestedChildExpanderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordTypeAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 use Mcp\Types\CallToolResult;
@@ -30,7 +32,9 @@ class WriteRecordTool extends AbstractDataTool
         private readonly BatchResultBuilderService $batchResultBuilder,
         private readonly NestedChildExpanderService $nestedChildExpander,
         private readonly ContainerBatchValidator $containerBatchValidator,
+        private readonly BatchEntryValidator $batchEntryValidator,
         private readonly RecordTypeAliasNormalizer $typeAliasNormalizer,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -68,6 +72,7 @@ class WriteRecordTool extends AbstractDataTool
                         .'Use "$ref:N" (0-based index) in a field value to reference the UID of a record created earlier in the same batch. '
                         .'Container children: create the container first, then set `tx_container_parent: "$ref:0"` and a `colPos` from its grid (listContentTypes). '
                         .'IRRE children (accordion_item, card_group_item, …): either nest them as objects in the parent\'s inline field (they are expanded into their own records automatically, only when creating the parent) or write them yourself with their own `pid` and a reference back to the parent. '
+                        .'Never write the parent\'s inline field as a list of child UIDs — that list is read as the complete set and renumbers the children. '
                         .'Images: nest {uid_local:<sysFile UID>} objects in the image/assets field, or add explicit sys_file_reference records {uid_local, uid_foreign:"$ref:N", tablenames, fieldname, pid} — never put a bare sys_file UID into the image/assets field. '
                         .'`sorting` is not writable; reorder with moveRecords. '
                         .'FlexForm fields (pi_flexform, …) take a nested object {"data": {"<sheet>": {"lDEF": {"<field>": {"vDEF": <value>}}}}} — '
@@ -90,6 +95,9 @@ class WriteRecordTool extends AbstractDataTool
         if (empty($records)) {
             return $this->textError('records must be a non-empty array.');
         }
+
+        // Before expansion, so the reported indices are the ones the caller sent.
+        $this->batchEntryValidator->assertShape($records, 'records', ['table', 'fields'], ['uid', 'pid'], 'fields');
 
         // Accept `type` as an alias for CType/doktype before anything reads the element kind.
         $records = $this->typeAliasNormalizer->normalize($records);
@@ -217,6 +225,41 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
+     * @param array<string, mixed> $fields
+     */
+    private function assertNoChildCollectionWrites(string $table, array $fields, ?string $typeKey, ?int $uid): void
+    {
+        foreach (array_keys($fields) as $field) {
+            $field = (string) $field;
+            if (!$this->storesChildCount($table, $field, $typeKey)) {
+                continue;
+            }
+
+            $config = $this->fieldConfig($table, $field, $typeKey);
+            $childTable = (string) ($config['foreign_table'] ?? '');
+            $parentField = (string) ($config['foreign_field'] ?? 'parent');
+
+            throw (new InvalidParameterException(sprintf(
+                '`%s` is a child collection and is not writable: the column holds the number of children, '
+                    .'and DataHandler reads whatever you send as the complete list of child UIDs, detaching the rest and renumbering their sorting. '
+                    .'%s Read the current children with readChildren.',
+                $field,
+                null !== $uid
+                    ? sprintf('Write each child of `%s` as its own record with `%s`: %d and its own `pid`.', $childTable, $parentField, $uid)
+                    : sprintf('Nest the children as objects inside `%s`; they are expanded into their own `%s` records.', $field, $childTable),
+            )))->withErrorContext(['table' => $table, 'field' => $field, 'uid' => $uid]);
+        }
+    }
+
+    private function storesChildCount(string $table, string $field, ?string $typeKey): bool
+    {
+        $config = $this->fieldConfig($table, $field, $typeKey);
+
+        return in_array((string) ($config['type'] ?? ''), ['inline', 'file'], true)
+            && '' !== (string) ($config['foreign_field'] ?? '');
+    }
+
+    /**
      * Validate and write a single record. Returns the human message, the resulting
      * UID and a rollback descriptor for atomic mode.
      *
@@ -249,8 +292,13 @@ class WriteRecordTool extends AbstractDataTool
 
         $this->recordAccess->validateTableWriteAccess($table);
         $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
+        $refFields = $this->referenceFieldNames($fields);
         $fields = $this->resolveReferences($fields, $createdUids);
-        $fields = $this->normalizeRemainingArrayValues($table, $fields);
+        $typeKey = $this->resolveTypeKey($table, $fields, $uid);
+        $this->assertNoChildCollectionWrites($table, $fields, $typeKey, $uid);
+        $fields = $this->normalizeRemainingArrayValues($table, $fields, $typeKey);
+        $remapped = [];
+        $fields = $this->resolveRelationTargets($table, $fields, $typeKey, $refFields, $remapped);
 
         $position = $this->resolvePositionReference((string) ($record['position'] ?? ''), $createdUids);
         $groupKey = sprintf(
@@ -294,7 +342,13 @@ class WriteRecordTool extends AbstractDataTool
             }
 
             return [
-                'message' => sprintf('%s created (UID: %d)%s', $this->tcaLabel->getTableLabel($table), $result->uid, $this->strippedHint($result)),
+                'message' => sprintf(
+                    '%s created (UID: %d)%s%s',
+                    $this->tcaLabel->getTableLabel($table),
+                    $result->uid,
+                    $this->strippedHint($result),
+                    $this->remapHint($remapped),
+                ),
                 'uid' => $result->uid,
                 'rollback' => ['op' => 'create', 'table' => $table, 'uid' => $result->uid],
             ];
@@ -314,10 +368,128 @@ class WriteRecordTool extends AbstractDataTool
         $createdUids[$zeroBased] = $uid;
 
         return [
-            'message' => sprintf('%s updated (UID: %d)%s', $this->tcaLabel->getTableLabel($table), $uid, $this->strippedHint($result)),
+            'message' => sprintf(
+                '%s updated (UID: %d)%s%s',
+                $this->tcaLabel->getTableLabel($table),
+                $uid,
+                $this->strippedHint($result),
+                $this->remapHint($remapped),
+            ),
             'uid' => $uid,
             'rollback' => ['op' => 'update', 'table' => $table, 'uid' => $uid, 'before' => $before],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     */
+    private function resolveTypeKey(string $table, array $fields, ?int $uid): ?string
+    {
+        try {
+            $row = $fields;
+            if (null !== $uid) {
+                $existing = BackendUtility::getRecordWSOL($table, $uid);
+                if (is_array($existing)) {
+                    $row = $fields + $existing;
+                }
+            }
+
+            return $this->tcaCompatibilityService->resolveSubSchemaType($table, $row);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * A type-resolved config is empty for a column outside that type's showitem, hence the fallback.
+     *
+     * @return array<string, mixed>
+     */
+    private function fieldConfig(string $table, string $field, ?string $typeKey): array
+    {
+        if (null !== $typeKey) {
+            $config = $this->tcaCompatibilityService->getEffectiveFieldConfiguration($table, $typeKey, $field);
+            if ([] !== $config) {
+                return $config;
+            }
+        }
+
+        return $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     *
+     * @return list<string>
+     */
+    private function referenceFieldNames(array $fields): array
+    {
+        $names = [];
+        foreach ($fields as $field => $value) {
+            if (is_string($value) && 1 === preg_match('/^\$ref:\d+$/', $value)) {
+                $names[] = (string) $field;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @param list<string>         $refFields
+     * @param array<string, int>   $remapped
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveRelationTargets(string $table, array $fields, ?string $typeKey, array $refFields, array &$remapped): array
+    {
+        if (!$this->workspaceRecords->isActive()) {
+            return $fields;
+        }
+
+        foreach ($fields as $field => $value) {
+            $field = (string) $field;
+            // $ref values already carry the uid DataHandler handed back, which is the version uid.
+            if (in_array($field, $refFields, true) || !is_scalar($value)) {
+                continue;
+            }
+
+            $uid = (int) $value;
+            if ($uid <= 0 || (string) $uid !== trim((string) $value)) {
+                continue;
+            }
+
+            $config = $this->fieldConfig($table, $field, $typeKey);
+            $foreignTable = (string) ($config['foreign_table'] ?? '');
+            if ('' === $foreignTable || !in_array((string) ($config['type'] ?? ''), ['select', 'group', 'inline'], true)) {
+                continue;
+            }
+
+            $target = $this->workspaceRecords->resolveWriteTarget($foreignTable, $uid);
+            if ($target !== $uid) {
+                $fields[$field] = $target;
+                $remapped[$field] = $target;
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param array<string, int> $remapped
+     */
+    private function remapHint(array $remapped): string
+    {
+        if ([] === $remapped) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($remapped as $field => $target) {
+            $parts[] = sprintf('%s → %d', $field, $target);
+        }
+
+        return sprintf(' (resolved to the workspace version: %s)', implode(', ', $parts));
     }
 
     /**
@@ -330,7 +502,7 @@ class WriteRecordTool extends AbstractDataTool
      *
      * @return array<string, mixed>
      */
-    private function normalizeRemainingArrayValues(string $table, array $fields): array
+    private function normalizeRemainingArrayValues(string $table, array $fields, ?string $typeKey): array
     {
         foreach ($fields as $field => $value) {
             if (!is_array($value)) {
@@ -338,7 +510,7 @@ class WriteRecordTool extends AbstractDataTool
             }
 
             $field = (string) $field;
-            $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+            $config = $this->fieldConfig($table, $field, $typeKey);
             $type = (string) ($config['type'] ?? '');
 
             if ('flex' === $type) {
@@ -352,7 +524,7 @@ class WriteRecordTool extends AbstractDataTool
                 )))->withErrorContext(['table' => $table, 'field' => $field]);
             }
 
-            // A plain list of UIDs is what select/group/inline fields expect, just comma separated.
+            // A plain list of UIDs is what select/group fields expect, just comma separated.
             if (array_is_list($value) && $this->isScalarList($value)) {
                 $fields[$field] = implode(',', array_map(strval(...), $value));
 

@@ -19,11 +19,20 @@ mcpWriteMode = workspace
 # cat=MCP/performance; type=int+; label=MCP Session Timeout (seconds):Drop idle MCP sessions after this many seconds. Lower values free PHP workers and reduce session-store bloat. 0 = SDK default (3600s).
 mcpSessionTimeoutSeconds = 1800
 
+# cat=MCP/security; type=boolean; label=Allow Raw HTML Write:Allow MCP write tools to store raw markup verbatim in code editor fields (e.g. tt_content.bodytext of CType "html"). TYPO3 renders those fields unfiltered, so an agent - or a prompt injection - can place arbitrary HTML/JavaScript on the site. When disabled, a write that carries markup into such a field is rejected: nothing is stored and the existing value survives.
+mcpAllowRawHtmlWrite = 0
+
 # cat=MCP/security; type=string; label=MCP Allowed Redirect URIs:Comma-separated list of allowed external redirect URIs for OAuth (localhost is always allowed)
 mcpAllowedRedirectUris =
 
 # cat=MCP/security; type=string; label=MCP Excluded Tables:Comma-separated list of tables that MCP tools must NOT read or write. TYPO3 backend permissions still apply additionally. Use to hide sensitive tables (e.g. be_users, fe_users) even from admins via MCP.
 mcpExcludedTables =
+
+# cat=MCP/basic; type=string; label=Additional Searchable Tables:Comma-separated tables that searchContent should sweep on top of the automatically detected ones. IRRE child tables (tx_bootstrappackage_accordion_item, tx_bootstrappackage_card_group_item) are found in the TCA by themselves and do NOT need an entry here. Use this for standalone record tables that are not children of anything, e.g. tx_news_domain_model_news. Excluded tables and backend permissions still apply.
+mcpSearchAdditionalTables =
+
+# cat=MCP/basic; type=string; label=Exclude Auto-Detected Tables from Search:Comma-separated tables to remove from the automatically detected IRRE child tables that searchContent sweeps. Use it to silence noisy or irrelevant child tables. This only affects the auto-detected set: a table listed under "Additional Searchable Tables" is searched regardless. To block a table from MCP entirely (read and write), use "MCP Excluded Tables" instead.
+mcpExcludeAdditionalTablesFromSearch =
 
 # cat=MCP/security; type=string; label=MCP Trusted Proxies:Comma-separated list of trusted reverse-proxy IPs/CIDRs (e.g. 10.0.0.0/8,192.168.0.0/16). When set, audit-log entries resolve the real client IP from X-Forwarded-For instead of the proxy peer IP. Empty = X-Forwarded-For is ignored.
 mcpTrustedProxies =

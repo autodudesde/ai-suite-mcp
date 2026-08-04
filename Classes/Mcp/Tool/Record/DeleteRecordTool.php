@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -21,6 +22,7 @@ class DeleteRecordTool extends AbstractDataTool
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly BatchResultBuilderService $batchResultBuilder,
+        private readonly BatchEntryValidator $batchEntryValidator,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -47,7 +49,14 @@ class DeleteRecordTool extends AbstractDataTool
                 'records' => [
                     'type' => 'array',
                     'description' => 'The records to soft-delete. Each: {table, uid}.',
-                    'items' => ['type' => 'object'],
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'table' => ['type' => 'string'],
+                            'uid' => ['type' => 'integer'],
+                        ],
+                        'required' => ['table', 'uid'],
+                    ],
                 ],
             ],
             'required' => ['records'],
@@ -61,6 +70,8 @@ class DeleteRecordTool extends AbstractDataTool
         if (!is_array($records) || empty($records)) {
             return $this->textError('records must be a non-empty array.');
         }
+
+        $this->batchEntryValidator->assertShape($records, 'records', ['table', 'uid']);
 
         return $this->batchResultBuilder->run($records, 'record(s)', function (mixed $record): array {
             $table = (string) ($record['table'] ?? '');

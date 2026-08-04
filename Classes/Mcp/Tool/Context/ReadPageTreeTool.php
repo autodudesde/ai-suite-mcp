@@ -18,6 +18,7 @@ class ReadPageTreeTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
@@ -74,8 +75,11 @@ class ReadPageTreeTool extends AbstractTool
         } else {
             if (!$this->hasAccessToPage($rootPageId)) {
                 return new CallToolResult(
-                    [new TextContent($this->translate('hint.page_access', [$rootPageId])
-                        ?? sprintf('Page %d is outside your accessible page tree.', $rootPageId))],
+                    [new TextContent($this->translateOrFallback(
+                        'hint.page_access',
+                        [$rootPageId],
+                        sprintf('Page %d is outside your accessible page tree.', $rootPageId),
+                    ))],
                     isError: true,
                 );
             }

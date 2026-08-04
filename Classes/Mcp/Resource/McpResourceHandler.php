@@ -10,6 +10,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
@@ -44,6 +45,7 @@ class McpResourceHandler
     public function registerHandlers(Server $server): void
     {
         $server->registerHandler('resources/list', $this->handleList(...));
+        $server->registerHandler('resources/templates/list', $this->handleTemplatesList(...));
         $server->registerHandler('resources/read', $this->handleRead(...));
     }
 
@@ -113,6 +115,25 @@ class McpResourceHandler
     /**
      * @return array<string, mixed>
      */
+    private function handleTemplatesList(mixed $params): array
+    {
+        if (!$this->canReadResources()) {
+            return ['resourceTemplates' => []];
+        }
+
+        return ['resourceTemplates' => [
+            [
+                'uriTemplate' => 'aisuite://instructions/page/{pid}',
+                'name' => 'Content guidelines for a page',
+                'description' => 'Tone, target audience, and style guidelines for AI operations on the given page UID',
+                'mimeType' => 'text/plain',
+            ],
+        ]];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function handleRead(mixed $params): array
     {
         // Scope gate: reading any resource requires mcp:read (the SDK turns this into a JSON-RPC error).
@@ -120,7 +141,7 @@ class McpResourceHandler
             throw new InsufficientScopeException('Reading AI Suite resources requires the "mcp:read" scope.');
         }
 
-        $uri = (string) ($this->normalizeParams($params)['uri'] ?? '');
+        $uri = (string) (RequestParamsNormalizer::toArray($params)['uri'] ?? '');
 
         // Operating guidelines
         if ('aisuite://guidelines' === $uri) {
@@ -245,25 +266,5 @@ class McpResourceHandler
         }
 
         return $providers;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function normalizeParams(mixed $params): array
-    {
-        if (is_array($params)) {
-            return $params;
-        }
-
-        if (is_object($params) && method_exists($params, 'jsonSerialize')) {
-            return (array) $params->jsonSerialize();
-        }
-
-        if (is_object($params)) {
-            return (array) $params;
-        }
-
-        return [];
     }
 }

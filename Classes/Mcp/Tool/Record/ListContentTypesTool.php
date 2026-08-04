@@ -44,6 +44,7 @@ class ListContentTypesTool extends AbstractDataTool
 
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,
