@@ -9,10 +9,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * OAuth 2.1 Authorization Server Metadata.
- * GET /.well-known/oauth-authorization-server.
- */
 class MetadataEndpoint
 {
     public function __invoke(ServerRequestInterface $request): ResponseInterface

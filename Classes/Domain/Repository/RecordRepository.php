@@ -8,6 +8,8 @@ use AutoDudes\AiSuite\Domain\Repository\AbstractRepository;
 use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
+use TYPO3\CMS\Core\Database\Query\QueryBuilder;
+use TYPO3\CMS\Core\Database\Query\Restriction\DeletedRestriction;
 use TYPO3\CMS\Core\Database\Query\Restriction\WorkspaceRestriction;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -22,8 +24,8 @@ class RecordRepository extends AbstractRepository
 
     /**
      * @param array<string, null|scalar> $fieldFilters
-     * @param null|list<int>             $allowedPids  null = no PID-IN restriction (admin, rootlevel table, or $pid mode)
-     * @param null|string                $extraWhere   raw SQL andWhere() — used for the pages page-perm-clause
+     * @param null|list<int>             $allowedPids
+     * @param 'pid'|'uid'                $pageScopeColumn
      *
      * @return list<int>
      */
@@ -36,17 +38,21 @@ class RecordRepository extends AbstractRepository
         string $sortField,
         int $limit,
         int $offset,
+        string $pageScopeColumn = 'pid',
     ): array {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $this->addWorkspaceRestriction($qb);
         $query = $qb->select('uid')->from($table);
+
+        $scopeColumn = 'uid' === $pageScopeColumn ? 'uid' : 'pid';
 
         if (null !== $pid) {
             $query->where($qb->expr()->eq('pid', $qb->createNamedParameter($pid, Connection::PARAM_INT)));
         } elseif (null !== $extraWhere) {
             $query->andWhere($extraWhere);
         } elseif (null !== $allowedPids && [] !== $allowedPids) {
-            $query->andWhere($qb->expr()->in('pid', $qb->createNamedParameter($allowedPids, Connection::PARAM_INT_ARRAY)));
+            $query->andWhere($qb->expr()->in($scopeColumn, $qb->createNamedParameter($allowedPids, Connection::PARAM_INT_ARRAY)));
         }
 
         foreach ($fieldFilters as $field => $value) {
@@ -81,6 +87,7 @@ class RecordRepository extends AbstractRepository
         }
 
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         // The pointer differs between live row and version, so the caller reduces the duplicates.
         $qb->getRestrictions()->add(
             GeneralUtility::makeInstance(WorkspaceRestriction::class, $this->workspaceContextService->getWorkspaceId(), true),
@@ -103,6 +110,7 @@ class RecordRepository extends AbstractRepository
     public function countLiveRecords(string $table, int $pid): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
 
         return (int) $qb
             ->count('uid')
@@ -116,18 +124,11 @@ class RecordRepository extends AbstractRepository
         ;
     }
 
-    /**
-     * Count records of any table on a page, tolerant of tables that are not workspace-aware.
-     *
-     * Unlike countLiveRecords() this adds NO t3ver_wsid condition (which would fail on a table that
-     * has no such column) and swallows any table-shape surprise, so it is safe to run across the whole
-     * TCA. The query builder's default restrictions still hide deleted/disabled rows. Intended for the
-     * "what else lives on this page" overview, where an approximate visible count is enough.
-     */
     public function countRecordsOnPage(string $table, int $pid): int
     {
         try {
             $qb = $this->connectionPool->getQueryBuilderForTable($table);
+            $this->withoutFrontendRestrictions($qb);
             $this->addWorkspaceRestriction($qb);
 
             return (int) $qb
@@ -148,6 +149,7 @@ class RecordRepository extends AbstractRepository
     public function countByCriteria(string $table, array $fieldFilters): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $this->addWorkspaceRestriction($qb);
         $query = $qb->count('uid')->from($table);
 
@@ -164,6 +166,7 @@ class RecordRepository extends AbstractRepository
     public function mostCommonValue(string $table, string $field, ?string $typeField, ?string $typeValue): ?array
     {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $query = $qb
             ->select($field)
             ->addSelectLiteral($qb->expr()->count('uid', 'cnt'))
@@ -193,6 +196,7 @@ class RecordRepository extends AbstractRepository
         ?int $colPos = null,
     ): ?int {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $this->addWorkspaceRestriction($qb);
         $query = $qb
             ->select('uid')
@@ -217,13 +221,14 @@ class RecordRepository extends AbstractRepository
      *
      * @return list<array<string, mixed>>
      */
-    public function searchByText(string $table, string $query, array $searchFields, ?array $allowedPids, int $limit, bool $workspaceAware): array
+    public function searchByText(string $table, string $query, array $searchFields, ?array $allowedPids, int $limit, bool $workspaceAware, ?string $languageField = null): array
     {
         if ([] === $searchFields || (null !== $allowedPids && [] === $allowedPids)) {
             return [];
         }
 
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $this->addWorkspaceRestriction($qb);
         $term = '%'.$qb->escapeLikeWildcards($query).'%';
 
@@ -234,6 +239,7 @@ class RecordRepository extends AbstractRepository
 
         $select = array_values(array_unique(array_merge(
             $workspaceAware ? ['uid', 'pid', 't3ver_oid', 't3ver_wsid', 't3ver_state'] : ['uid', 'pid'],
+            null !== $languageField && '' !== $languageField ? [$languageField] : [],
             $searchFields,
         )));
 
@@ -250,9 +256,30 @@ class RecordRepository extends AbstractRepository
         return $qb->executeQuery()->fetchAllAssociative();
     }
 
+    public function findTranslationUid(string $table, int $originUid, int $languageUid, string $pointerField, string $languageField): ?int
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
+        $this->addWorkspaceRestriction($qb);
+
+        $uid = $qb->select('uid')
+            ->from($table)
+            ->where(
+                $qb->expr()->eq($pointerField, $qb->createNamedParameter($originUid, Connection::PARAM_INT)),
+                $qb->expr()->eq($languageField, $qb->createNamedParameter($languageUid, Connection::PARAM_INT)),
+            )
+            ->setMaxResults(1)
+            ->executeQuery()
+            ->fetchOne()
+        ;
+
+        return false !== $uid ? (int) $uid : null;
+    }
+
     public function findPreviousSiblingUid(string $table, int $pageId, int $beforeUid, string $sortByField): ?int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $this->addWorkspaceRestriction($qb);
 
         $reference = $qb->select($sortByField)
@@ -266,6 +293,7 @@ class RecordRepository extends AbstractRepository
         }
 
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
+        $this->withoutFrontendRestrictions($qb);
         $this->addWorkspaceRestriction($qb);
 
         $uid = $qb->select('uid')
@@ -281,5 +309,10 @@ class RecordRepository extends AbstractRepository
         ;
 
         return false !== $uid ? (int) $uid : null;
+    }
+
+    private function withoutFrontendRestrictions(QueryBuilder $queryBuilder): void
+    {
+        $queryBuilder->getRestrictions()->removeAll()->add(GeneralUtility::makeInstance(DeletedRestriction::class));
     }
 }

@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FieldCurationService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RelationResolutionService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -22,6 +23,11 @@ class ReadRecordTool extends AbstractDataTool
 {
     private const HTML_STRIPPED_NOTE = "  ↳ ℹ️ HTML was stripped for this preview — re-read with `raw: true` to get the source markup before editing.\n";
 
+    /**
+     * @var list<string>
+     */
+    private const IDENTITY_FIELDS = ['uid', 'pid'];
+
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
     protected bool $idempotentHint = true;
@@ -29,11 +35,15 @@ class ReadRecordTool extends AbstractDataTool
     /** @var null|list<string> */
     private ?array $allowedFields = null;
 
+    /** @var array<string, string> */
+    private array $fieldAliasRenames = [];
+
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly RecordRepository $recordRepository,
         private readonly FieldCurationService $fieldCuration,
         private readonly RelationResolutionService $relationResolver,
+        private readonly TranslationFieldAliasNormalizer $translationAliasNormalizer,
         private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
@@ -46,8 +56,8 @@ class ReadRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        return 'Read records of any TCA table — one by uid, a whole page by pid, or an exact-match query by filters. '
-            .'Reads the stored rows; readRenderedPage shows the page as a visitor sees it. '
+        return 'Read records of any TCA table — one by uid, a whole page by pid, a whole subtree by rootPageId, '
+            .'or an exact-match query by filters. Reads the stored rows; readRenderedPage shows the page as a visitor sees it. '
             .'Only records inside your backend webmounts are returned.';
     }
 
@@ -59,6 +69,12 @@ class ReadRecordTool extends AbstractDataTool
                 'table' => ['type' => 'string', 'description' => 'TCA table name'],
                 'uid' => ['type' => 'integer', 'description' => 'Single record UID'],
                 'pid' => ['type' => 'integer', 'description' => 'Page UID — list all records on this page'],
+                'rootPageId' => [
+                    'type' => 'integer',
+                    'description' => 'Subtree root page UID: this page and everything below it, resolved server-side. '
+                        .'Combine with filters to sweep a whole branch in one call, e.g. table "pages" with {"seo_title": ""}. '
+                        .'Alternative to pid; give exactly one of the two.',
+                ],
                 'filters' => [
                     // Stays a free-form object: the keys are TCA field names of the requested table.
                     'type' => 'object',
@@ -67,7 +83,10 @@ class ReadRecordTool extends AbstractDataTool
                 ],
                 'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max records. Default: 50, max: 200.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'description' => 'Skip first N records for pagination. Default: 0.'],
-                'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return long text fields untruncated. Ignored (always full) for a single-uid read.'],
+                'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return long text fields untruncated. Ignored (always full) for a single-uid read. '
+                    .'Expensive on a list read: every record\'s full text enters the conversation and is paid for in this and every later turn. '
+                    .'Measured once at 45,000 fresh tokens, five times the cost of the whole task around it. '
+                    .'Use it when you are about to edit the text; to find out which fields exist use readRecordSchema, and to see a value use `fields`.'],
                 'maxLength' => ['type' => 'integer', 'description' => 'Truncate text fields to this many characters in list mode (default 300). Use 0 or fullText=true for no truncation.'],
                 'raw' => ['type' => 'boolean', 'default' => false, 'description' => 'Return verbatim stored values (markup intact, untruncated, no tag stripping). Required before editing bodytext/RTE fields to round-trip the HTML.'],
                 'includeEmpty' => ['type' => 'boolean', 'default' => true, 'description' => 'Include empty-valued fields. Default true (enables finding records with empty fields); set false to show only populated fields.'],
@@ -87,6 +106,7 @@ class ReadRecordTool extends AbstractDataTool
         $table = (string) $params['table'];
         $uid = isset($params['uid']) ? (int) $params['uid'] : null;
         $pid = isset($params['pid']) ? (int) $params['pid'] : null;
+        $rootPageId = isset($params['rootPageId']) ? (int) $params['rootPageId'] : null;
         $filters = is_array($params['filters'] ?? null) ? $params['filters'] : [];
         $limit = min((int) ($params['limit'] ?? 50), 200);
         $offset = (int) ($params['offset'] ?? 0);
@@ -101,8 +121,14 @@ class ReadRecordTool extends AbstractDataTool
             $listMaxLength = (int) $params['maxLength'] > 0 ? (int) $params['maxLength'] : null;
         }
 
-        if (null === $uid && null === $pid && empty($filters)) {
-            return $this->textError('Provide uid, pid, or filters.');
+        if (null === $uid && null === $pid && null === $rootPageId && empty($filters)) {
+            return $this->textError(
+                'Provide uid, pid, rootPageId, or filters. rootPageId reads a whole subtree in one call, '
+                .'and a filter of "" finds records whose field is empty, e.g. {"seo_title": ""}.',
+            );
+        }
+        if (null !== $pid && null !== $rootPageId) {
+            return $this->textError('Give either pid (records on that one page) or rootPageId (that page and everything below it), not both.');
         }
 
         $this->recordAccess->validateTableReadAccess($table);
@@ -125,7 +151,13 @@ class ReadRecordTool extends AbstractDataTool
                 return $this->textError(sprintf('%s:%d not found.', $table, $uid));
             }
 
-            return $this->textResult(sprintf("Record `%s:%d`:\n\n%s", $table, $uid, $formatted));
+            return $this->textResult(sprintf(
+                "Record `%s:%d`:%s\n\n%s",
+                $table,
+                $uid,
+                $this->translationAliasNormalizer->describeRenames($this->fieldAliasRenames),
+                $formatted,
+            ));
         }
 
         if (null !== $pid) {
@@ -134,7 +166,26 @@ class ReadRecordTool extends AbstractDataTool
 
         $allowedPids = null;
         $extraWhere = null;
-        if (null === $pid) {
+        $pageScopeColumn = 'pid';
+        if (null !== $rootPageId) {
+            $this->recordAccess->assertPagePerm($rootPageId, Permission::PAGE_SHOW);
+
+            $allowedPids = $this->recordAccess->getReadablePageIds($rootPageId);
+            if ([] === $allowedPids) {
+                return $this->textError(sprintf(
+                    'Page %d does not exist or is not readable for you, so the read has no scope. '
+                    .'Use readPageTree to find a page you can reach.',
+                    $rootPageId,
+                ));
+            }
+
+            // getSearchableWebmounts() subtracts hideRecords.pages; permission was asserted above.
+            if (!in_array($rootPageId, $allowedPids, true)) {
+                $allowedPids[] = $rootPageId;
+            }
+
+            $pageScopeColumn = 'pages' === $table ? 'uid' : 'pid';
+        } elseif (null === $pid) {
             $beUser = $this->getBackendUser();
             if (null !== $beUser && !$beUser->isAdmin()) {
                 if ('pages' === $table) {
@@ -164,13 +215,18 @@ class ReadRecordTool extends AbstractDataTool
             $this->tcaCompatibilityService->getSortField($table),
             $limit + 1,
             $offset,
+            $pageScopeColumn,
         );
 
         $uids = $this->visibleUids($table, $uids);
 
-        if (empty($uids)) {
-            $context = null !== $pid ? sprintf('on page %d', $pid) : 'matching filters';
+        $context = match (true) {
+            null !== $pid => sprintf('on page %d', $pid),
+            null !== $rootPageId => sprintf('in the subtree of page %d (%d pages)', $rootPageId, count($allowedPids ?? [])),
+            default => 'matching filters',
+        };
 
+        if (empty($uids)) {
             return $this->textResult(sprintf('No %s records %s.', $table, $context));
         }
 
@@ -179,8 +235,13 @@ class ReadRecordTool extends AbstractDataTool
             $uids = array_slice($uids, 0, $limit);
         }
 
-        $context = null !== $pid ? sprintf('on page %d', $pid) : 'matching filters';
-        $text = sprintf("%d record(s) `%s` %s:\n\n", count($uids), $table, $context);
+        $text = sprintf(
+            "%d record(s) `%s` %s:%s\n\n",
+            count($uids),
+            $table,
+            $context,
+            $this->translationAliasNormalizer->describeRenames($this->fieldAliasRenames),
+        );
         foreach ($uids as $recordUid) {
             $formatted = $this->loadAndFormatRecord($table, (int) $recordUid, $listMaxLength, $raw, $includeEmpty, $includeSystem, true);
             if (null !== $formatted) {
@@ -215,8 +276,14 @@ class ReadRecordTool extends AbstractDataTool
 
         $names = array_values(array_unique(array_map(static fn ($v): string => (string) $v, $requested)));
 
-        // Reuses the write-path validator so an unknown name gets the same "Available fields:" reply.
-        $this->recordAccess->filterAccessibleFields($table, array_fill_keys($names, ''));
+        $aliased = $this->translationAliasNormalizer->normalizeNames($table, $names);
+        $names = $aliased['names'];
+        $this->fieldAliasRenames = $aliased['renamed'];
+
+        $this->recordAccess->filterAccessibleFields(
+            $table,
+            array_fill_keys(array_diff($names, self::IDENTITY_FIELDS), ''),
+        );
 
         $names[] = 'uid';
         $names[] = $this->tcaCompatibilityService->getLabelField($table);
@@ -302,7 +369,7 @@ class ReadRecordTool extends AbstractDataTool
         $rawRecord = BackendUtility::getRecordWSOL($table, $uid) ?? [];
         $typeKey = $this->richtextTypeKey($table, $rawRecord);
 
-        $text = $this->headerLine($uid, (string) $label, $rawRecord);
+        $text = $this->headerLine($table, $uid, (string) $label, $rawRecord);
 
         $htmlStripped = false;
         foreach ($columnsToProcess as $field) {
@@ -350,7 +417,7 @@ class ReadRecordTool extends AbstractDataTool
     private function formatRecordFallback(string $table, array $record, ?int $maxLength, bool $includeEmpty, bool $includeSystem, bool $listMode): string
     {
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
-        $text = $this->headerLine((int) ($record['uid'] ?? 0), (string) ($record[$labelField] ?? '?'), $record);
+        $text = $this->headerLine($table, (int) ($record['uid'] ?? 0), (string) ($record[$labelField] ?? '?'), $record);
 
         $typeKey = $this->richtextTypeKey($table, $record);
 
@@ -426,6 +493,7 @@ class ReadRecordTool extends AbstractDataTool
     {
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $text = $this->headerLine(
+            $table,
             (int) ($record['uid'] ?? 0),
             (string) $this->outputFormatter->scalarize($record[$labelField] ?? ''),
             $record,
@@ -495,13 +563,23 @@ class ReadRecordTool extends AbstractDataTool
     /**
      * @param array<string, mixed> $row
      */
-    private function headerLine(int $uid, string $label, array $row): string
+    private function headerLine(string $table, int $uid, string $label, array $row): string
     {
-        $state = $this->workspaceRecords->stateLabel($row);
+        $markers = [];
 
-        return '' !== $state
-            ? sprintf("**UID %d** — %s [%s]\n", $uid, $label, $state)
-            : sprintf("**UID %d** — %s\n", $uid, $label);
+        $state = $this->workspaceRecords->stateLabel($row);
+        if ('' !== $state) {
+            $markers[] = $state;
+        }
+
+        $disabledField = $this->tcaCompatibilityService->getDisabledFieldName($table);
+        if (null !== $disabledField && !empty($row[$disabledField])) {
+            $markers[] = 'hidden';
+        }
+
+        return [] === $markers
+            ? sprintf("**UID %d** — %s\n", $uid, $label)
+            : sprintf("**UID %d** — %s [%s]\n", $uid, $label, implode(', ', $markers));
     }
 
     /**

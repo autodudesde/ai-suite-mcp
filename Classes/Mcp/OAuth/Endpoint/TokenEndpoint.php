@@ -13,14 +13,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
 
-/**
- * OAuth 2.1 Token Endpoint.
- * POST /aisuite-mcp/oauth/token.
- *
- * Supports:
- * - grant_type=authorization_code (code + PKCE verifier → access_token + refresh_token)
- * - grant_type=refresh_token (refresh_token → new access_token + new refresh_token)
- */
 class TokenEndpoint
 {
     public function __construct(

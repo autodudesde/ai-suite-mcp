@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Server\Server;
@@ -20,8 +21,6 @@ use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadServerInfoTool extends AbstractTool
 {
-    private const SESSION_FILE_WARN_THRESHOLD = 500;
-
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
     protected bool $idempotentHint = true;
@@ -31,6 +30,7 @@ class ReadServerInfoTool extends AbstractTool
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly Typo3Version $typo3Version,
         private readonly SysWorkspaceRepository $sysWorkspaceRepository,
+        private readonly McpSessionStoreService $sessionStore,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -82,8 +82,6 @@ class ReadServerInfoTool extends AbstractTool
         }
         $lines[] = '';
 
-        // Session block — relevant to the agent regardless of admin status: where do approved
-        // writes go, live or a draft workspace?
         $lines[] = '## Session';
         $lines[] = sprintf('- **Active workspace:** %s', $this->describeActiveWorkspace($beUser));
         $lines[] = '';
@@ -126,9 +124,9 @@ class ReadServerInfoTool extends AbstractTool
         if ($isAdmin) {
             $lines[] = '';
 
-            $sessionPath = Environment::getVarPath().'/aisuite_mcp_sessions/';
-            $sessionWritable = is_dir($sessionPath) && is_writable($sessionPath);
-            $sessionFiles = $this->countSessionFiles($sessionPath);
+            $sessionPath = $this->sessionStore->getDirectory();
+            $sessionWritable = $this->sessionStore->isWritable();
+            $sessionFiles = $this->sessionStore->countFiles();
             $lines[] = '## Diagnostics';
             $lines[] = sprintf('- **Session storage:** %s', $sessionWritable ? 'writable' : 'NOT writable — sessions may fail');
             $lines[] = sprintf('- **Stored sessions:** %d', $sessionFiles);
@@ -144,7 +142,7 @@ class ReadServerInfoTool extends AbstractTool
             if (!$sessionWritable) {
                 $warnings[] = sprintf('Session directory is not writable: %s', $sessionPath);
             }
-            if ($sessionFiles > self::SESSION_FILE_WARN_THRESHOLD) {
+            if ($sessionFiles > McpSessionStoreService::WARN_THRESHOLD) {
                 $message = sprintf(
                     '%d session files are stored. Stateless clients leave one behind per request; '
                     .'run ai-suite-mcp:cleanup (ideally on a schedule).',
@@ -165,17 +163,6 @@ class ReadServerInfoTool extends AbstractTool
         }
 
         return $this->textResult(implode("\n", $lines));
-    }
-
-    private function countSessionFiles(string $sessionPath): int
-    {
-        if (!is_dir($sessionPath)) {
-            return 0;
-        }
-
-        $files = glob($sessionPath.'session-*.json');
-
-        return false === $files ? 0 : count($files);
     }
 
     /**

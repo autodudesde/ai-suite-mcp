@@ -6,21 +6,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 
-/**
- * Rejects a write batch that creates a container element without any children in it.
- *
- * A b13 container holds its children through `tx_container_parent` + `colPos`, and writeRecords can
- * create both in one call: the container is a record, each child references it with `$ref:<index>`.
- * The schema description says so. Measured, gpt-5.4-nano still wrote two containers and no children,
- * leaving the editor with two empty boxes, and only wired the children up after being told.
- *
- * Prose does not fix that (a container written empty is a valid record, so nothing pushes back), so
- * this pushes back: the batch is refused before anything is written, and the message carries the
- * `$ref` syntax and the container's real colPos slots, which is everything the model needs to retry
- * in the same turn.
- *
- * Deliberately escapable with `allowEmptyContainer` — an editor may legitimately want an empty grid.
- */
 class ContainerBatchValidator
 {
     public function __construct(
@@ -28,7 +13,7 @@ class ContainerBatchValidator
     ) {}
 
     /**
-     * @param array<int, mixed> $records the flat batch, after nested children were expanded
+     * @param array<int, mixed> $records
      *
      * @throws InvalidParameterException
      */
@@ -56,8 +41,6 @@ class ContainerBatchValidator
                 continue;
             }
 
-            // Only a container being CREATED here can be left empty by this batch. Updating an
-            // existing container says nothing about the children it already has.
             $isCreate = !isset($record['uid']);
             $cType = is_scalar($fields['CType'] ?? null) ? (string) $fields['CType'] : '';
 

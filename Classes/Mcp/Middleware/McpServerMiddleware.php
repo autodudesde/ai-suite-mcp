@@ -25,17 +25,6 @@ use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\Response;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
-/**
- *   /aisuite-mcp                             → AiSuiteMcpEndpoint (MCP protocol)
- *   /aisuite-mcp/oauth/register              → RegistrationEndpoint (RFC 7591)
- *   /aisuite-mcp/oauth/authorize             → AuthorizationEndpoint
- *   /aisuite-mcp/oauth/token                 → TokenEndpoint
- *   /aisuite-mcp/oauth/revoke                → RevocationEndpoint
- *   /.well-known/oauth-authorization-server  → MetadataEndpoint
- *   /.well-known/openid-configuration        → MetadataEndpoint (RFC 8414 §5 fallback)
- *   /.well-known/oauth-protected-resource    → ProtectedResourceMetadataEndpoint (RFC 9728)
- *   /aisuite-mcp/health                      → HealthCheckEndpoint.
- */
 class McpServerMiddleware implements MiddlewareInterface
 {
     private const MAX_REQUEST_BODY_SIZE = 1_048_576; // 1 MB
@@ -84,7 +73,6 @@ class McpServerMiddleware implements MiddlewareInterface
             ], 404);
         }
 
-        // OPTIONS preflight (CORS)
         if ('OPTIONS' === $request->getMethod()) {
             return $this->addCorsHeaders(
                 new Response('php://temp', 204),
@@ -99,13 +87,11 @@ class McpServerMiddleware implements MiddlewareInterface
             return $originCheck;
         }
 
-        // HTTPS enforcement
         $httpsCheck = $this->enforceHttps($request, $extConf);
         if (null !== $httpsCheck) {
             return $httpsCheck;
         }
 
-        // Request body size limit
         $sizeCheck = $this->enforceBodySizeLimit($request);
         if (null !== $sizeCheck) {
             return $sizeCheck;
@@ -126,10 +112,8 @@ class McpServerMiddleware implements MiddlewareInterface
             }
         }
 
-        // Route to handler
         $response = $this->route($path, $request);
 
-        // Add CORS headers to response
         return $this->addCorsHeaders($response, $request->getHeaderLine('Origin'), $extConf);
     }
 
@@ -164,27 +148,22 @@ class McpServerMiddleware implements MiddlewareInterface
             return ($this->registrationEndpoint)($request);
         }
 
-        // OAuth: Token revocation
         if ($path === self::MCP_PATH.'/oauth/revoke') {
             return ($this->revocationEndpoint)($request);
         }
 
-        // OAuth: Token endpoint
         if ($path === self::MCP_PATH.'/oauth/token') {
             return ($this->tokenEndpoint)($request);
         }
 
-        // OAuth: Authorization endpoint
         if ($path === self::MCP_PATH.'/oauth/authorize') {
             return ($this->authorizationEndpoint)($request);
         }
 
-        // Unknown OAuth endpoint
         if (str_starts_with($path, self::MCP_PATH.'/oauth/')) {
             return new JsonResponse(['error' => 'not_found'], 404);
         }
 
-        // Main MCP endpoint
         if (self::MCP_PATH === $path || $path === self::MCP_PATH.'/') {
             return ($this->mcpEndpoint)($request);
         }
@@ -252,10 +231,6 @@ class McpServerMiddleware implements MiddlewareInterface
             return null;
         }
 
-        // Same-origin is not a rebinding vector — the attack needs a *foreign* origin pointed at
-        // our IP. Blocking our own origin only breaks the OAuth consent form, whose POST submit
-        // carries Origin: <our host> (the GET that renders it does not, which is why the form
-        // appears to work and only the submit dies).
         if ($originHost === $request->getUri()->getHost()) {
             return null;
         }

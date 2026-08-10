@@ -19,13 +19,6 @@ class OAuthService
 
     private const CODE_LIFETIME = 600;
 
-    /**
-     * How long a just-rotated refresh token stays acceptable (RFC 9700 §4.14.2 leeway).
-     *
-     * Connectors fire refreshes concurrently and keep only the last pair they receive.
-     * Without leeway every such race ends in a reuse alarm that revokes the whole lineage
-     * and forces a full re-authorization mid-conversation.
-     */
     private const REFRESH_GRACE_SECONDS = 30;
 
     public function __construct(
@@ -37,9 +30,6 @@ class OAuthService
 
     /**
      * @param list<string> $requestedScopes
-     * @param string       $audience        canonical resource URI the resulting token will be bound to (RFC 8707)
-     *
-     * @return string The plaintext code (shown once, then forgotten)
      */
     public function createAuthorizationCode(
         int $beUserUid,
@@ -73,8 +63,6 @@ class OAuthService
     }
 
     /**
-     * @param string $resource the `resource` parameter sent on the token request (RFC 8707)
-     *
      * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      *
      * @throws InvalidGrantException
@@ -111,7 +99,6 @@ class OAuthService
             throw new InvalidGrantException('resource parameter does not match the authorization request.');
         }
 
-        // PKCE verification
         if (!$this->validatePkce($codeVerifier, $codeRecord['code_challenge'])) {
             throw new InvalidGrantException('PKCE verification failed. Please check your code_verifier.');
         }
@@ -195,9 +182,6 @@ class OAuthService
     }
 
     /**
-     * @param string $resource optional `resource` parameter from the refresh request. When set,
-     *                         must match the audience the original token was bound to (RFC 8707);
-     *
      * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      *
      * @throws InvalidGrantException
@@ -217,14 +201,11 @@ class OAuthService
 
         $now = time();
 
-        // Revoked, never rotated: logout, password change, admin revoke, disabled account.
-        // A benign end-of-life — not theft, so no alarm and no lineage revocation.
         if (0 !== (int) $existing['deleted'] && 0 === (int) $existing['rotated_at']) {
             throw new InvalidGrantException('Refresh token has been revoked. Please re-authorize.');
         }
 
-        // Guards run before the claim: a rejected refresh must not leave the token marked
-        // as rotated, or a retry within the grace window would skip these very checks.
+        // Guards before the claim: a rejected refresh must not leave the token marked as rotated.
         $audience = $this->assertRefreshable($existing, $clientId, $resource);
 
         if (!$this->tokenRepository->claimRotation((int) $existing['uid'], $now)) {
@@ -277,11 +258,7 @@ class OAuthService
     }
 
     /**
-     * Shared guards for both the rotating and the grace path.
-     *
      * @param array<string, mixed> $row
-     *
-     * @return string the audience the token is bound to (RFC 8707)
      *
      * @throws InvalidGrantException
      */
@@ -315,8 +292,6 @@ class OAuthService
     }
 
     /**
-     * Someone else already rotated this token — decide between a concurrent retry and real reuse.
-     *
      * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      *
      * @throws InvalidGrantException
@@ -372,9 +347,6 @@ class OAuthService
 
     /**
      * @param list<string> $scopes
-     * @param string       $audience       canonical resource URI the token is bound to (RFC 8707)
-     * @param int          $familyId       uid of the lineage root; 0 makes the new token its own root
-     * @param null|int     $predecessorUid the rotated token this pair replaces, linked for auditability
      *
      * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, scope: string, revoked_client_id: string}
      */

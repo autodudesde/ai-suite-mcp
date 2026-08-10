@@ -13,10 +13,15 @@ class RawMarkupPolicyService implements SingletonInterface
 
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly SurfaceSettingOverrides $surfaceOverrides,
     ) {}
 
     public function isRawMarkupWriteAllowed(): bool
     {
+        if (false === $this->surfaceOverrides->allowsRawMarkupWrite()) {
+            return false;
+        }
+
         try {
             return (bool) ($this->extensionConfiguration->get('ai_suite_mcp')[self::SETTING_KEY] ?? false);
         } catch (\Throwable) {

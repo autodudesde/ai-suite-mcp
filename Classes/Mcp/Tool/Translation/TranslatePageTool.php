@@ -4,15 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Translation;
 
-use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
-use AutoDudes\AiSuite\Service\GlobalInstructionService;
-use AutoDudes\AiSuite\Service\GlossarService;
-use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
-use AutoDudes\AiSuite\Service\TranslationService;
-use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -22,20 +14,9 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
-class TranslatePageTool extends AbstractAiTool
+class TranslatePageTool extends AbstractTranslateTool
 {
     protected ?string $requiredScope = 'mcp:translate';
-
-    public function __construct(
-        ToolContext $mcpToolContext,
-        private readonly LibraryService $libraryService,
-        private readonly UuidService $uuidService,
-        private readonly TranslationService $translationService,
-        private readonly GlossarService $glossarService,
-        private readonly GlobalInstructionService $globalInstructionService,
-    ) {
-        parent::__construct($mcpToolContext);
-    }
 
     public function getName(): string
     {
@@ -44,9 +25,10 @@ class TranslatePageTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Translate a whole page — metadata and every content element — into a target language, using DeepL and the site glossary '
+        return 'Translate a whole page — metadata and every content element — using the site glossary. '
+            .'Without a model you translate the handed-back fields yourself, for free; with one the server translates '
             .DescriptionSnippets::COSTS_CREDITS.'. '
-            .'Writes the translation itself; localizeRecord only creates empty translation shells.';
+            .'Creates the translation records either way; localizeRecord only creates empty shells.';
     }
 
     public function getSchema(): array
@@ -59,7 +41,7 @@ class TranslatePageTool extends AbstractAiTool
                     'type' => 'string',
                     'description' => 'ISO target language code.',
                 ]),
-                'model' => ['type' => 'string', 'description' => 'Translation model identifier. Omit to get a list of available models first.'],
+                'model' => ['type' => 'string', 'description' => 'Optional translation model identifier. Omit to translate with the first model this user is permitted to use; the answer names it and lists the alternatives.'],
                 'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
                     'type' => 'string',
                     'description' => 'ISO source language. Default: site default language.',
@@ -79,25 +61,17 @@ class TranslatePageTool extends AbstractAiTool
     {
         $pageId = (int) $params['pageId'];
         $targetLanguage = (string) $params['targetLanguage'];
-        $model = (string) ($params['model'] ?? '');
         $translationScope = (string) ($params['translationScope'] ?? 'all');
-
-        if ('' === $model) {
-            return $this->listAvailableModels(
-                $this->libraryService,
-                GenerationLibraryEnumeration::TRANSLATE,
-                'translate',
-                ['text'],
-                ['text' => 'Translation models'],
-            );
-        }
+        $model = (string) ($params['model'] ?? '');
 
         $page = $this->validatePageForAi($pageId, Permission::CONTENT_EDIT);
         if ($page instanceof CallToolResult) {
             return $page;
         }
 
-        $this->permissionService->validateModelAccess($model);
+        if ('' !== $model) {
+            $this->permissionService->validateModelAccess($model);
+        }
 
         $sourceLanguage = (string) ($params['sourceLanguage'] ?? '');
         if ('' === $sourceLanguage) {
@@ -113,7 +87,6 @@ class TranslatePageTool extends AbstractAiTool
 
         $this->recordAccess->assertLanguageAccess($destLangUid);
 
-        // Collect translatable fields with correct translation UID mapping
         $request = $this->userContext->getServerRequest();
 
         try {
@@ -138,16 +111,33 @@ class TranslatePageTool extends AbstractAiTool
         $elementsCount = $this->countElements($translateFields);
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
-        // Load glossary
         $site = $this->siteFinder->getSiteByPageId($pageId);
         $rootPageId = $site->getRootPageId();
         $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid);
         $glossary = $this->glossarService->findDeeplGlossary($rootPageId, $srcLangUid, $destLangUid);
 
         $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('pages', 'translation', $pageId);
+
+        if ('' === $model) {
+            return $this->structuredResult(
+                sprintf("## Translate page %d → %s yourself\n\n", $pageId, $targetLanguage)
+                    .sprintf("**Scope:** %s | **Elements:** %d\n\n", $translationScope, $elementsCount)
+                    .$this->describeSelfTranslation($targetLanguage, $sourceLanguage, $glossarEntries, $globalInstructions)
+                    .$this->describeHandedOverRecords($translateFields),
+                ['translation' => [
+                    'mode' => 'self',
+                    'pageId' => $pageId,
+                    'targetLanguage' => $targetLanguage,
+                    'sourceLanguage' => $sourceLanguage,
+                    'scope' => $translationScope,
+                    'elements' => $elementsCount,
+                    'records' => $translateFields,
+                ]],
+            );
+        }
+
         $uuid = $this->uuidService->generateUuid();
 
-        // Send request in the same format as TranslationHook
         $result = $this->sendAiRequest('translate', [
             'translate_fields' => $translateFieldsJson,
             'translate_fields_count' => $elementsCount,
@@ -161,7 +151,6 @@ class TranslatePageTool extends AbstractAiTool
             'global_instructions' => $globalInstructions,
         ], ['translate' => $model], strtoupper($targetLanguage));
 
-        // Apply translation results via DataHandler
         $translationResults = $result['translationResults'] ?? [];
         if (\is_string($translationResults)) {
             $translationResults = json_decode($translationResults, true) ?? [];
@@ -217,8 +206,39 @@ class TranslatePageTool extends AbstractAiTool
         }
 
         $text .= "**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
+        $text .= $this->describeUntranslated($result);
 
-        return $this->appendCreditInfo($this->textResult($text), $result);
+        $untranslated = \is_array($result['untranslated'] ?? null) ? array_map('strval', $result['untranslated']) : [];
+
+        return $this->appendCreditInfo(
+            $this->structuredResult($text, ['translation' => [
+                'pageId' => $pageId,
+                'targetLanguage' => $targetLanguage,
+                'scope' => $translationScope,
+                'elements' => $elementsCount,
+                'model' => $model,
+                'untranslated' => array_values($untranslated),
+            ]]),
+            $result,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $translateFields
+     */
+    private function describeHandedOverRecords(array $translateFields): string
+    {
+        $text = "**Write the translated values to these records:**\n";
+        foreach ($translateFields as $table => $records) {
+            if (!\is_array($records)) {
+                continue;
+            }
+            foreach (array_keys($records) as $uid) {
+                $text .= sprintf("- `%s:%s`\n", $table, $uid);
+            }
+        }
+
+        return $text."\nThe field values themselves are in this answer's structured content, under `translation.records`.\n";
     }
 
     /**

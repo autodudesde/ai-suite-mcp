@@ -15,22 +15,8 @@ use Mcp\Server\Server;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
 
-/**
- * Registers MCP Resources (passive data for clients to read).
- *
- * Resources:
- * - aisuite://guidelines — Operating guidelines (also sent in the `initialize` instructions)
- * - aisuite://instructions/page/{pid} — Global Instructions
- * - aisuite://config/site — Site languages and domains
- * - aisuite://credits/status — Credit balance + provider info
- * - aisuite://dashboard/usage — Dashboard usage data
- */
 class McpResourceHandler
 {
-    /**
-     * Resources are passive reads gated by the same base read scope as read tools (plus its mapped
-     * be_group permission, which is empty for mcp:read → scope alone suffices).
-     */
     private const REQUIRED_SCOPE = 'mcp:read';
 
     public function __construct(
@@ -66,8 +52,6 @@ class McpResourceHandler
 
         $resources = [];
 
-        // Operating guidelines. Passive re-read for a client that wants them again; the same text
-        // is already delivered in the `initialize` instructions, so no tool call is needed for it.
         $resources[] = [
             'uri' => 'aisuite://guidelines',
             'name' => 'AI Suite Operating Guidelines',
@@ -75,7 +59,6 @@ class McpResourceHandler
             'mimeType' => 'text/markdown',
         ];
 
-        // Global Instructions per page
         foreach ($this->globalInstructionsRepository->findDistinctPidScopes() as $instr) {
             $resources[] = [
                 'uri' => 'aisuite://instructions/page/'.$instr['pid'],
@@ -85,7 +68,6 @@ class McpResourceHandler
             ];
         }
 
-        // Site configuration
         $resources[] = [
             'uri' => 'aisuite://config/site',
             'name' => 'Site Configuration',
@@ -93,7 +75,6 @@ class McpResourceHandler
             'mimeType' => 'application/json',
         ];
 
-        // Credit status
         $resources[] = [
             'uri' => 'aisuite://credits/status',
             'name' => 'AI Suite Credit Status',
@@ -101,7 +82,6 @@ class McpResourceHandler
             'mimeType' => 'application/json',
         ];
 
-        // Dashboard usage
         $resources[] = [
             'uri' => 'aisuite://dashboard/usage',
             'name' => 'AI Suite Usage Dashboard',
@@ -143,7 +123,6 @@ class McpResourceHandler
 
         $uri = (string) (RequestParamsNormalizer::toArray($params)['uri'] ?? '');
 
-        // Operating guidelines
         if ('aisuite://guidelines' === $uri) {
             return ['contents' => [[
                 'uri' => $uri,
@@ -152,7 +131,6 @@ class McpResourceHandler
             ]]];
         }
 
-        // Global Instructions
         if (str_starts_with($uri, 'aisuite://instructions/page/')) {
             $pid = (int) substr($uri, strlen('aisuite://instructions/page/'));
 
@@ -163,7 +141,6 @@ class McpResourceHandler
             ]]];
         }
 
-        // Site configuration
         if ('aisuite://config/site' === $uri) {
             return ['contents' => [[
                 'uri' => $uri,
@@ -172,7 +149,6 @@ class McpResourceHandler
             ]]];
         }
 
-        // Credit status
         if ('aisuite://credits/status' === $uri) {
             return ['contents' => [[
                 'uri' => $uri,
@@ -181,7 +157,6 @@ class McpResourceHandler
             ]]];
         }
 
-        // Dashboard usage
         if ('aisuite://dashboard/usage' === $uri) {
             return ['contents' => [[
                 'uri' => $uri,

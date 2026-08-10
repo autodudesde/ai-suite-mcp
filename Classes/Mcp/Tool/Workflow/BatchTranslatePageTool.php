@@ -21,8 +21,6 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslatePageTool extends AbstractAiTool
 {
-    // Gating scope = the mass-action scope the gate actually checks (TOOL_SCOPE_MAP).
-    // The AI feature permission is verified on top, in validatePermissions().
     protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
@@ -136,20 +134,13 @@ class BatchTranslatePageTool extends AbstractAiTool
         $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $pageIds[0] ?? 1);
         $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageIds[0] ?? 1);
 
-        // resolveLanguageUid() answers 0 both for "the default language" and for "could not resolve
-        // this code" (unknown code, or the site lookup threw). Without this check an unresolvable
-        // target silently becomes the default language, and the batch spends credits translating
-        // every page into the language it is already in. The targetLanguage enum narrows this but
-        // does not close it: it is a union over all sites, so a code that is valid for another site
-        // still resolves to 0 here, and no enum is offered at all when the languages are unknown.
+        // resolveLanguageUid() answers 0 for both "default language" and "could not resolve".
         if (0 === $targetLanguageUid) {
             return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
         }
 
-        // assertLanguageAccess once (target language is tool-global, fail-fast)
         $this->recordAccess->assertLanguageAccess($targetLanguageUid);
 
-        // Filter valid pages (exists + not excluded + CONTENT_EDIT permission, skip-and-report).
         $pages = [];
         $skipped = [];
 

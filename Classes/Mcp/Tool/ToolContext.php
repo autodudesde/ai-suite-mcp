@@ -13,6 +13,7 @@ use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\NavigationTargetCollector;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OutputFormatterService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ParameterValidatorService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
@@ -49,5 +50,6 @@ class ToolContext implements SingletonInterface
         public readonly OutputFormatterService $outputFormatter,
         public readonly ParameterValidatorService $parameterValidator,
         public readonly SiteLanguageService $siteLanguages,
+        public readonly NavigationTargetCollector $navigationTargets,
     ) {}
 }

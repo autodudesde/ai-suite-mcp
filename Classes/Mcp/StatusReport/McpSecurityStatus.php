@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\StatusReport;
 
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Type\ContextualFeedbackSeverity;
@@ -14,6 +15,7 @@ class McpSecurityStatus implements StatusProviderInterface
 {
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly McpSessionStoreService $sessionStore,
     ) {}
 
     /**
@@ -30,7 +32,6 @@ class McpSecurityStatus implements StatusProviderInterface
         $statuses = [];
         $isProduction = Environment::getContext()->isProduction();
 
-        // HTTP allowed in production
         if ((bool) ($extConf['mcpAllowHttp'] ?? false)) {
             $statuses[] = new Status(
                 'MCP HTTP Security',
@@ -42,7 +43,6 @@ class McpSecurityStatus implements StatusProviderInterface
             );
         }
 
-        // Empty CORS allowlist in production
         if ($isProduction && empty(trim((string) ($extConf['mcpAllowedOrigins'] ?? '')))) {
             $statuses[] = new Status(
                 'MCP CORS Configuration',
@@ -53,7 +53,6 @@ class McpSecurityStatus implements StatusProviderInterface
             );
         }
 
-        // Empty redirect URI allowlist in production
         if ($isProduction && empty(trim((string) ($extConf['mcpAllowedRedirectUris'] ?? '')))) {
             $statuses[] = new Status(
                 'MCP Redirect URI Security',
@@ -73,11 +72,37 @@ class McpSecurityStatus implements StatusProviderInterface
             );
         }
 
+        $statuses[] = $this->sessionStoreStatus();
+
         return $statuses;
     }
 
     public function getLabel(): string
     {
         return 'AI Suite MCP Security';
+    }
+
+    private function sessionStoreStatus(): Status
+    {
+        $count = $this->sessionStore->countFiles();
+        $exceeded = $count > McpSessionStoreService::WARN_THRESHOLD;
+
+        return new Status(
+            'MCP Session Store',
+            sprintf('%d stored session file(s)', $count),
+            $exceeded
+                ? sprintf(
+                    '%d session files are stored in %s. Stateless MCP clients leave one behind per request. '
+                    .'Schedule ai-suite-mcp:cleanup — it removes session files older than %d seconds.',
+                    $count,
+                    $this->sessionStore->getDirectory(),
+                    $this->sessionStore->getRetentionSeconds(),
+                )
+                : sprintf(
+                    'Session files in %s are within the expected range. ai-suite-mcp:cleanup keeps them bounded.',
+                    $this->sessionStore->getDirectory(),
+                ),
+            $exceeded ? ContextualFeedbackSeverity::WARNING : ContextualFeedbackSeverity::OK,
+        );
     }
 }

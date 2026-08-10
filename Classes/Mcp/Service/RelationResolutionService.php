@@ -8,30 +8,11 @@ use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 
-/**
- * Renders relational field values as human-readable "Title (uid)" instead of bare
- * UIDs, so the LLM does not have to guess what "12,15" means and the read stays
- * round-trippable (the UID is still present for a later write).
- *
- * Used in the raw / FormDataCompiler-fallback read paths of ReadRecordTool — the
- * normal path already resolves relations via FormDataCompiler's databaseRow.
- *
- * For clean single-table relations (select/inline with foreign_table, group with a
- * single allowed table) it builds explicit per-UID titles; for MM/category/multi-
- * allowed cases it falls back to the native, comma-separated
- * BackendUtility::getProcessedValue().
- */
 class RelationResolutionService
 {
-    /**
-     * Cap on explicit per-UID title lookups per field in list mode, to bound the
-     * read fan-out. Single-record reads are unbudgeted.
-     */
     private const MAX_LIST_LOOKUPS = 20;
 
     /**
-     * Per-request cache: "{foreignTable}:{uid}" => rendered title.
-     *
      * @var array<string, string>
      */
     private array $titleCache = [];
@@ -43,10 +24,7 @@ class RelationResolutionService
     ) {}
 
     /**
-     * @param array<string, mixed> $fullRow  the record the value belongs to (for getProcessedValue context)
-     * @param bool                 $listMode whether this is a multi-record list read (enables the lookup budget)
-     *
-     * @return ?string the resolved value, or null when $field is not a relation (caller formats as before)
+     * @param array<string, mixed> $fullRow
      */
     public function resolveFieldValue(string $table, string $field, mixed $rawValue, array $fullRow, bool $listMode): ?string
     {
@@ -71,8 +49,7 @@ class RelationResolutionService
     }
 
     /**
-     * Thin seam over the core helper — its signature differs across TYPO3 majors,
-     * so keep the version-sensitive call in one overridable place (downmerge).
+     * Seam: getProcessedValue()'s signature differs across TYPO3 majors.
      *
      * @param array<string, mixed> $row
      */
@@ -96,8 +73,6 @@ class RelationResolutionService
     {
         $type = (string) ($config['type'] ?? '');
 
-        // Only relations that store concrete UIDs in the parent column itself.
-        // foreign_field-based inline stores a child *count*, not UIDs — skip it.
         if ('select' === $type && !empty($config['foreign_table']) && empty($config['MM'])) {
             return (string) $config['foreign_table'];
         }

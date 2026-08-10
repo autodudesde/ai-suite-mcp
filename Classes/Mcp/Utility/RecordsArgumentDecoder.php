@@ -6,34 +6,14 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Utility;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 
-/**
- * Accepts the `records` argument of writeRecords/previewRecords as a JSON string as well as an array.
- *
- * The schema asks for an array, but a large nested payload is exactly what a tool-calling layer tends
- * to hand back JSON-encoded. Measured with Qwen3.5 — otherwise the strongest GDPR model here — the
- * whole 13-element records list arrived as a string across six attempts, so it never parsed and
- * nothing was written. This is the same leniency we already apply to FlexForm values one level down.
- *
- * The string form stays accepted as a safety net, but the schema no longer advertises it: encoding a
- * batch as a JSON string costs a lot of extra tokens for the escaping, and a run on 16.07.2026 lost
- * every write of a PDF import (Qwen3.5 and Haiku 4.5 alike) to payloads that were cut off mid-string.
- * Truncation cannot be repaired here — a half-written record is gone — so the decoder's job is to
- * recognise it and say so, both to the model and in the log.
- */
 final class RecordsArgumentDecoder
 {
-    /**
-     * Bytes of the payload tail kept for diagnostics. The head is invariably well-formed; the end is
-     * what tells a truncated payload apart from a malformed one.
-     */
     private const DIAGNOSTIC_TAIL_LENGTH = 120;
 
     /**
-     * @param string $key name of the argument, used in the message the model gets back
-     *
      * @return array<int|string, mixed>
      *
-     * @throws InvalidParameterException a string that is not valid JSON, so the model gets a clear message
+     * @throws InvalidParameterException
      */
     public static function decode(mixed $records, string $key = 'records'): array
     {
@@ -56,8 +36,6 @@ final class RecordsArgumentDecoder
             throw self::malformedJson($key, $trimmed, $e);
         }
 
-        // A tool-calling layer that encodes its arguments twice hands back the JSON array as a string
-        // again. Re-decoding is safe: it only happens when the outer decode yielded a string.
         if (is_string($decoded)) {
             $inner = json_decode(trim($decoded), true);
 
@@ -67,10 +45,6 @@ final class RecordsArgumentDecoder
         return is_array($decoded) ? $decoded : [];
     }
 
-    /**
-     * Some models wrap the payload in a Markdown fence despite the schema. Cheap to undo, and it
-     * cannot corrupt an otherwise valid payload: JSON never legally starts with a backtick.
-     */
     private static function stripCodeFence(string $value): string
     {
         if (!str_starts_with($value, '```')) {
@@ -82,12 +56,6 @@ final class RecordsArgumentDecoder
         return trim((string) preg_replace('/\s*```$/', '', $value));
     }
 
-    /**
-     * Deliberately no trailing-comma or quote "repair": those rewrites are only reachable once strict
-     * parsing already failed, and on this payload — records carrying HTML bodytext — a regex that
-     * edits punctuation outside string literals cannot tell content from syntax. Silently writing
-     * mangled content is worse than a rejected batch the model can retry.
-     */
     private static function malformedJson(string $key, string $trimmed, \JsonException $e): InvalidParameterException
     {
         $length = strlen($trimmed);
@@ -116,10 +84,6 @@ final class RecordsArgumentDecoder
         ]);
     }
 
-    /**
-     * A truncated payload is an unclosed one: the brackets never balance. Counting them outside string
-     * literals is enough to separate "cut off" from "wrong syntax" without parsing.
-     */
     private static function looksTruncated(string $json): bool
     {
         $depth = 0;

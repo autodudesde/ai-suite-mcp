@@ -35,9 +35,6 @@ class SavePageTreeTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        // No "requires user confirmation before calling": the host gates the call. Told to ask,
-        // small models describe the tree in prose and never call the tool. Measured — see the
-        // OperatingGuidelines docblock for the same mistake in three other places.
         return 'Persist a page tree structure (writes). Each page needs at least a title; children create '
             .'nested subpages recursively. Pages land in the active workspace, like writeRecords.';
     }
@@ -105,8 +102,6 @@ class SavePageTreeTool extends AbstractDataTool
         try {
             $created = $this->resolveNewIds($planned, $parentPageId, $dataHandler->substNEWwithIDs);
         } catch (\RuntimeException $e) {
-            // DataHandler reported no error yet dropped a page — never report that as success,
-            // and never hand back uid 0, which the client would happily use as a pid.
             return $this->errorResult($e->getMessage(), McpErrorType::DataHandlerError);
         }
 
@@ -117,12 +112,8 @@ class SavePageTreeTool extends AbstractDataTool
     }
 
     /**
-     * Flatten the request into the DataHandler datamap, keeping the tree shape (and each node's
-     * NEW-id) so the created UIDs can be mapped back onto it after process_datamap().
-     *
      * @param array<int, array<string, mixed>> $pages
-     * @param int|string                       $parentRef parent page UID (int) or NEW-id reference (string) for nested children
-     * @param array<string, mixed>             $datamap   accumulator passed by reference
+     * @param array<string, mixed>             $datamap
      *
      * @return list<array{newId: string, title: string, children: list<mixed>}>
      */
@@ -191,7 +182,7 @@ class SavePageTreeTool extends AbstractDataTool
      *
      * @return list<array{uid: int, title: string, pid: int, children: list<mixed>}>
      *
-     * @throws \RuntimeException if DataHandler did not create a planned page
+     * @throws \RuntimeException
      */
     private function resolveNewIds(array $planned, int $parentUid, array $substNEWwithIDs): array
     {
@@ -217,11 +208,6 @@ class SavePageTreeTool extends AbstractDataTool
     }
 
     /**
-     * The result used to print each page as "(UID: 42, pid: 1)" and stop there. Measured with
-     * gpt-5.4-nano: it then wrote the page's content with pid 1, the parent, because two plausible
-     * ids sat side by side and nothing said which one a follow-up write needs. So name the uids once,
-     * as the thing to do next, and keep the parent out of the per-page line.
-     *
      * @param list<array{uid: int, title: string, pid: int, children: list<mixed>}> $created
      */
     private function renderResult(array $created, int $count, int $parentPageId): string

@@ -7,7 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Dto;
 final class RecordWriteResult
 {
     /**
-     * @param list<string> $strippedFields non-RTE fields whose HTML markup was removed before writing
+     * @param list<string> $strippedFields
      */
     public function __construct(
         public readonly int $uid,

@@ -64,7 +64,6 @@ class ContentFetchService
 
     public function fetchPageContent(int $pageId, int $languageUid = 0): string
     {
-        // Skip HTTP preview when in a workspace
         if (0 === $this->workspaceContextService->getWorkspaceId()) {
             try {
                 $html = $this->fetchViaPreviewUrl($pageId, $languageUid);
@@ -153,10 +152,8 @@ class ContentFetchService
 
     private function extractTextFromHtml(string $html): string
     {
-        // Remove script, style, nav, header, footer elements
         $html = preg_replace('/<(script|style|nav|header|footer)\b[^>]*>.*?<\/\1>/si', '', $html) ?? $html;
 
-        // Try to extract only the main content area
         if (preg_match('/<main\b[^>]*>(.*?)<\/main>/si', $html, $matches)) {
             $html = $matches[1];
         } elseif (preg_match('/<article\b[^>]*>(.*?)<\/article>/si', $html, $matches)) {
@@ -165,10 +162,8 @@ class ContentFetchService
             $html = $matches[1];
         }
 
-        // Strip remaining HTML tags
         $text = strip_tags($html);
 
-        // Normalize whitespace
         $text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
         $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
 
@@ -238,7 +233,6 @@ class ContentFetchService
             }
 
             $texts = [];
-            // Find all <value> nodes that contain text
             foreach ($xml->xpath('//value') ?? [] as $value) {
                 $text = trim(strip_tags((string) $value));
                 if (mb_strlen($text) > 10) {

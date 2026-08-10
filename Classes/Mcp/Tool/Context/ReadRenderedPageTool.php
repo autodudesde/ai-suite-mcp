@@ -11,14 +11,6 @@ use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Exposes the rendered frontend text of a page.
- *
- * `ContentFetchService` used to be reachable only from inside the metadata generation tools, which
- * meant the one input no other tool can reconstruct — the page as a visitor sees it, including
- * plugin output and TypoScript-composed content — was locked behind a credit-costing AI call.
- * `readPageContent` reads `tt_content` rows and therefore misses all of it.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadRenderedPageTool extends AbstractTool
 {

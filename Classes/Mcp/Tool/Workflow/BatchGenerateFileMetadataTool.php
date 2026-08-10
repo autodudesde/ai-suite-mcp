@@ -22,8 +22,6 @@ use TYPO3\CMS\Core\Resource\File;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateFileMetadataTool extends AbstractAiTool
 {
-    // Gating scope = the mass-action scope the gate actually checks (TOOL_SCOPE_MAP).
-    // The AI feature permission is verified on top, in validatePermissions().
     protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
@@ -123,7 +121,6 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
 
         $this->permissionService->validateModelAccess($model);
 
-        // Resolve sys_file UIDs → sys_file_metadata UIDs
         $workflowDataFiles = [];
         $skipped = [];
 
@@ -131,7 +128,6 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
             $fileUid = (int) $fileUid;
 
             try {
-                // Filemount-aware permission check (skip-and-report).
                 $file = $this->recordAccess->assertFileReadAccess($fileUid);
             } catch (InsufficientPermissionException $e) {
                 $this->logger->warning('BatchGenerateFileMetadata: skipping file — insufficient permission', [

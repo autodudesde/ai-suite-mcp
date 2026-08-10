@@ -22,8 +22,6 @@ use TYPO3\CMS\Core\Resource\File;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslateFileMetadataTool extends AbstractAiTool
 {
-    // Gating scope = the mass-action scope the gate actually checks (TOOL_SCOPE_MAP).
-    // The AI feature permission is verified on top, in validatePermissions().
     protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
@@ -138,9 +136,6 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
         $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, 1);
         $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, 1);
 
-        // See BatchTranslatePageTool: 0 means "default language" *and* "could not resolve", so an
-        // unresolvable target would silently translate into the source language and spend credits
-        // doing it. Inherited by batchTranslateFolderMetadata.
         if (0 === $targetLanguageUid) {
             return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
         }

@@ -16,10 +16,6 @@ use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- *   vendor/bin/typo3 ai-suite-mcp:create-token --user=1
- *   vendor/bin/typo3 ai-suite-mcp:create-token --user=admin --scopes="mcp:read mcp:write mcp:generate".
- */
 class McpCreateTokenCommand extends Command
 {
     public function __construct(

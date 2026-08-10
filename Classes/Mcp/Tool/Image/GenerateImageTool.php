@@ -26,10 +26,7 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class GenerateImageTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:image';
-    // Writes the generated file straight to FAL (no versioningWS) and spends credits — irreversible
-    // in every write mode. Flagged destructive so the client's approval dialog and ChEddi's card gate
-    // it like a deletion instead of a reversible workspace write. openWorldHint is inherited from
-    // AbstractAiTool.
+    // FAL writes bypass versioningWS, so no write mode undoes this.
     protected bool $destructiveHint = true;
 
     public function __construct(
@@ -50,8 +47,6 @@ class GenerateImageTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        // No "ask the user for confirmation before calling": the host gates the call. Told to ask,
-        // small models answer in prose instead of calling — measured on deleteRecords.
         return 'Create a brand-new image from a text description (costs credits). '
             .'Use it whenever the user asks to generate, create, draw or paint an image, picture, photo or illustration. '
             .'Writes straight to FAL and returns the new file UID with a preview; to import an existing image use uploadMedia.';
@@ -112,8 +107,6 @@ class GenerateImageTool extends AbstractAiTool
             $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('files', 'imageWizard', null, $targetFolder);
         }
 
-        // For Flux/GPTImage these URLs point to the final image; Midjourney would
-        // additionally require a progress=finish step (not yet supported here).
         $result = $this->sendAiRequest('createImage', [
             'uuid' => $uuid,
             'progress' => 'prepare',

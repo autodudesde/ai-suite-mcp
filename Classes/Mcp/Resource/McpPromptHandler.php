@@ -12,13 +12,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
 use Psr\Log\LoggerInterface;
 
-/**
- * Registers MCP Prompts — interactive templates with arguments.
- *
- * Custom templates (user-created): full prompt text included — `custom-{uid}`.
- * Server templates (shipped): name + description only (IP protection) — `server-{uid}`.
- * content-guidelines: loads Global Instructions for a page.
- */
 class McpPromptHandler
 {
     public function __construct(

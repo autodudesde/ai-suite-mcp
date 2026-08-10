@@ -11,10 +11,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Http\Response;
 
-/**
- * OAuth 2.1 Token Revocation Endpoint (S18).
- * POST /aisuite-mcp/oauth/revoke.
- */
 class RevocationEndpoint
 {
     public function __construct(

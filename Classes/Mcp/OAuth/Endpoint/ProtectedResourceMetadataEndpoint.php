@@ -10,10 +10,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Protected Resource Metadata (RFC 9728).
- * GET /.well-known/oauth-protected-resource.
- */
 class ProtectedResourceMetadataEndpoint
 {
     public function __invoke(ServerRequestInterface $request): ResponseInterface

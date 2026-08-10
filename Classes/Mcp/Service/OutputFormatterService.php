@@ -6,9 +6,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 class OutputFormatterService
 {
-    /**
-     * @param ?int $maxLength null = no truncation
-     */
     public function displayValue(mixed $value, ?int $maxLength): string
     {
         if (null === $value || '' === (string) $value) {

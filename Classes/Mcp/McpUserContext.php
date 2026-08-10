@@ -25,10 +25,12 @@ class McpUserContext
 
     private string $sessionKey = '';
 
+    private bool $inlineBackendLinks = true;
+
     /**
      * @param list<string> $scopes
      *
-     * @throws \LogicException If called more than once
+     * @throws \LogicException
      */
     public function initialize(int $beUserUid, array $scopes, string $clientId, string $tokenId, string $issuedVersion = ''): void
     {
@@ -92,6 +94,16 @@ class McpUserContext
     public function getServerRequest(): ?ServerRequestInterface
     {
         return $this->serverRequest;
+    }
+
+    public function setInlineBackendLinks(bool $enabled): void
+    {
+        $this->inlineBackendLinks = $enabled;
+    }
+
+    public function wantsInlineBackendLinks(): bool
+    {
+        return $this->inlineBackendLinks;
     }
 
     public function setSessionKey(string $sessionKey): void

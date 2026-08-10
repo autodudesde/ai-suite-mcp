@@ -6,14 +6,12 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 
-// Reports every malformed entry together, so a large payload is corrected in one retry.
 class BatchEntryValidator
 {
     /**
      * @param array<array-key, mixed> $entries
-     * @param list<string>            $required        keys that must be present and non-empty on every entry
-     * @param list<string>            $anyOf           at least one of these must be present
-     * @param string                  $nestedContainer entry key whose contents are payload, checked for misplaced keys
+     * @param list<string>            $required
+     * @param list<string>            $anyOf
      *
      * @throws InvalidParameterException
      */

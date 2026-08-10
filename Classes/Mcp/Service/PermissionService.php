@@ -9,27 +9,12 @@ use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 
-/**
- * Scope → TYPO3 Permission mapping:
- *   mcp:read       → (base permission, always granted if scope present)
- *   mcp:write      → (no TYPO3 permission required; preview+confirm enforced per tool)
- *   mcp:generate   → enable_metadata_generation, enable_content_element_generation,
- *                     enable_pages_generation, enable_news_generation
- *   mcp:translate  → enable_translation, enable_translation_whole_page
- *   mcp:image      → enable_image_generation
- *   mcp:workflow   → enable_massaction_generation, enable_background_task_handling
- *
- * On top of the scope layer, a single tool can require its own flag (TOOL_PERMISSION_MAP):
- *
- *   readRenderedPage → enable_mcp_rendered_page_read
- */
 class PermissionService
 {
     /**
      * @var array<string, string>
      */
     private const TOOL_SCOPE_MAP = [
-        // Context tools
         'readServerInfo' => 'mcp:read',
         'readPageTree' => 'mcp:read',
         'readRenderedPage' => 'mcp:read',
@@ -40,7 +25,6 @@ class PermissionService
         'listFiles' => 'mcp:read',
         'listStaleContent' => 'mcp:read',
 
-        // Record tools
         'listTables' => 'mcp:read',
         'readRecordSchema' => 'mcp:read',
         'listPageTypes' => 'mcp:read',
@@ -61,23 +45,18 @@ class PermissionService
         'localizeRecord' => 'mcp:write',
         'savePageTree' => 'mcp:write',
 
-        // Generate tools
         'generateFileMetadata' => 'mcp:generate',
 
-        // Translation tools
         'translatePage' => 'mcp:translate',
         'translateRecord' => 'mcp:translate',
         'translateFileMetadata' => 'mcp:translate',
 
-        // Image tools
         'generateImage' => 'mcp:image',
 
-        // Media tools (upload existing media to FAL)
         'uploadMedia' => 'mcp:media',
         'copyMediaReference' => 'mcp:write',
         'replaceMediaReference' => 'mcp:write',
 
-        // Batch tools (page/folder-wide async operations)
         'batchGenerateMetadata' => 'mcp:workflow',
         'batchGenerateFileMetadata' => 'mcp:workflow',
         'batchGenerateFolderMetadata' => 'mcp:workflow',
@@ -115,14 +94,6 @@ class PermissionService
     ];
 
     /**
-     * Backend-group flags a single tool needs on top of its scope.
-     *
-     * An opt-in allowlist, not a completeness map: a tool that is absent needs no extra flag.
-     * `readRenderedPage` sits in the flag-free `mcp:read` scope but is far more powerful than the
-     * other read tools, because it renders through a backend preview session of the MCP user and so
-     * also returns hidden pages, unpublished pages and workspace drafts. Gating the whole `mcp:read`
-     * scope instead would revoke every read tool and change which scopes OAuth grants.
-     *
      * @var array<string, list<string>>
      */
     private const TOOL_PERMISSION_MAP = [
@@ -132,8 +103,6 @@ class PermissionService
     ];
 
     /**
-     * The tools whose only purpose is moving content between languages.
-     *
      * @var list<string>
      */
     private const TRANSLATION_TOOLS = [
@@ -153,11 +122,10 @@ class PermissionService
     ) {}
 
     /**
-     * @param string       $toolName    Tool name to check
-     * @param list<string> $tokenScopes Scopes from the OAuth token
+     * @param list<string> $tokenScopes
      *
-     * @throws InsufficientScopeException      If the token lacks the required scope
-     * @throws InsufficientPermissionException If the user lacks the TYPO3 permission
+     * @throws InsufficientScopeException
+     * @throws InsufficientPermissionException
      */
     public function validateToolAccess(string $toolName, array $tokenScopes): void
     {
@@ -178,10 +146,7 @@ class PermissionService
     }
 
     /**
-     * Whether the user may both see and call the tool. Single source of truth for the tools/list
-     * filter and for ChEddi's catalogue, so a tool can never be listed but rejected on call.
-     *
-     * @param list<string> $tokenScopes Scopes from the OAuth token
+     * @param list<string> $tokenScopes
      */
     public function isToolAvailable(string $toolName, array $tokenScopes): bool
     {
@@ -207,14 +172,7 @@ class PermissionService
     }
 
     /**
-     * Fail-closed: a tool that is missing from the map is a programming error, not a read-only tool.
-     *
-     * The previous `?? 'mcp:read'` default silently granted an unmapped tool the weakest scope —
-     * which is how `getTaskResults` (a DataHandler write behind an `apply` flag) ended up callable
-     * with a read-only token. `ToolScopeMapCompletenessTest` keeps the map exhaustive so this can
-     * never throw at runtime.
-     *
-     * @throws \LogicException If the tool has no explicit scope entry
+     * @throws \LogicException
      */
     public function getRequiredScope(string $toolName): string
     {
@@ -286,31 +244,13 @@ class PermissionService
     }
 
     /**
-     * Check the backend-group permissions of a scope the tool needs *in addition* to its own.
-     *
-     * A tool has exactly one gating scope, but the batch tools genuinely do two things: they are
-     * mass actions (`mcp:workflow`) *and* they spend AI credits on generation or translation.
-     * Gating them on `mcp:workflow` alone never checked `enable_translation` /
-     * `enable_*_generation`, so a workflow-scoped token could run a batch translation without the
-     * translation permission.
-     *
-     * @throws InsufficientPermissionException If the user lacks every permission of that scope
+     * @throws InsufficientPermissionException
      */
     public function validateFeatureScope(string $scope): void
     {
         $this->validatePermissionForScope($scope);
     }
 
-    /**
-     * Tools that cannot do anything useful here, regardless of permissions.
-     *
-     * On a single-language installation the seven translation tools have no target to translate into:
-     * every call ends at "Language X is not configured for this site". Listing them anyway costs
-     * seven tool schemas of context on every single turn and invites the model to try.
-     *
-     * Not folded into validateToolAccess(): this is not a permission decision, and the per-call
-     * failure is already correct and well-worded. Hiding is the whole benefit.
-     */
     private function isPointlessOnThisInstallation(string $toolName): bool
     {
         if (!in_array($toolName, self::TRANSLATION_TOOLS, true)) {
@@ -332,7 +272,7 @@ class PermissionService
     }
 
     /**
-     * @param list<string> $requiredPermissions Any one of them suffices; an empty list is no gate
+     * @param list<string> $requiredPermissions
      *
      * @throws InsufficientPermissionException
      */

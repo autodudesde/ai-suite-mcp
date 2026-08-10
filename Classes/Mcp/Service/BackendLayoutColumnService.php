@@ -7,12 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\View\BackendLayoutView;
 
-/**
- * Resolves the top-level content columns (colPos => label) defined by a page's
- * backend layout. Shared by the discovery tools (
- * listContentTypes) so the LLM can learn valid placement slots without an extra
- * round-trip, and by readPageContent for per-colPos labelling.
- */
 class BackendLayoutColumnService
 {
     public function __construct(
@@ -22,7 +16,7 @@ class BackendLayoutColumnService
     ) {}
 
     /**
-     * @return array<int, string> colPos => resolved label, sorted by colPos; never empty (falls back to {0: 'Main Content'})
+     * @return array<int, string>
      */
     public function getPageColumns(int $pageId): array
     {

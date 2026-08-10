@@ -24,7 +24,7 @@ class RateLimiterService
     ) {}
 
     /**
-     * @throws \RuntimeException If rate limit is exceeded
+     * @throws \RuntimeException
      */
     public function checkAndIncrement(string $identifier): void
     {

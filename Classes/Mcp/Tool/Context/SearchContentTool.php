@@ -57,7 +57,9 @@ class SearchContentTool extends AbstractTool
                 'rootPageId' => ['type' => 'integer', 'description' => 'Subtree root page UID: restrict the search to this page and everything below it. Default: all pages within your webmounts.'],
                 'field' => ['type' => 'string', 'description' => 'Restrict the content search to a single column name, given as a tt_content field (e.g. bodytext, header, subheader). Child tables are then searched in that column too, and skipped when they do not have it. Default: all text-bearing fields of each table.'],
                 'matchHtml' => ['type' => 'boolean', 'default' => false, 'description' => 'Keep HTML markup in the bodytext preview (so <a>, class names etc. are visible/searchable). Default: false (stripped).'],
-                'includeFullContent' => ['type' => 'boolean', 'default' => false, 'description' => 'Return full content text instead of preview snippets. Default: false.'],
+                'includeFullContent' => ['type' => 'boolean', 'default' => false, 'description' => 'Return full content text instead of preview snippets. Default: false. '
+                    .'Expensive: every hit\'s full text enters the conversation and is paid for in this and every later turn. '
+                    .'The snippets are there to decide which hit is the right one — read that one record fully instead.'],
                 'limit' => ['type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100, 'description' => 'Maximum number of results. Default: 20.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N results for pagination. Default: 0.'],
             ],
@@ -156,12 +158,25 @@ class SearchContentTool extends AbstractTool
             'searchedTables' => $searchedTables,
             'pagination' => ['total' => $total, 'limit' => $limit, 'offset' => $offset, 'hasMore' => ($offset + $limit) < $total],
         ];
+        $notes = [];
+        if ([] === $results) {
+            $notes[] = sprintf(
+                'Nothing matched in the tables that were searched: %s. A record type outside that list was '
+                .'not looked at, so this is not evidence that it does not exist — read the table directly '
+                .'with readRecords and a filter, or have an administrator add it to the ai_suite_mcp '
+                .'setting "Additional Searchable Tables".',
+                implode(', ', $searchedTables),
+            );
+        }
         if ([] === $this->searchableTables->getAdditionalTables()) {
-            $payload['note'] = 'Only the tables in `searchedTables` were searched. Child-record tables (accordion items, '
+            $notes[] = 'Only pages and content elements are searchable here. Child-record tables (accordion items, '
                 .'card group cards) are detected from the TCA automatically, but none were found here — either this '
                 .'installation has none, or they are listed in the ai_suite_mcp settings "Exclude Auto-Detected Tables '
                 .'from Search" / "MCP Excluded Tables". Standalone record tables such as tx_news_domain_model_news are '
                 .'not child tables and have to be added under "Additional Searchable Tables".';
+        }
+        if ([] !== $notes) {
+            $payload['note'] = implode(' ', $notes);
         }
 
         return new CallToolResult([new TextContent((string) json_encode(
@@ -190,10 +205,11 @@ class SearchContentTool extends AbstractTool
                 continue;
             }
 
+            $uid = (int) $row['uid'];
             $results[] = [
-                'type' => 'page', 'uid' => (int) $row['uid'], 'title' => $row['title'],
+                'type' => 'page', 'uid' => $uid, 'title' => $row['title'],
                 'slug' => $row['slug'], 'matchIn' => 'pages', 'matchedField' => $matchedField,
-            ];
+            ] + $this->languageKeys($uid, $row);
         }
 
         return $results;
@@ -223,6 +239,7 @@ class SearchContentTool extends AbstractTool
                 $allowedPageIds,
                 100,
                 $this->tcaCompatibilityService->isWorkspaceAware($table),
+                $this->languageFieldName($table),
             ),
         );
 
@@ -235,18 +252,52 @@ class SearchContentTool extends AbstractTool
             }
 
             $value = (string) ($row[$matchedField] ?? '');
+            $pageId = (int) ($row['pid'] ?? 0);
             $results[] = [
                 'type' => 'record',
                 'uid' => (int) $row['uid'],
-                'pageId' => (int) ($row['pid'] ?? 0),
+                'pageId' => $pageId,
                 'label' => (string) ($row[$labelField] ?? '') ?: '(no label)',
                 'matchIn' => $table,
                 'matchedField' => $matchedField,
                 'preview' => mb_substr($matchHtml ? $value : strip_tags($value), 0, self::PREVIEW_LENGTH),
-            ];
+            ] + $this->languageKeys($pageId, $row, $this->languageFieldName($table));
         }
 
         return $results;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function languageKeys(int $pageId, array $row, ?string $languageField = 'sys_language_uid'): array
+    {
+        if (null === $languageField || '' === $languageField || !array_key_exists($languageField, $row)) {
+            return [];
+        }
+
+        $languageUid = (int) $row[$languageField];
+        $keys = ['languageUid' => $languageUid];
+
+        $iso = $this->siteLanguages->getIsoCodeForLanguageUid($pageId, $languageUid);
+        if (null !== $iso) {
+            $keys['language'] = $iso;
+        }
+
+        return $keys;
+    }
+
+    private function languageFieldName(string $table): ?string
+    {
+        try {
+            return $this->tcaCompatibilityService->isLanguageAware($table)
+                ? $this->tcaCompatibilityService->getLanguageFieldName($table)
+                : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -288,11 +339,12 @@ class SearchContentTool extends AbstractTool
             }
 
             $body = $matchHtml ? (string) $row['bodytext'] : strip_tags((string) $row['bodytext']);
+            $pageId = (int) $row['pid'];
             $element = [
-                'type' => 'content', 'uid' => (int) $row['uid'], 'pageId' => (int) $row['pid'],
+                'type' => 'content', 'uid' => (int) $row['uid'], 'pageId' => $pageId,
                 'header' => $row['header'], 'CType' => $row['CType'], 'matchIn' => 'tt_content',
                 'matchedField' => $matchedField,
-            ];
+            ] + $this->languageKeys($pageId, $row);
             if ($full) {
                 $element['bodytext'] = $body;
             } else {

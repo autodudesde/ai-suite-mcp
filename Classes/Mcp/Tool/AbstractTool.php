@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuiteMcp\Mcp\Enum\LinkStyle;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
@@ -15,6 +16,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\McpException;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\NavigationTargetCollector;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OutputFormatterService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ParameterValidatorService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
@@ -28,9 +30,6 @@ use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Resource\ResourceFactory;
 use TYPO3\CMS\Core\Site\SiteFinder;
 
-/**
- * Abstract base class for all MCP tools.
- */
 abstract class AbstractTool implements ToolInterface
 {
     protected ?string $requiredScope = null;
@@ -54,6 +53,7 @@ abstract class AbstractTool implements ToolInterface
     protected readonly ParameterValidatorService $parameterValidator;
     protected readonly DataHandlerErrorFormatter $dataHandlerError;
     protected readonly SiteLanguageService $siteLanguages;
+    protected readonly NavigationTargetCollector $navigationTargets;
 
     public function __construct(
         protected readonly ToolContext $mcpToolContext,
@@ -73,6 +73,7 @@ abstract class AbstractTool implements ToolInterface
         $this->parameterValidator = $mcpToolContext->parameterValidator;
         $this->dataHandlerError = $mcpToolContext->dataHandlerError;
         $this->siteLanguages = $mcpToolContext->siteLanguages;
+        $this->navigationTargets = $mcpToolContext->navigationTargets;
     }
 
     final public function execute(array $params): CallToolResult
@@ -83,7 +84,9 @@ abstract class AbstractTool implements ToolInterface
             $this->validatePermissions();
             $this->initialize();
 
-            return $this->noteUnknownParameters($this->doExecute($params), $unknownParameters);
+            return $this->appendBackendLinks(
+                $this->noteUnknownParameters($this->doExecute($params), $unknownParameters),
+            );
         } catch (InvalidParameterException $e) {
             $this->logger->warning('MCP tool received invalid input', [
                 'tool' => $this->getName(),
@@ -131,8 +134,6 @@ abstract class AbstractTool implements ToolInterface
                 'line' => $e->getLine(),
             ]);
 
-            // The reader here is a model, not a person. "Please try again" was taken literally:
-            // it re-sent an identical, still-broken payload instead of correcting it.
             return $this->errorResult(
                 $this->translateOrFallback(
                     'hint.internal_issue',
@@ -166,7 +167,7 @@ abstract class AbstractTool implements ToolInterface
     }
 
     /**
-     * @param array<string, mixed> $params Validated and sanitized parameters
+     * @param array<string, mixed> $params
      */
     abstract protected function doExecute(array $params): CallToolResult;
 
@@ -222,9 +223,8 @@ abstract class AbstractTool implements ToolInterface
     }
 
     /**
-     * @param array<string, mixed> $context    extra fields merged into the error envelope (e.g. table, field, uid)
-     * @param array<string, mixed> $structured extra top-level payload kept alongside the error envelope, for
-     *                                         results that still carry something worth rendering (e.g. a preview)
+     * @param array<string, mixed> $context
+     * @param array<string, mixed> $structured
      */
     protected function errorResult(string $text, McpErrorType $errorType, array $context = [], array $structured = []): CallToolResult
     {
@@ -264,5 +264,53 @@ abstract class AbstractTool implements ToolInterface
             isError: $result->isError,
             structuredContent: $result->structuredContent,
         );
+    }
+
+    private function appendBackendLinks(CallToolResult $result): CallToolResult
+    {
+        // A read reports records it did not touch: a preview diff, a tree listing.
+        if ($this->readOnlyHint || $result->isError || null === $result->structuredContent) {
+            return $result;
+        }
+
+        $groups = $this->navigationTargets->collect($result->structuredContent, LinkStyle::Shareable);
+        if ([] === $groups) {
+            return $result;
+        }
+
+        $structured = $result->structuredContent + ['links' => $groups];
+
+        $first = $result->content[0] ?? null;
+        if (!$first instanceof TextContent || !$this->userContext->wantsInlineBackendLinks()) {
+            return new CallToolResult($result->content, isError: false, structuredContent: $structured);
+        }
+
+        return new CallToolResult(
+            [new TextContent($first->text.$this->renderBackendLinks($groups))],
+            isError: false,
+            structuredContent: $structured,
+        );
+    }
+
+    /**
+     * @param list<array{table: string, label: string, targets: list<array{label: string, url: string}>, omitted: int}> $groups
+     */
+    private function renderBackendLinks(array $groups): string
+    {
+        $note = "\n\n🔗 Open in TYPO3 — include these links in your reply:";
+        foreach ($groups as $group) {
+            $links = implode(' · ', array_map(
+                static fn (array $target): string => sprintf('[%s](%s)', $target['label'], $target['url']),
+                $group['targets'],
+            ));
+            $note .= sprintf(
+                "\n- %s: %s%s",
+                $group['label'],
+                $links,
+                $group['omitted'] > 0 ? sprintf(' (+%d more)', $group['omitted']) : '',
+            );
+        }
+
+        return $note;
     }
 }

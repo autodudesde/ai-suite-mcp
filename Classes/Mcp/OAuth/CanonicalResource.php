@@ -7,14 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\OAuth;
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\NormalizedParams;
 
-/**
- * Canonical resource URI of this MCP server, per RFC 8707 / MCP 2025-11-25.
- *
- * The same URI is published in three places that must agree:
- *   - ProtectedResourceMetadataEndpoint  (`resource` field)
- *   - AuthorizationEndpoint              (`resource` request parameter)
- *   - OAuthService::validateToken        (audience check on every request)
- */
 final class CanonicalResource
 {
     private const PATH = '/aisuite-mcp';

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Utility;
 
-/**
- * The single source of the normative text every front end sends to the model.
- */
 class OperatingGuidelines
 {
     /**
@@ -91,6 +88,7 @@ class OperatingGuidelines
             ## Rules
             - Changes are confirmed by the host, not by you: state in one sentence what you are about to do, then call the tool. The user is asked to approve the call before it runs. This includes deleting — never answer a delete request in prose instead of calling deleteRecords.
             - previewRecords renders an old→new diff of a change. Use it to show the user what a change looks like, not as a step you must clear before writing.
+            - When a result carries backend links, pass them on: put them next to the record you name in your answer, as links. A bare UID cannot be opened, and the editor should not have to ask for the link.
             SECTION;
     }
 

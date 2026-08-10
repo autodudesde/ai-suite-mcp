@@ -11,9 +11,6 @@ use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
-/**
- * GET /aisuite-mcp/health.
- */
 class HealthCheckEndpoint
 {
     public function __construct(
@@ -29,7 +26,7 @@ class HealthCheckEndpoint
             'php_version' => PHP_VERSION,
             'sdk_installed' => class_exists(Server::class),
             'workspace_available' => ExtensionManagementUtility::isLoaded('workspaces'),
-            'write_mode' => (string) ($extConf['mcpWriteMode'] ?? 'auto'),
+            'write_mode' => (string) ($extConf['mcpWriteMode'] ?? 'workspace'),
         ];
 
         $status = $checks['mcp_enabled'] && $checks['sdk_installed'] ? 'ready' : 'not_configured';

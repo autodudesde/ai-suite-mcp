@@ -12,10 +12,14 @@ use TYPO3\CMS\Core\SingletonInterface;
 class McpExcludedTablesService implements SingletonInterface
 {
     /** @var null|list<string> */
-    private ?array $excluded = null;
+    private ?array $configured = null;
+
+    /** @var array<string, list<string>> */
+    private array $merged = [];
 
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly SurfaceSettingOverrides $surfaceOverrides,
     ) {}
 
     public function isExcluded(string $table): bool
@@ -28,17 +32,35 @@ class McpExcludedTablesService implements SingletonInterface
      */
     public function getExcluded(): array
     {
-        if (null !== $this->excluded) {
-            return $this->excluded;
+        $additional = $this->surfaceOverrides->getAdditionalExcludedTables();
+        if ([] === $additional) {
+            return $this->getConfigured();
+        }
+
+        $signature = implode(',', $additional);
+
+        return $this->merged[$signature] ??= array_values(array_unique([
+            ...$this->getConfigured(),
+            ...$additional,
+        ]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function getConfigured(): array
+    {
+        if (null !== $this->configured) {
+            return $this->configured;
         }
 
         try {
             $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
         } catch (ExtensionConfigurationExtensionNotConfiguredException|ExtensionConfigurationPathDoesNotExistException) {
-            return $this->excluded = [];
+            return $this->configured = [];
         }
 
-        return $this->excluded = array_values(array_filter(
+        return $this->configured = array_values(array_filter(
             array_map('trim', explode(',', (string) ($extConf['mcpExcludedTables'] ?? ''))),
         ));
     }

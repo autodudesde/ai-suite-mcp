@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
+use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
@@ -14,12 +15,17 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\ContainerBatchValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NestedChildExpanderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordTypeAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationExpanderService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
+use TYPO3\CMS\Core\DataHandling\DataHandler;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class WriteRecordTool extends AbstractDataTool
@@ -34,6 +40,9 @@ class WriteRecordTool extends AbstractDataTool
         private readonly ContainerBatchValidator $containerBatchValidator,
         private readonly BatchEntryValidator $batchEntryValidator,
         private readonly RecordTypeAliasNormalizer $typeAliasNormalizer,
+        private readonly TranslationFieldAliasNormalizer $translationAliasNormalizer,
+        private readonly TranslationExpanderService $translationExpander,
+        private readonly RecordRepository $recordRepository,
         private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
@@ -46,11 +55,6 @@ class WriteRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        // No "only call after the user approved" here: the host gates the call (the chat drawer
-        // asks, MCP clients raise an approval dialog). Told to ask, small models answer in prose
-        // instead of calling the tool at all — measured on deleteRecords.
-        // The payload mechanics live in the `records` schema description, which is what the model
-        // reads while it builds that argument.
         return 'Create or update one or more records (writes). '
             .'Pass a records array, one entry per record, even for a single record. '
             .'For a small correction inside an existing field prefer replaceText or patchText.';
@@ -62,10 +66,6 @@ class WriteRecordTool extends AbstractDataTool
             'type' => 'object',
             'properties' => [
                 'records' => [
-                    // Not a ['array','string'] union: the union let tool-calling layers pick the string
-                    // branch, and a batch escaped into a JSON string burns enough extra tokens that it
-                    // gets cut off mid-record. RecordsArgumentDecoder still accepts a string, but the
-                    // schema no longer invites one.
                     'type' => 'array',
                     'description' => 'Array of records. Each: {table, fields, pid?, uid?, position?}. '
                         .'pid/uid/position are siblings of `fields`, never inside it. '
@@ -77,9 +77,12 @@ class WriteRecordTool extends AbstractDataTool
                         .'`sorting` is not writable; reorder with moveRecords. '
                         .'FlexForm fields (pi_flexform, …) take a nested object {"data": {"<sheet>": {"lDEF": {"<field>": {"vDEF": <value>}}}}} — '
                         .'call readFlexFormSchema first for the sheets and fields, never invent them and never pass XML. '
-                        .'TCA-required fields are enforced on create (readRecordSchema lists them).',
+                        .'TCA-required fields are enforced on create (readRecordSchema lists them). '
+                        .'Translations: add `translations` next to `fields`, keyed by ISO code — {"en": {"header": "…"}}. '
+                        .'The linked translation is created (or updated if it already exists) with the parent pointer set for you.',
                     'items' => ['type' => 'object'],
                 ],
+                'table' => ['type' => 'string', 'description' => 'Default TCA table for entries that do not carry their own `table`. Convenient for a batch that writes to one table.'],
                 'position' => ['type' => 'string', 'default' => 'end', 'description' => 'Default position for the first tt_content record: "start", "end" (default), "after:UID", or "after:$ref:N" to place it after a record created earlier in this same batch. Records already keep their batch order, so you rarely need this.'],
                 'atomic' => ['type' => 'boolean', 'default' => false, 'description' => 'All-or-nothing: roll back already-applied changes if any record fails. Default false (best-effort, partial writes kept).'],
                 'allowEmptyContainer' => ['type' => 'boolean', 'default' => false, 'description' => 'Permit creating a container element that gets no children in this call. Off by default: an empty container renders as an empty box, so the batch is refused and tells you how to wire the children up.'],
@@ -96,17 +99,18 @@ class WriteRecordTool extends AbstractDataTool
             return $this->textError('records must be a non-empty array.');
         }
 
+        $records = BatchDefaults::applyTable($records, (string) ($params['table'] ?? ''));
+
         // Before expansion, so the reported indices are the ones the caller sent.
         $this->batchEntryValidator->assertShape($records, 'records', ['table', 'fields'], ['uid', 'pid'], 'fields');
 
-        // Accept `type` as an alias for CType/doktype before anything reads the element kind.
         $records = $this->typeAliasNormalizer->normalize($records);
 
-        // Rewrite nested inline children into sibling records before anything else runs, so the
-        // batch, `$ref:N` resolution and the atomic rollback all see one flat list.
         $records = $this->nestedChildExpander->expand($records);
 
-        // The only point that sees the whole batch before a single row is written.
+        // After the children, so a translation is never interleaved into its parent's child block.
+        $records = $this->translationExpander->expand($records);
+
         $this->containerBatchValidator->assertContainersHaveChildren(
             $records,
             (bool) ($params['allowEmptyContainer'] ?? false),
@@ -175,9 +179,6 @@ class WriteRecordTool extends AbstractDataTool
             $lines[] = sprintf('#%d: ✅ %s', $index, $result['message']);
         }
 
-        // Same `batch` envelope the non-atomic path emits via BatchResultBuilderService — a client
-        // must not have to parse UIDs out of the text just because it asked for atomicity.
-        // failedCount is always 0 here: any failure aborts above with errorResult().
         $records = array_map(
             static fn (array $op): array => ['table' => $op['table'], 'uid' => $op['uid'], 'action' => $op['op']],
             $applied,
@@ -195,8 +196,6 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * Undo applied operations in reverse order. Returns false if any single undo failed.
-     *
      * @param list<array{op: string, table: string, uid: int, before?: array<string, mixed>}> $applied
      */
     private function rollback(array $applied): bool
@@ -260,9 +259,6 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * Validate and write a single record. Returns the human message, the resulting
-     * UID and a rollback descriptor for atomic mode.
-     *
      * @param array<int, int>    $createdUids
      * @param array<string, int> $lastSiblingByGroup
      *
@@ -276,6 +272,10 @@ class WriteRecordTool extends AbstractDataTool
         $uid = isset($record['uid']) ? (int) $record['uid'] : null;
         $pid = isset($record['pid']) ? (int) $record['pid'] : null;
         $fields = $record['fields'] ?? [];
+
+        if (is_array($record) && isset($record[TranslationExpanderService::LOCALIZE_KEY])) {
+            return $this->applyTranslation($record, $zeroBased, $createdUids, $captureBefore);
+        }
 
         if ('' === $table || !is_array($fields) || empty($fields)) {
             throw new InvalidParameterException('Skipped (missing table or fields).');
@@ -291,6 +291,8 @@ class WriteRecordTool extends AbstractDataTool
         }
 
         $this->recordAccess->validateTableWriteAccess($table);
+        $aliased = $this->translationAliasNormalizer->normalizeFields($table, $fields);
+        $fields = $aliased['fields'];
         $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
         $refFields = $this->referenceFieldNames($fields);
         $fields = $this->resolveReferences($fields, $createdUids);
@@ -343,11 +345,12 @@ class WriteRecordTool extends AbstractDataTool
 
             return [
                 'message' => sprintf(
-                    '%s created (UID: %d)%s%s',
+                    '%s created (UID: %d)%s%s%s',
                     $this->tcaLabel->getTableLabel($table),
                     $result->uid,
                     $this->strippedHint($result),
                     $this->remapHint($remapped),
+                    $this->translationAliasNormalizer->describeRenames($aliased['renamed']),
                 ),
                 'uid' => $result->uid,
                 'rollback' => ['op' => 'create', 'table' => $table, 'uid' => $result->uid],
@@ -369,15 +372,124 @@ class WriteRecordTool extends AbstractDataTool
 
         return [
             'message' => sprintf(
-                '%s updated (UID: %d)%s%s',
+                '%s updated (UID: %d)%s%s%s',
                 $this->tcaLabel->getTableLabel($table),
                 $uid,
                 $this->strippedHint($result),
                 $this->remapHint($remapped),
+                $this->translationAliasNormalizer->describeRenames($aliased['renamed']),
             ),
             'uid' => $uid,
             'rollback' => ['op' => 'update', 'table' => $table, 'uid' => $uid, 'before' => $before],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param array<int, int>      $createdUids
+     *
+     * @return array{message: string, uid: int, rollback: array{op: string, table: string, uid: int, before?: array<string, mixed>}}
+     */
+    private function applyTranslation(array $record, int $zeroBased, array &$createdUids, bool $captureBefore): array
+    {
+        $table = (string) ($record['table'] ?? '');
+        $descriptor = is_array($record[TranslationExpanderService::LOCALIZE_KEY] ?? null)
+            ? $record[TranslationExpanderService::LOCALIZE_KEY]
+            : [];
+        $fields = is_array($record['fields'] ?? null) ? $record['fields'] : [];
+
+        $origin = $descriptor['origin'] ?? null;
+        $language = (string) ($descriptor['language'] ?? '');
+
+        $this->recordAccess->validateTableWriteAccess($table);
+
+        $originUid = is_string($origin)
+            ? (int) $this->resolveReferences(['origin' => $origin], $createdUids)['origin']
+            : (int) $origin;
+        if ($originUid <= 0) {
+            throw new InvalidParameterException('The record to translate could not be resolved.');
+        }
+
+        $this->recordAccess->assertRecordEditAccess($table, $originUid);
+
+        $pageId = 'pages' === $table ? $originUid : (int) (BackendUtility::getRecordWSOL($table, $originUid)['pid'] ?? 0);
+        $languageUid = $this->recordAccess->resolveLanguageUid($language, $pageId);
+        if (0 === $languageUid) {
+            throw new InvalidParameterException(sprintf(
+                'Language "%s" is not configured for this page, or it is the default language — that is the record you are already writing. readServerInfo lists the codes of every site.',
+                $language,
+            ));
+        }
+        $this->recordAccess->assertLanguageAccess($languageUid);
+
+        $pointerField = $this->tcaCompatibilityService->getTranslationOriginPointerFieldName($table);
+        $languageField = $this->tcaCompatibilityService->getLanguageFieldName($table);
+        if (null === $pointerField || null === $languageField) {
+            throw new InvalidParameterException(sprintf('Table "%s" does not support translations.', $table));
+        }
+
+        $existingUid = $this->recordRepository->findTranslationUid($table, $originUid, $languageUid, $pointerField, $languageField);
+        $created = null === $existingUid;
+        $translationUid = $existingUid ?? $this->localize($table, $originUid, $languageUid);
+
+        $before = [];
+        if ($captureBefore && !$created) {
+            $existing = BackendUtility::getRecordWSOL($table, $translationUid);
+            foreach (array_keys($fields) as $fieldName) {
+                $before[(string) $fieldName] = is_array($existing) ? ($existing[$fieldName] ?? null) : null;
+            }
+        }
+
+        $strippedHint = '';
+        $aliasHint = '';
+        if ([] !== $fields) {
+            $aliased = $this->translationAliasNormalizer->normalizeFields($table, $fields);
+            $aliasHint = $this->translationAliasNormalizer->describeRenames($aliased['renamed']);
+            $writeFields = $this->recordAccess->filterAccessibleFields($table, $aliased['fields']);
+            $writeFields = $this->resolveReferences($writeFields, $createdUids);
+            $result = $this->recordWrite->update($table, $translationUid, $writeFields);
+            $strippedHint = $this->strippedHint($result);
+        }
+
+        $createdUids[$zeroBased] = $translationUid;
+
+        return [
+            'message' => sprintf(
+                '%s translated to %s (UID: %d, %s)%s%s',
+                $this->tcaLabel->getTableLabel($table),
+                $language,
+                $translationUid,
+                $created ? 'created, hidden as TYPO3 does it' : 'updated existing translation',
+                $strippedHint,
+                $aliasHint,
+            ),
+            'uid' => $translationUid,
+            'rollback' => $created
+                ? ['op' => 'create', 'table' => $table, 'uid' => $translationUid]
+                : ['op' => 'update', 'table' => $table, 'uid' => $translationUid, 'before' => $before],
+        ];
+    }
+
+    private function localize(string $table, int $originUid, int $languageUid): int
+    {
+        $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
+        $dataHandler->start([], [$table => [$originUid => ['localize' => $languageUid]]]);
+        $dataHandler->process_cmdmap();
+
+        if ([] !== $dataHandler->errorLog) {
+            throw $this->dataHandlerError->toException('localization', $table, $originUid, $dataHandler->errorLog);
+        }
+
+        $newUid = (int) ($dataHandler->copyMappingArray[$table][$originUid] ?? 0);
+        if ($newUid <= 0) {
+            throw new InvalidParameterException(sprintf(
+                'TYPO3 created no translation of %s:%d — the record may already be a translation itself.',
+                $table,
+                $originUid,
+            ));
+        }
+
+        return $newUid;
     }
 
     /**
@@ -493,11 +605,6 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * Last stop before DataHandler. Anything still holding an array here would die inside
-     * checkValue_SW() with a bare "Array to string conversion", which tells the model nothing
-     * and invites an identical retry. FlexForm values are exempt: DataHandlerSanitizerService
-     * normalises those and they are legitimately nested.
-     *
      * @param array<string, mixed> $fields
      *
      * @return array<string, mixed>
@@ -567,9 +674,6 @@ class WriteRecordTool extends AbstractDataTool
             if (is_string($value) && preg_match('/^\$ref:(\d+)$/', $value, $matches)) {
                 $refIndex = (int) $matches[1];
                 if (!isset($createdUids[$refIndex])) {
-                    // Used to fall through and hand the literal "$ref:5" to the DataHandler, which
-                    // wrote it into the column. A reference that resolves to nothing is a broken
-                    // record, not a value.
                     throw new InvalidParameterException(sprintf(
                         'Field `%s` references record %d ("$ref:%d"), which was not created in this batch. '
                             .'A $ref may only point at a record created EARLIER in the same call, by its 0-based index.',
@@ -586,11 +690,6 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * `after:$ref:0` places a record after another one created earlier in the same batch. The $ref
-     * only resolved inside `fields` before, so a model that ordered records this way (a natural
-     * thing to do) got the literal string as a position, the batch fell back to default ordering,
-     * and a follow-up moveRecords was needed to fix it.
-     *
      * @param array<int, int> $createdUids
      */
     private function resolvePositionReference(string $position, array $createdUids): string

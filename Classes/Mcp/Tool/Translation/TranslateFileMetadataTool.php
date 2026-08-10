@@ -85,7 +85,6 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
             return $this->textError(sprintf('File UID %d not found.', $fileUid));
         }
 
-        // Resolve fileUid → sys_file_metadata UID (default language)
         $metadataUids = $this->sysFileMetadataRepository->findDefaultLanguageMetadataUidsByFileUids([$fileUid]);
         $metadataUid = $metadataUids[$fileUid] ?? null;
 

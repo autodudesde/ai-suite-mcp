@@ -8,10 +8,6 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
 
-/**
- * Dynamic Client Registration (RFC 7591).
- * POST /aisuite-mcp/oauth/register.
- */
 class RegistrationEndpoint
 {
     public function __invoke(ServerRequestInterface $request): ResponseInterface

@@ -1,8 +1,31 @@
-# TYPO3 + AI Suite MCP
+# TYPO3 + MCP + AI Suite
 
 > 🚧 **Under active development.** This extension is in `beta` state and evolving fast. Tool signatures, settings keys, and the upcoming `AbstractCustomTool` API may still change between minor versions. Production deployments are possible (and encouraged for early feedback), but pin a version and review the changelog before upgrading. Join us on Slack: [#ai-suite on TYPO3 Slack](https://typo3.slack.com/archives/C05QAN1KNVD) to follow development, raise issues, or shape the roadmap.
 
-MCP (Model Context Protocol) server integration for TYPO3's [AI Suite](https://www.autodudes.de/) extension. Connects Claude Desktop, Claude.ai, ChatGPT, MCP Inspector and other MCP-compatible clients directly to your TYPO3 backend, and lets the model drive the same AI providers (Anthropic, OpenAI, Mittwald AI, DeepL, Midjourney, Flux, …) that AI Suite already integrates.
+An MCP (Model Context Protocol) server for **TYPO3**. It connects Claude Desktop, Claude.ai, ChatGPT, MCP Inspector and other MCP-compatible clients directly to your TYPO3 backend, so the model can walk the page tree, read and search content, and create or edit records through DataHandler, as the logged-in backend user, with that user's permissions.
+
+[AI Suite](https://www.autodudes.de/) is the technical foundation this builds on: it ships the extension infrastructure, the backend-group permission model, the TYPO3 version-compatibility layer and the shared services. It is a hard dependency (`autodudes/ai-suite` `^12.22.1 || ^13.16.1 || ^14.4.1`) and Composer pulls it in for you.
+
+**What it is not is a paywall.** The MCP server is useful on its own, with no AI Suite account, no API key and no credits: your MCP client already brings the model that does the thinking. AI Suite's own AI providers (Anthropic, OpenAI, Mittwald AI, DeepL, Midjourney, Flux, …) are an *optional* add-on for the eleven tools that generate or translate server-side.
+
+## Do I need an AI Suite subscription?
+
+For most of what this extension does, no.
+
+**34 of the 45 tools run entirely inside your TYPO3 installation** and cost nothing beyond what your MCP client charges you: the whole page tree, content and file reads, `searchContent`, schema discovery, record CRUD through DataHandler, the safe-edit tools, `localizeRecord`, workspace review and publishing, and `uploadMedia`. Your client's model composes the content; TYPO3 stores it. No AI Suite Server is contacted, and the transport does not check for an API key.
+
+**11 tools do call the AI Suite Server and spend credits**, because the generation or translation happens there:
+
+| Scope | Tools |
+|---|---|
+| `mcp:generate` | `generateFileMetadata` |
+| `mcp:image` | `generateImage` |
+| `mcp:translate` | `translateRecord`, `translatePage`, `translateFileMetadata` |
+| `mcp:workflow` | `batchGenerateMetadata`, `batchGenerateFileMetadata`, `batchGenerateFolderMetadata`, `batchTranslatePage`, `batchTranslateFileMetadata`, `batchTranslateFolderMetadata` |
+
+These eleven are the entire credit-costing surface; without an AI Suite account they are the only ones you lose. The tools that poll and persist their results are free: `readTaskStatus`, `readTaskResults` (`mcp:read`) and `applyTaskResults` (`mcp:write`). So is granting the `mcp:workflow` scope itself.
+
+Translation is the one place where the distinction is easy to miss: `translateRecord` and friends hand the work to a translation model on the server and bill for it, while `localizeRecord` creates the translation with TYPO3's own localization machinery and costs nothing, so your client's model can then write the translated fields itself.
 
 ## What you can do with it
 
@@ -10,20 +33,22 @@ Once connected, your MCP client can drive the TYPO3 backend the same way an edit
 
 - 🧭 **Walk the page tree, read pages, search content**: the model gets first-class access to every page, content element and FAL file the BE user can see.
 - ✍️ **Create & rewrite content**: the client model composes tt_content elements and page trees itself and persists them through DataHandler, honouring the editors' guidelines (`readEditorialGuidelines`). No credits are spent for that.
-- 🌍 **Translate anything**: single records, complete pages, file metadata, or whole folders in one batch. Includes **Easy Language** rewrites for accessible content.
-- 🏷️ **Fill in metadata at scale**: SEO titles, descriptions, OG / Twitter tags, alt texts, file metadata. Single record or bulk over a whole folder / page subtree.
-- 🖼️ **Generate images straight into FAL**: the result lands as a real `sys_file`, ready to be referenced.
+- 🌍 **Translate anything**: single records, complete pages, file metadata, or whole folders in one batch. Includes **Easy Language** rewrites for accessible content. *(server-side translation costs credits; `localizeRecord` + your own model does not)*
+- 🏷️ **Fill in metadata at scale**: SEO titles, descriptions, OG / Twitter tags, alt texts, file metadata. Single record or bulk over a whole folder / page subtree. *(costs credits)*
+- 🖼️ **Generate images straight into FAL**: the result lands as a real `sys_file`, ready to be referenced. *(costs credits)*
 - 🧱 **Edit records safely**: every CRUD tool runs through DataHandler, and the operating guidelines require a preview / confirm step before anything is persisted. Reversibility is guaranteed by the `workspace` write mode (the default), which keeps every change in a reviewable draft.
 - 🧰 **Workspace-aware writes**: defaults to routing changes through a TYPO3 draft workspace (auto-creating a per-user one when needed); tokens can even be pinned to a specific workspace.
 - 🧩 **Works with EXT:container and your custom records**: container children, third-party tables (news, products, custom CTypes) are first-class.
-- ⏱️ **Background batch jobs**: long-running translations / metadata generation get an async task ID; results come back as suggestions you approve.
+- ⏱️ **Background batch jobs**: long-running translations / metadata generation get an async task ID; results come back as suggestions you approve. *(costs credits)*
 - 🔐 **Production-grade auth**: OAuth 2.1 + PKCE with dynamic client registration, per-token rate limiting, full HTTPS enforcement, password-change revocation.
 - 👤 **Respects TYPO3 BE-user permissions**: every tool call runs as the linked backend user; page mounts, file mounts, table/field access rights and AI Suite per-feature/per-model BE-group flags are enforced on every request.
 - 📊 **Reports + dedicated logs**: TYPO3 Reports module flags misconfigurations; two log streams (verbose + WARNING-only) keep ops monitoring simple.
 
 ## AI capabilities & available models
 
-MCP tools delegate the actual generation / translation work to the parent AI Suite extension, so every model you've licensed there is also available to your MCP client. Permissions are still gated per BE-group feature flag and per AI model.
+**This section covers the optional part**: the eleven tools listed above that route to the AI Suite Server. Skip it if your MCP client's own model is doing the work.
+
+These tools delegate the actual generation / translation to the parent AI Suite extension, so every model you've licensed there is also available to your MCP client. Permissions are still gated per BE-group feature flag and per AI model.
 
 | Capability | MCP tools | Models available via AI Suite |
 |---|---|---|
@@ -43,7 +68,7 @@ Beyond the AI-powered tools above, MCP also ships **discovery and editing tools*
 
 - TYPO3 12.4.11 – 14.3.x
 - PHP 8.2+
-- `autodudes/ai-suite` `^12.21.0 || ^13.15.0 || ^14.3.0`
+- `autodudes/ai-suite` `^12.22.1 || ^13.16.1 || ^14.4.1` (`ext_emconf`: `12.22.1-14.99.99`): required, and installed automatically. It provides the extension infrastructure, the BE-group permission model, the TYPO3 version-compatibility layer and shared services. An AI Suite **account, API key or credits** are a separate matter and only needed for the eleven server-side tools listed above.
 - `typo3/cms-reports` `^12.4.11 || ^13.4.1 || ^14.3.0`
 - `logiscape/mcp-sdk-php` `^1.7`
 - `symfony/clock` `^6.4 || ^7.0 || ^8.0`
@@ -74,23 +99,66 @@ All settings live under **Admin Tools → Settings → Extension Configuration �
 | `mcpAllowedRedirectUris` | _(empty)_ | Comma-separated allowlist of external OAuth redirect URIs. Matched by **prefix** (`str_starts_with`). `http://localhost`, `http://127.0.0.1` and `http://[::1]` are always accepted regardless of this setting. |
 | `mcpExcludedTables` | _(empty)_ | Comma-separated list of tables that MCP tools must **not** read or write. Applied on top of TYPO3 backend permissions and **also blocks admins**: use to hide sensitive tables (e.g. `be_users`, `fe_users`, `sys_log`) from MCP clients regardless of the user's TYPO3 role. |
 | `mcpSearchAdditionalTables` | _(empty)_ | Comma-separated tables that `searchContent` sweeps **on top of** the automatically detected child tables. Only needed for standalone record tables that are not children of anything (e.g. `tx_news_domain_model_news`); IRRE child tables are found in the TCA by themselves. See [Which tables searchContent sweeps](#which-tables-searchcontent-sweeps). |
-| `mcpExcludeAdditionalTablesFromSearch` | _(empty)_ | Comma-separated tables to remove from the auto-detected set. Does **not** affect tables listed in `mcpSearchAdditionalTables`, and does not block MCP access — use `mcpExcludedTables` for that. |
-| `mcpAllowRawHtmlWrite` | `0` | Allow write tools to store raw markup verbatim in **code editor fields** — `tt_content.bodytext` of CType `html` and any other TCA `text` field with a code editor `renderType`/`format`. Those fields render unfiltered in the frontend, so an agent (or a prompt injection reaching it) can place arbitrary HTML/JavaScript on the site. While disabled, a write that carries markup into such a field is **rejected** (`unsupported_html`): nothing is stored and the existing value survives. Markup-free values are written either way. See [Code editor fields](#code-editor-fields). |
+| `mcpExcludeAdditionalTablesFromSearch` | _(empty)_ | Comma-separated tables to remove from the auto-detected set. Does **not** affect tables listed in `mcpSearchAdditionalTables`, and does not block MCP access; use `mcpExcludedTables` for that. |
+| `mcpAllowRawHtmlWrite` | `0` | Allow write tools to store raw markup verbatim in **code editor fields**: `tt_content.bodytext` of CType `html` and any other TCA `text` field with a code editor `renderType`/`format`. Those fields render unfiltered in the frontend, so an agent (or a prompt injection reaching it) can place arbitrary HTML/JavaScript on the site. While disabled, a write that carries markup into such a field is **rejected** (`unsupported_html`): nothing is stored and the existing value survives. Markup-free values are written either way. See [Code editor fields](#code-editor-fields). |
 | `mcpTrustedProxies` | _(empty)_ | Comma-separated reverse-proxy IPs / CIDRs (e.g. `10.0.0.0/8,192.168.0.0/16`). When set, OAuth audit-log entries resolve the real client IP from `X-Forwarded-For` instead of the proxy peer IP. Empty = `X-Forwarded-For` is ignored and the raw peer IP is logged. See [Reverse proxy & load balancer](#reverse-proxy--load-balancer). |
+| `mcpBackendBaseUrl` | _(empty)_ | Scheme and host for the backend links in tool results, e.g. `https://www.example.com`. Empty = taken from the current request, and without one (stdio transport) from the site configuration. Set it when the backend runs under a different domain than the site base. See [Backend links in tool results](#backend-links-in-tool-results). |
 
 Logging settings (`mcpLogVerbose`, `mcpLogRedactionPatterns`) are documented under [Logging & retention](#logging--retention); the media-upload settings (`mcpMediaDefaultFolder`, `mcpMediaMaxSizeMb`, `mcpMediaAllowedExtensions`, `mcpMediaAllowUrlFetch`, `mcpMediaHostDenylist`) under the [`uploadMedia`](#media-upload-mcpmedia) tool.
 
+**ChEddi inherits these settings.** The editor chat (`cheddi`) runs the same tools in-process and
+follows `mcpWriteMode`, `mcpAllowRawHtmlWrite`, `mcpExcludedTables`, `mcpSearchAdditionalTables`,
+`mcpExcludeAdditionalTablesFromSearch`, `mcpLogVerbose` and `mcpLogRedactionPatterns` unless its own
+`chat*` counterparts are set, which default to `inherit`. A configured ChEddi value can only
+**tighten** the MCP one, never widen it; nothing configured there loosens what MCP allows. ChEddi
+hands its values to `SurfaceSettingOverrides`, which stays empty for calls arriving over the MCP
+transport.
+
+### Backend links in tool results
+
+A call that touched records reports them back as UIDs, which is precise but unusable; nobody wants
+to look up page 99934 by hand. Every tool result therefore also carries links to what it touched, in
+two channels: `structuredContent.links` for hosts that render them themselves, and a
+`🔗 Open in TYPO3` block appended to the result text, which is what makes them clickable in a chat
+client. The targets come from the UIDs the tools reported, so they point at what was actually
+written; the label is the record's own title where it has one. The block asks the assistant to pass
+the links on, so an editor gets them with the answer instead of having to ask for them.
+
+Links are grouped by table, because a page and the content elements on it are different destinations:
+
+```json
+"links": [
+  {"table": "pages", "label": "Page", "targets": [{"label": "Landing page", "url": "https://…"}], "omitted": 0},
+  {"table": "tt_content", "label": "Page Content", "targets": [{"label": "Header", "url": "https://…"}], "omitted": 2}
+]
+```
+
+`pages` comes first, the remaining tables in the order they were touched. The cap of six is **per
+group**, so a written page is never pushed out of the list by the content elements written onto it;
+`omitted` reports how many the cap dropped, so a truncated group cannot be mistaken for a complete
+one.
+
+The URLs are absolute and carry **no route token**. A token belongs to the session that generated it,
+the MCP session and not the editor's browser, so it would be worthless in a link that leaves the
+process. TYPO3 answers a tokenless backend URL with a redirect through the login route that carries
+the original target, so an editor with a live backend session lands directly on the record.
+
+Host resolution, first hit wins: `mcpBackendBaseUrl` → current request → site configuration
+(`Site::getBase()`). If none of them yields a scheme and host (the stdio transport has
+no request, and an installation may have no site configured), the link is dropped rather than
+emitted broken, with a warning in `aisuite_mcp_warnings.log`.
+
 ### Which tables searchContent sweeps
 
-`searchContent` always searches `pages` and `tt_content`. Beyond those it sweeps the **IRRE child tables of your installation**, and it derives that list from the TCA instead of asking you to configure it: every table reachable through an `inline` or `file` field that carries both a `foreign_table` and a `foreign_field` is a child table. That covers Content Blocks collections, Bootstrap Package accordion/card items and any hand-written equivalent — without them a term rollout silently misses every child record.
+`searchContent` always searches `pages` and `tt_content`. Beyond those it sweeps the **IRRE child tables of your installation**, and it derives that list from the TCA instead of asking you to configure it: every table reachable through an `inline` or `file` field that carries both a `foreign_table` and a `foreign_field` is a child table. That covers Content Blocks collections, Bootstrap Package accordion/card items and any hand-written equivalent; without them a term rollout silently misses every child record.
 
-Four kinds of table are dropped from that set structurally: `sys_file_reference`, `pages` and `tt_content` (already searched or pure relation glue), every `rootLevel` table (it sits on `pid = 0` and can therefore never be inside a webmount — this is what keeps `sys_file_metadata` and `sys_workspace_stage` out), and every table without a searchable text column. `hideTable` is deliberately **not** a criterion: it means "no entry in the list module", not "secret", and every Content Blocks collection carries it.
+Four kinds of table are dropped from that set structurally: `sys_file_reference`, `pages` and `tt_content` (already searched or pure relation glue), every `rootLevel` table (it sits on `pid = 0` and can therefore never be inside a webmount, which is what keeps `sys_file_metadata` and `sys_workspace_stage` out), and every table without a searchable text column. `hideTable` is deliberately **not** a criterion: it means "no entry in the list module", not "secret", and every Content Blocks collection carries it.
 
 Precedence, strongest first:
 
-1. `mcpExcludedTables` — blocks the table from MCP entirely, search included.
-2. `mcpSearchAdditionalTables` — adds a table regardless of detection or search exclusion.
-3. `mcpExcludeAdditionalTablesFromSearch` — removes a table from the auto-detected set.
+1. `mcpExcludedTables`: blocks the table from MCP entirely, search included.
+2. `mcpSearchAdditionalTables`: adds a table regardless of detection or search exclusion.
+3. `mcpExcludeAdditionalTablesFromSearch`: removes a table from the auto-detected set.
 4. The auto-detected set.
 
 The user's own backend permissions apply on top: a table the BE user cannot `tables_select` is skipped silently and does not appear in the response's `searchedTables`, which always names exactly the tables that were searched.
@@ -119,16 +187,15 @@ Copy these into `mcpAllowedRedirectUris` / `mcpAllowedOrigins` for every client 
 | Mode | What happens | When to use it |
 |---|---|---|
 | `workspace` *(default)* | Forces every write into a draft workspace. Uses the BE user's default workspace (`be_users.workspace_id`) if set, otherwise an existing per-user MCP workspace, otherwise **auto-creates** one (titled `AI Suite MCP [#<uid>]`, with the user as member) so writes never silently hit live. | The safe default: AI changes always land in a reviewable draft. |
-| `auto` | If EXT:workspaces is loaded, writes go to the BE user's default workspace; if the user hasn't picked one, the first accessible non-live workspace is used; otherwise live. | Mixed setups where a soft fallback to live is acceptable. |
 | `live` | Bypasses workspaces entirely and writes live records. | Low-stakes automation where review isn't worth the friction. |
+
+A third mode, `auto` (draft if one happened to be available, else live), was removed: its soft fallback made the write target depend on the user's workspace assignment rather than on a decision. A configuration still carrying the value resolves to `workspace`.
 
 Resolution order (see `McpBackendUserInitializer`):
 
 1. **Token-bound workspace** (set when issuing the token), always wins.
 2. `mcpWriteMode = live` → live (`0`).
-3. `mcpWriteMode = workspace` → BE user's default workspace → else an existing per-user MCP workspace → else a freshly auto-created per-user draft workspace (never silently live). Falls back to live only if `ext:workspaces` is unavailable.
-4. `mcpWriteMode = auto` + `ext:workspaces` loaded → user's default, falling back to the first accessible non-live workspace.
-5. Otherwise → live.
+3. Every other value, `workspace` included → BE user's default workspace → else an existing per-user MCP workspace → else a freshly auto-created per-user draft workspace (never silently live). Only `live` sends a write to the live site.
 
 > The auto-created workspace is **not** stored as the user's TYPO3 default (`be_users.workspace_id` is left untouched), so it only affects MCP writes; the user's normal backend session stays on whatever workspace they had.
 
@@ -146,8 +213,8 @@ Read tools transparently follow whatever workspace the request resolved to, so p
 
 ## Why the client asks for approval
 
-Nothing in this server asks a user to confirm a call. When a client shows an approval dialog — or
-reports something like `No approval received` — that decision was made entirely on the client side.
+Nothing in this server asks a user to confirm a call. When a client shows an approval dialog, or
+reports something like `No approval received`, that decision was made entirely on the client side.
 There is no server-side approval gate, no confirmation parameter and, in particular, **no
 batch-size threshold**: deleting one record and deleting eleven in one call take the identical code
 path. If single calls go through while a batch does not, that is a property of the client, not of
@@ -259,7 +326,7 @@ Each tool requires a scope, and each scope is only granted to users whose BE gro
 | `mcp:workflow` | `enable_massaction_generation` | Batch / background task tools |
 
 These seven are the complete list. In particular there is no `mcp:glossary`, no `mcp:easy-language`
-and no `mcp:manage` scope — those appeared in an outdated document and have never existed in any
+and no `mcp:manage` scope; those appeared in an outdated document and have never existed in any
 released version. Glossary handling and Easy Language rewrites ride along with `mcp:translate`, and
 there is no management scope at all. Requesting an unknown scope fails the authorization request.
 
@@ -275,7 +342,7 @@ there is no management scope at all. Requesting an unknown scope fails the autho
 | `readRenderedPage` | The page as a visitor sees it, incl. plugin output; needs `enable_mcp_rendered_page_read` (see [Per-tool permissions](#per-tool-permissions)) |
 | `readEditorialGuidelines` | The tone / target audience / style the editors configured for a page subtree |
 | `readChildren` | List a record's container / IRRE children, grouped by relation |
-| `searchContent` | Full-text search across pages, content elements and the auto-detected IRRE child tables |
+| `searchContent` | Full-text search across pages, content elements and the auto-detected IRRE child tables. Every hit carries `languageUid` and, where the page belongs to a site, its ISO `language` |
 | `listFiles` | List files in a FAL storage / folder |
 | `readFileInfo` | Metadata for a single sys_file / sys_file_metadata record |
 | `listStaleContent` | Detect pages / content that have not been updated for N days |
@@ -291,7 +358,7 @@ there is no management scope at all. Requesting an unknown scope fails the autho
 | `previewRecords` | Build a preview of a DataHandler operation without persisting |
 | `readRecords` | Read records by table + UID(s) |
 | `compareWithLive` | Diff workspace draft vs live (changed/added/removed fields), requires a non-live workspace session |
-| `writeRecords` | Create / update records via DataHandler (workspace-aware) |
+| `writeRecords` | Create / update records via DataHandler (workspace-aware). A top-level `table` fills in for entries that carry none, and a `translations` object writes the linked translations along with the record (see [Writing translations](#writing-translations)) |
 | `copyRecords` | Copy one or more records (single params, or a `copies` batch array) |
 | `moveRecords` | Move one or more records (single params, or a `moves` batch array) |
 | `localizeRecord` | Localize a record into a target language (creates the translation shell; no AI, no credits) |
@@ -311,14 +378,46 @@ put `<p>` into a page title. Two kinds of field are exempt, because there the ma
 
 - **Rich text fields** (`enableRichtext`, e.g. `bodytext` of `textmedia`) are stored as sent. They pass
   through TYPO3's own `RteHtmlParser` + HTML sanitizer on save, exactly like manual backend editing.
-- **Code editor fields** — TCA `text` with a code editor `renderType`/`format`, the prominent one being
+- **Code editor fields**: TCA `text` with a code editor `renderType`/`format`, the prominent one being
   `tt_content.bodytext` of CType `html`. TYPO3 renders those unfiltered, so they are gated by
   `mcpAllowRawHtmlWrite` (default off): with the setting on the source round-trips byte for byte, with
   it off a write carrying markup is rejected with `unsupported_html` and the stored value is left alone.
 
 `readRecordSchema` reports the distinction per field as `kind:rte`, `kind:html` or `kind:text`. When
-editing such a field, read it with `readRecords(raw: true)` — a normal read returns a tag-stripped
-preview — or, better, change it in place with `patchText` / `replaceText`.
+editing such a field, read it with `readRecords(raw: true)` (a normal read returns a tag-stripped
+preview) or, better, change it in place with `patchText` / `replaceText`.
+
+#### Writing translations
+
+A record entry may carry a `translations` object next to `fields`, keyed by **ISO language code**:
+
+```json
+{
+  "records": [{
+    "table": "tt_content",
+    "pid": 354,
+    "fields": { "CType": "text", "header": "Einstellungen" },
+    "translations": { "en": { "header": "Settings" } }
+  }]
+}
+```
+
+The translation shell is created with TYPO3's own `localize` command, the same path the backend
+takes, so the language field, the translation parent, `l10n_source`, `l10n_state`, `l10n_mode:
+exclude` and any inline children are handled by the core. The given fields are then written into that
+shell. It is created hidden, as TYPO3 does it.
+
+Calling the same payload twice **updates** the existing translation instead of creating a second one,
+so re-sending a batch after a partial failure is safe. `translations` also works on an entry that
+carries a `uid`: that record is the origin. Nested inline children cannot be translated in the same
+call; write them first, then translate them by uid.
+
+#### Field name aliases
+
+`tt_content` kept the legacy `l18n_parent`, while `pages` and most hand-written child tables use
+`l10n_parent`. Both spellings are accepted on read and on write and mapped onto whatever the table
+really calls it (same for `l10n_source` / `l18n_source`); the result says when it happened. A name the
+table genuinely has is never rewritten.
 
 ### Generation (`mcp:generate`)
 | Tool | Purpose |
@@ -447,10 +546,11 @@ vendor/bin/typo3 ai-suite-mcp:server --user=editor --scopes="mcp:read mcp:write"
 `ai-suite-mcp:cleanup` removes:
 - authorization codes older than 10 min
 - access tokens older than the token lifetime + 7-day buffer (37 days by default)
-- session files under `var/aisuite_mcp_sessions/` older than 7 days
+- session files under `var/aisuite_mcp_sessions/` older than twice `mcpSessionTimeoutSeconds`, at least one hour (one hour at the default of 1800 s)
 - background task files under `var/mcp_tasks/` older than 30 days
 
-Schedule it via the TYPO3 Scheduler or cron.
+Schedule it via the TYPO3 Scheduler or cron. How many session files are lying around is reported by
+`readServerInfo` and, for admins, as the *MCP Session Store* entry in the Reports module.
 
 ## Local stdio transport
 
@@ -643,8 +743,10 @@ A `403` here means an env-flag guard (step 2) or a host-level dot-path block is 
 - authorization codes older than 10 min
 - access tokens older than the token lifetime + 7-day buffer (37 days at default `mcpTokenLifetimeDays = 30`)
 - **revoked tokens older than 30 days**: hard-deleted from `tx_aisuite_oauth_tokens` to meet GDPR right-to-erasure expectations. Soft-deleted entries (`deleted = 1`) are kept for 30 days so refresh-token theft detection (S24) can still recognise reuse of a rotated token; after that window the signal is moot
-- session files under `var/aisuite_mcp_sessions/` older than 7 days
+- session files under `var/aisuite_mcp_sessions/` older than twice `mcpSessionTimeoutSeconds`, at least one hour (one hour at the default of 1800 s)
 - background-task files under `var/mcp_tasks/` older than 30 days
+
+Watch the session directory in particular: a stateless MCP client leaves one file behind **per request**, so the count climbs quickly on a busy site. The Reports module shows it as *MCP Session Store* and turns to a warning above 500 files; `readServerInfo` reports the same number and logs a warning at WARNING level once the threshold is crossed.
 
 Without it, the authorization-code table grows unbounded, on-disk session and task directories balloon, and revoked or expired tokens accumulate in `tx_aisuite_oauth_tokens`. For high-volume sites (>100 concurrent users) monitor row counts in `tx_aisuite_oauth_tokens` and tighten `mcpTokenLifetimeDays` if growth outpaces the cleanup cycle.
 

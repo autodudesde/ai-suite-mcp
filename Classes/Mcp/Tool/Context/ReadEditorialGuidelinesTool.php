@@ -13,26 +13,10 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Core\Utility\RootlineUtility;
 
-/**
- * Exposes the editors' Global Instructions (tone, target audience, style) for a page subtree.
- *
- * These used to take effect only inside the credit-costing AI tools, which made them invisible
- * whenever the model composed content itself. A model that writes content without them silently
- * ignores the site's editorial rules.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadEditorialGuidelinesTool extends AbstractTool
 {
     /**
-     * The scopes editors can configure instructions for. `pageTree` and `contentElement` remain
-     * meaningful even though the matching generate* tools are gone — the model now composes that
-     * content itself and must honour the same rules.
-     *
-     * `general` is the default an editor gets when creating a Global Instruction (see
-     * ScopeItemsProcFunc), so it is the most used scope of all — and it was missing here, which made
-     * a call with scope `general` fail validation. Every other scope already returns the general
-     * rules as well, folded in by the repository.
-     *
      * @var list<string>
      */
     private const SCOPES = ['general', 'metadata', 'contentElement', 'pageTree', 'editContent', 'translation', 'imageWizard'];
@@ -92,9 +76,6 @@ class ReadEditorialGuidelinesTool extends AbstractTool
 
         $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
-        // GlobalInstructionsRepository::findByScope() already folds the `general` instructions into
-        // every scope (`scope = :scope OR scope = 'general'`), so one call returns both. Fetching
-        // `general` separately on top of this would print those rules twice.
         $instructions = $this->globalInstructionService->buildGlobalInstruction('pages', $scope, $pageId);
 
         if ('' === trim($instructions)) {

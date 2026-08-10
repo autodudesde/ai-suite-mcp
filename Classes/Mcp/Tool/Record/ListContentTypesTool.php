@@ -14,28 +14,9 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Absorbed the former `listColumnPositions` tool.
- *
- * Both rendered the page's colPos block from the same BackendLayoutColumnService; the only thing
- * listColumnPositions added was the list of container *instances* already sitting on the page. That
- * is a second section of one answer ("where can content go on this page?"), not a second question,
- * so it moved behind the `includeContainers` flag and the tool went away.
- *
- * Note the two kinds of container information are different: the CType listing below reports the
- * slot *definitions* of each container type (schema), while includeContainers reports the *instances*
- * with their UIDs (data). A model needs the UID to set tx_container_parent.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ListContentTypesTool extends AbstractDataTool
 {
-    /**
-     * The listing is the one place where the model picks a CType, so what is missing here it cannot
-     * recover later. A Content Block accordion used to render as "[relations: zm_col_accordion]" --
-     * no description, no child table, no child fields -- and a model asked for a FAQ element could
-     * not tell it apart from noise; measured, it fell back to a plain text element. The caps below
-     * keep that fix from inflating the ~40 core CTypes, none of which has an inline collection.
-     */
     private const MAX_INLINE_FIELDS_PER_CTYPE = 3;
 
     private const MAX_CHILD_FIELDS = 8;
@@ -214,16 +195,8 @@ class ListContentTypesTool extends AbstractDataTool
         return $this->textResult($text);
     }
 
-    /**
-     * The container elements that exist on the page right now, with the UID a child must reference.
-     * Came over from listColumnPositions when that tool was absorbed.
-     */
     private function renderContainerInstances(int $pageId, int $languageUid): string
     {
-        // Every branch answers. The old listColumnPositions returned an empty string when containers
-        // were unavailable — fine for a whole tool, wrong for a flag: silence is indistinguishable
-        // from "includeContainers was ignored", and the model cannot tell whether to retry, give up,
-        // or place the element at top level.
         $registry = $this->tcaLabel->getContainerRegistry();
         if (null === $registry) {
             return "\nContainer elements are not available here (EXT:container is not installed).\n";
@@ -259,10 +232,6 @@ class ListContentTypesTool extends AbstractDataTool
         return $text;
     }
 
-    /**
-     * The item description a Content Block declares in its config.yaml. This is what maps an intent
-     * ("a FAQ element") onto a CType whose name gives nothing away (`zm_accordion`).
-     */
     private function resolveDescription(mixed $description): string
     {
         if (!is_string($description) || '' === $description) {
@@ -278,14 +247,6 @@ class ListContentTypesTool extends AbstractDataTool
     }
 
     /**
-     * The inline collections of a CType, with the table their children live in and the fields those
-     * children take. writeRecords already expands nested children (NestedChildExpanderService), but
-     * that fact only lived in its own schema description -- behind a tool the model has not opened
-     * at the moment it chooses a type.
-     *
-     * FAL fields are skipped: they are `type: file`, already reported as fileFields, and their
-     * payload shape (uid_local) is a different mechanism described in the writeRecords schema.
-     *
      * @return list<array{field: string, childTable: string, childFields: list<string>}>
      */
     private function describeInlineChildren(string $cType): array
@@ -338,12 +299,10 @@ class ListContentTypesTool extends AbstractDataTool
     /**
      * @param array<string, mixed> $parentConfig
      *
-     * @return list<string> rendered as "name (type[, required])"
+     * @return list<string>
      */
     private function curateChildFields(string $childTable, array $parentConfig): array
     {
-        // The parent pointer and the match fields are set by the expander from the TCA, so a model
-        // that reads them here would only be tempted to fill them in itself.
         $skip = array_filter([
             (string) ($parentConfig['foreign_field'] ?? ''),
             (string) ($parentConfig['foreign_table_field'] ?? ''),
@@ -405,9 +364,6 @@ class ListContentTypesTool extends AbstractDataTool
                 if ($this->tcaCompatibilityService->isRichTextFieldConfig($config)) {
                     $categories['richtext'][] = $fieldName;
                 } elseif ('flex' === $type) {
-                    // Fell into no bucket at all, so a configurable CType looked exactly like a
-                    // plain one and nothing ever suggested calling readFlexFormSchema. A card group
-                    // keeps its column count in here.
                     $categories['flex'][] = $fieldName;
                 } elseif (\in_array($type, ['input', 'text', 'email', 'link'], true)) {
                     $categories['text'][] = $fieldName;

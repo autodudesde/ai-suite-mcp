@@ -24,6 +24,14 @@ class RecordAccessService
 {
     public const MAX_FILTERABLE_PAGES = 10000;
 
+    private const MAX_LISTED_FIELDS = 40;
+
+    private const MAX_SUGGESTIONS = 2;
+
+    private const MAX_SUGGESTION_DISTANCE = 3;
+
+    private const MIN_CONTAINED_SUGGESTION_LENGTH = 4;
+
     private const RECORD_PERMISSION_MAP = [
         'pages' => [
             'read' => [Permission::PAGE_SHOW, 'self'],
@@ -48,9 +56,6 @@ class RecordAccessService
         'sys_file_reference' => 'uid_local',
     ];
 
-    /**
-     * The tool that lists the valid type values per table, named in the rejection message.
-     */
     private const TYPE_LOOKUP_TOOL = [
         'tt_content' => 'listContentTypes',
         'pages' => 'listPageTypes',
@@ -59,7 +64,7 @@ class RecordAccessService
     private const MAX_LISTED_TYPE_VALUES = 20;
 
     /**
-     * @var array<string, list<int>> keyed by "{rootId}:{depth}"
+     * @var array<string, list<int>>
      */
     private array $readablePageIdsCache = [];
 
@@ -153,7 +158,7 @@ class RecordAccessService
      *
      * @return array<string, mixed>
      *
-     * @throws InvalidParameterException when fields do not exist in TCA schema or are not accessible
+     * @throws InvalidParameterException
      */
     public function filterAccessibleFields(string $table, array $fields): array
     {
@@ -172,14 +177,7 @@ class RecordAccessService
         }
 
         if ([] !== $unknownFields) {
-            $validFields = $this->getSchemaFieldNames($table);
-
-            throw new InvalidParameterException(sprintf(
-                'Unknown field(s) for table "%s": %s. Use readRecordSchema to look up valid field names. Available fields: %s',
-                $table,
-                implode(', ', $unknownFields),
-                implode(', ', $validFields),
-            ));
+            throw new InvalidParameterException($this->describeUnknownFields($table, $unknownFields));
         }
 
         if ([] !== $deniedFields) {
@@ -226,15 +224,9 @@ class RecordAccessService
     }
 
     /**
-     * A hallucinated type value used to disable validation instead of triggering it: an unknown CType
-     * fell back to $typeKey = null below, so the type-specific required-field check silently ran
-     * against the default type. DataHandler does not catch it either -- it validates `type: select`
-     * only for authMode/foreign_table/exclusiveKeys, never against a static items list -- so a
-     * one-character typo ("test" for "text") was written to the database as a real record.
+     * @param array<string, mixed> $fields
      *
-     * @param array<string, mixed> $fields the incoming write payload
-     *
-     * @throws InvalidParameterException when the payload sets the type field to a value that has no sub-schema
+     * @throws InvalidParameterException
      */
     public function assertKnownRecordType(string $table, array $fields): void
     {
@@ -261,8 +253,6 @@ class RecordAccessService
 
         $allowed = $this->allowedTypeValues($table, $divisor);
         if ([] === $allowed) {
-            // itemsProcFunc or foreign_table driven: no static list to check against, so fail open
-            // rather than reject a value we cannot prove wrong.
             return;
         }
 
@@ -274,28 +264,21 @@ class RecordAccessService
     /**
      * @param array<string, mixed> $fields
      *
-     * @return list<string> missing required field names
+     * @return list<string>
      *
-     * @throws InvalidParameterException when the payload carries an unknown type value
-     * @throws \RuntimeException         when required-field introspection fails
+     * @throws InvalidParameterException
+     * @throws \RuntimeException
      */
     public function findMissingRequiredFields(string $table, ?string $typeValue, array $fields): array
     {
         $missing = [];
 
-        // Outside the try below on purpose: its catch(\Throwable) would swallow the
-        // InvalidParameterException and re-throw it as a RuntimeException, which AbstractTool then
-        // classifies as datahandler_error instead of invalid_parameter.
+        // Outside the try below: its catch would reclassify InvalidParameterException.
         $this->assertKnownRecordType($table, $fields);
 
         try {
-            // The assert above already rejected an unknown type coming from the payload. This guard
-            // still matters for the value read off an *existing* row, which may predate the assert.
             $typeKey = (null !== $typeValue && '' !== $typeValue && $this->tcaCompatibilityService->hasSubSchema($table, $typeValue))
                 ? $typeValue
-                // A record written without a type value lands in the default sub-schema, so validate
-                // against that one. Leaving this null would validate against every sub-schema's
-                // fields at once and demand fields the record's own type never shows.
                 : $this->tcaCompatibilityService->resolveDefaultSubSchemaType($table);
 
             foreach ($this->tcaCompatibilityService->getFieldNamesForType($table, $typeKey) as $field) {
@@ -334,12 +317,10 @@ class RecordAccessService
     }
 
     /**
-     * @param int $perm one of Permission::PAGE_SHOW | PAGE_EDIT | PAGE_NEW | PAGE_DELETE | CONTENT_EDIT
-     *
      * @return array<string, mixed>
      *
      * @throws InsufficientPermissionException
-     * @throws \RuntimeException               when the page does not exist
+     * @throws \RuntimeException
      */
     public function assertPagePerm(int $pageId, int $perm): array
     {
@@ -377,7 +358,7 @@ class RecordAccessService
      * @return array<string, mixed>
      *
      * @throws InsufficientPermissionException
-     * @throws \RuntimeException               when the record does not exist
+     * @throws \RuntimeException
      */
     public function assertRecordReadAccess(string $table, int $uid): array
     {
@@ -388,7 +369,7 @@ class RecordAccessService
      * @return array<string, mixed>
      *
      * @throws InsufficientPermissionException
-     * @throws \RuntimeException               when the record does not exist
+     * @throws \RuntimeException
      */
     public function assertRecordEditAccess(string $table, int $uid): array
     {
@@ -472,8 +453,8 @@ class RecordAccessService
     }
 
     /**
-     * @throws InsufficientPermissionException permission denied
-     * @throws \RuntimeException               file does not exist or cannot be loaded by ResourceFactory
+     * @throws InsufficientPermissionException
+     * @throws \RuntimeException
      */
     public function assertFileReadAccess(int $fileUid): File
     {
@@ -495,8 +476,8 @@ class RecordAccessService
     }
 
     /**
-     * @throws InsufficientPermissionException permission denied
-     * @throws \RuntimeException               file does not exist or cannot be loaded by ResourceFactory
+     * @throws InsufficientPermissionException
+     * @throws \RuntimeException
      */
     public function assertFileWriteAccess(int $fileUid): File
     {
@@ -582,7 +563,7 @@ class RecordAccessService
     /**
      * @return list<int>
      *
-     * @throws InsufficientPermissionException when the resulting set exceeds {@see MAX_FILTERABLE_PAGES}
+     * @throws InsufficientPermissionException
      */
     public function getReadablePageIds(int $rootId = 0, int $depth = 99): array
     {
@@ -606,6 +587,10 @@ class RecordAccessService
     public function resolveLanguageUid(?string $isoCode, int $pageId): int
     {
         if (null === $isoCode || '' === $isoCode) {
+            return 0;
+        }
+
+        if ($pageId <= 0) {
             return 0;
         }
 
@@ -634,14 +619,94 @@ class RecordAccessService
     }
 
     /**
-     * The values the type field may take, from the same TCA items list ListContentTypesTool renders.
+     * @param list<string> $unknownFields
+     */
+    private function describeUnknownFields(string $table, array $unknownFields): string
+    {
+        $validFields = $this->getSchemaFieldNames($table);
+
+        $suggestions = [];
+        foreach ($unknownFields as $unknown) {
+            $closest = $this->closestFieldNames($unknown, $validFields);
+            if ([] !== $closest) {
+                $suggestions[] = sprintf('%s → %s', $unknown, implode(' or ', $closest));
+            }
+        }
+
+        $message = sprintf(
+            'Unknown field(s) for table "%s": %s.',
+            $table,
+            implode(', ', $unknownFields),
+        );
+
+        if ([] !== $suggestions) {
+            $message .= sprintf(' Did you mean: %s?', implode('; ', $suggestions));
+        }
+
+        $shown = array_slice($validFields, 0, self::MAX_LISTED_FIELDS);
+        $message .= sprintf(' Available fields: %s', implode(', ', $shown));
+        $remaining = count($validFields) - count($shown);
+        $message .= $remaining > 0
+            ? sprintf(' and %d more — readRecordSchema lists them all.', $remaining)
+            : '. Use readRecordSchema for their types.';
+
+        return $message;
+    }
+
+    /**
+     * @param list<string> $validFields
      *
-     * Page TSconfig `removeItems` is deliberately NOT applied here: it is an editorial restriction on
-     * the FormEngine wizard for one page tree, not a data-integrity rule. The value it hides still has
-     * a complete sub-schema and existing records use it, so rejecting it would break legitimate writes
-     * (imports, migrations) and make the MCP path stricter than the TYPO3 backend itself. Discovery
-     * filters removeItems; validation checks against the TCA truth.
+     * @return list<string>
+     */
+    private function closestFieldNames(string $unknown, array $validFields): array
+    {
+        $contained = $this->containedFieldNames($unknown, $validFields);
+        if ([] !== $contained) {
+            return $contained;
+        }
+
+        $maxDistance = min(self::MAX_SUGGESTION_DISTANCE, (int) floor(mb_strlen($unknown) / 2));
+        if ($maxDistance < 1) {
+            return [];
+        }
+
+        $scored = [];
+        foreach ($validFields as $candidate) {
+            $distance = levenshtein($unknown, $candidate);
+            if ($distance > 0 && $distance <= $maxDistance) {
+                $scored[$candidate] = $distance;
+            }
+        }
+
+        asort($scored);
+
+        return array_slice(array_keys($scored), 0, self::MAX_SUGGESTIONS);
+    }
+
+    /**
+     * @param list<string> $validFields
      *
+     * @return list<string>
+     */
+    private function containedFieldNames(string $unknown, array $validFields): array
+    {
+        $matches = [];
+        foreach ($validFields as $candidate) {
+            $length = mb_strlen($candidate);
+            if ($length < self::MIN_CONTAINED_SUGGESTION_LENGTH) {
+                continue;
+            }
+            if (str_contains($unknown, $candidate) || str_contains($candidate, $unknown)) {
+                $matches[$candidate] = -$length;
+            }
+        }
+
+        asort($matches);
+
+        return array_slice(array_keys($matches), 0, self::MAX_SUGGESTIONS);
+    }
+
+    /**
      * @return list<string>
      */
     private function allowedTypeValues(string $table, string $divisor): array
@@ -698,8 +763,6 @@ class RecordAccessService
             self::TYPE_LOOKUP_TOOL[$table] ?? sprintf('readRecordSchema(table: "%s")', $table),
         );
 
-        // The full list only when it stays cheap. tt_content carries 40+ CTypes on a real site, and a
-        // small model reading a 40-item enum picks worse than one following the tool pointer.
         if (count($allowed) <= self::MAX_LISTED_TYPE_VALUES) {
             $message .= ' Valid values: '.implode(', ', $allowed).'.';
         }

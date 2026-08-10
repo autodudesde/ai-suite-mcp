@@ -13,10 +13,10 @@ class ParameterValidatorService
     private array $unknownParameters = [];
 
     /**
-     * @param array<string, mixed> $params Raw parameters from the MCP client
-     * @param array<string, mixed> $schema The tool's getSchema() result
+     * @param array<string, mixed> $params
+     * @param array<string, mixed> $schema
      *
-     * @return array<string, mixed> Validated and sanitized parameters
+     * @return array<string, mixed>
      *
      * @throws InvalidParameterException
      */
@@ -28,10 +28,8 @@ class ParameterValidatorService
         /** @var list<string> $knownKeys */
         $knownKeys = $properties instanceof \stdClass ? [] : array_keys($properties);
 
-        // Lenient parameter name matching: map snake_case/kebab-case variants to camelCase
         $params = $this->normalizeParameterNames($params, $knownKeys);
 
-        // Required fields
         foreach ($schema['required'] ?? [] as $required) {
             if (!array_key_exists($required, $params)) {
                 throw new InvalidParameterException(
@@ -40,7 +38,6 @@ class ParameterValidatorService
             }
         }
 
-        // Type validation and casting
         foreach ($params as $key => $value) {
             $propSchema = $schema['properties'][$key] ?? null;
             if (null === $propSchema) {
@@ -59,7 +56,6 @@ class ParameterValidatorService
             };
         }
 
-        // Defaults for missing optional parameters
         foreach ($schema['properties'] ?? [] as $key => $propSchema) {
             if (!array_key_exists($key, $params) && isset($propSchema['default'])) {
                 $params[$key] = $propSchema['default'];
@@ -78,10 +74,10 @@ class ParameterValidatorService
     }
 
     /**
-     * @param array<string, mixed> $params    Raw parameters from the client
-     * @param list<string>         $knownKeys Schema property names (camelCase)
+     * @param array<string, mixed> $params
+     * @param list<string>         $knownKeys
      *
-     * @return array<string, mixed> Parameters with normalized keys
+     * @return array<string, mixed>
      */
     private function normalizeParameterNames(array $params, array $knownKeys): array
     {
@@ -161,11 +157,6 @@ class ParameterValidatorService
      */
     private function validateArray(string $key, mixed $value, array $schema): array
     {
-        // A tool-calling layer that hands back an array argument JSON-encoded is common enough that
-        // rejecting it outright costs a whole turn. Decoding here keeps the leniency in one place and
-        // reports a truncated payload for what it is; doExecute then always sees a real array.
-        // Only strings that actually attempt JSON take this path — a plain scalar is a type error and
-        // deserves to be told so, not to be explained as a JSON syntax problem.
         if (is_string($value) && $this->looksLikeJsonArray($value)) {
             $value = RecordsArgumentDecoder::decode($value, $key);
         }
@@ -189,10 +180,6 @@ class ParameterValidatorService
         return $value;
     }
 
-    /**
-     * Whether the string is an attempt at a JSON array/object rather than a plain scalar. A truncated
-     * payload still opens with its bracket, so this stays true for exactly the case worth reporting.
-     */
     private function looksLikeJsonArray(string $value): bool
     {
         $trimmed = ltrim($value);

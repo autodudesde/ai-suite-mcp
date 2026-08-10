@@ -35,11 +35,6 @@ use TYPO3\CMS\Core\SystemResource\Type\PublicResourceInterface;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * OAuth 2.1 Authorization Endpoint.
- * GET /aisuite-mcp/oauth/authorize — shows login form
- * POST /aisuite-mcp/oauth/authorize — processes login + consent.
- */
 class AuthorizationEndpoint
 {
     private const MFA_TICKET_TTL = 60;
@@ -128,7 +123,6 @@ class AuthorizationEndpoint
         $consentAction = (string) ($body['consent'] ?? '');
         $mfaTicket = (string) ($body['mfa_ticket'] ?? '');
 
-        // If this is an MFA verification submission
         if ('' !== $mfaTicket) {
             return $this->processMfa($request, $body);
         }
@@ -140,7 +134,6 @@ class AuthorizationEndpoint
         $beUserUid = $this->authenticateUser($username, $password);
 
         if (null === $beUserUid) {
-            // Login failed — show form again with error
             return new HtmlResponse($this->renderOAuthView('OAuth/Login', [
                 'clientId' => $clientId,
                 'redirectUri' => $redirectUri,
@@ -153,7 +146,6 @@ class AuthorizationEndpoint
             ], $request));
         }
 
-        // Check MCP access permission
         if (!$this->userHasMcpAccess($beUserUid)) {
             return new HtmlResponse($this->renderOAuthView('OAuth/Login', [
                 'clientId' => $clientId,
@@ -167,10 +159,8 @@ class AuthorizationEndpoint
             ], $request));
         }
 
-        // Initialize backend user context so permission checks work
         $backendUser = $this->initBackendUser($beUserUid);
 
-        // MFA required? → render MFA challenge
         if ($this->mfaProviderRegistry->hasActiveProviders($backendUser)) {
             return $this->renderMfaChallenge(
                 $backendUser,
@@ -212,7 +202,6 @@ class AuthorizationEndpoint
             );
         }
 
-        // Dedicated rate limit bucket for MFA verify attempts per user
         try {
             $this->rateLimiter->checkAndIncrement('mfa_'.$beUserUid);
         } catch (\RuntimeException $e) {
@@ -231,7 +220,6 @@ class AuthorizationEndpoint
 
         $provider = $this->mfaProviderRegistry->getFirstAuthenticationAwareProvider($backendUser);
         if (null === $provider) {
-            // No active provider anymore (unlikely, but be safe) → proceed to consent
             return $this->renderConsent($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $state, $resource, $request);
         }
 
@@ -633,7 +621,6 @@ class AuthorizationEndpoint
      */
     private function validateAuthorizationParams(array $params): ?ResponseInterface
     {
-        // response_type must be 'code'
         if (($params['response_type'] ?? '') !== 'code') {
             return new JsonResponse([
                 'error' => 'unsupported_response_type',
@@ -641,12 +628,10 @@ class AuthorizationEndpoint
             ], 400);
         }
 
-        // client_id required
         if (empty($params['client_id'])) {
             return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'client_id is required.'], 400);
         }
 
-        // redirect_uri required and validated (Q3)
         if (empty($params['redirect_uri']) || !$this->validateRedirectUri($params['redirect_uri'])) {
             $this->logger->warning('MCP OAuth: redirect_uri validation failed', [
                 'redirect_uri' => $params['redirect_uri'] ?? '(empty)',
@@ -660,7 +645,6 @@ class AuthorizationEndpoint
             ], 400);
         }
 
-        // code_challenge required (PKCE)
         if (empty($params['code_challenge'])) {
             return new JsonResponse([
                 'error' => 'invalid_request',
@@ -668,7 +652,6 @@ class AuthorizationEndpoint
             ], 400);
         }
 
-        // code_challenge_method must be S256 (S20)
         if (($params['code_challenge_method'] ?? 'S256') !== 'S256') {
             return new JsonResponse([
                 'error' => 'invalid_request',
@@ -706,7 +689,6 @@ class AuthorizationEndpoint
             ], 400);
         }
 
-        // Client ID allowlist check
         $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
         $allowedClientIds = array_filter(
             array_map('trim', explode(',', (string) ($extConf['mcpAllowedClientIds'] ?? ''))),
@@ -891,7 +873,7 @@ class AuthorizationEndpoint
     /**
      * v14+ branch: resolve resources via SystemResourceFactory + SystemResourcePublisher.
      *
-     * @return array{0: string, 1: string, 2: string} [logoUrl, faviconUrl, backgroundImageStyles]
+     * @return array{0: string, 1: string, 2: string}
      */
     private function resolveStyles(string $faviconPath, ?ServerRequestInterface $request): array
     {
@@ -928,7 +910,7 @@ class AuthorizationEndpoint
     /**
      * v12/v13 branch: use the legacy AuthenticationStyleInformation API.
      *
-     * @return array{0: string, 1: string, 2: string} [logoUrl, faviconUrl, backgroundImageStyles]
+     * @return array{0: string, 1: string, 2: string}
      */
     private function resolveStylesLegacy(string $faviconPath): array
     {

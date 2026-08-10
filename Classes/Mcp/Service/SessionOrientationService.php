@@ -10,28 +10,11 @@ use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
 
-/**
- * Builds the compact "current environment" block appended to the MCP server's
- * initialize instructions. Front-loading the user's accessible sites (root page
- * UID + languages) and the active write mode means the model is oriented for
- * site-wide tasks from turn one, without spending a readServerInfo round-trip.
- *
- * Only the token's webmount sites are listed, so the block stays small on large
- * multi-site installs.
- */
 class SessionOrientationService
 {
-    /**
-     * Cap on how many writable tables the index lists, so it stays small even for
-     * admins (who can write every table). The rest is reachable via listTables.
-     */
     private const TABLE_INDEX_CAP = 50;
 
     /**
-     * Infrastructure tables to keep out of the content-oriented index even though
-     * they are technically writable (admins write everything). Content-relevant
-     * sys_* tables (FAL, categories) are kept — see {@see isContentRelevantTable()}.
-     *
      * @var list<string>
      */
     private const KEPT_SYS_TABLES = ['sys_category', 'sys_file', 'sys_file_metadata', 'sys_file_reference', 'sys_file_collection'];

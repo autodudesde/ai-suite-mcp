@@ -10,7 +10,7 @@ use TYPO3\CMS\Core\Log\Processor\AbstractProcessor;
 class SensitiveDataProcessor extends AbstractProcessor
 {
     /**
-     * @var array<string, string> regex pattern (with delimiters) => replacement
+     * @var array<string, string>
      */
     private array $patterns = [
         '/Bearer\s+[A-Za-z0-9._\-]+/' => 'Bearer [REDACTED]',

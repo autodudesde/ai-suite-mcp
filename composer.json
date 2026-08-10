@@ -6,14 +6,14 @@
   "license": [
     "GPL-2.0-or-later"
   ],
-  "version": "0.6.0",
+  "version": "0.7.0",
   "keywords": [
     "TYPO3 CMS",
     "MCP",
     "Model Context Protocol"
   ],
   "require": {
-    "autodudes/ai-suite": "^12.21.0 || ^13.15.0 || ^14.3.0",
+    "autodudes/ai-suite": "^12.22.1 || ^13.16.1 || ^14.4.1",
     "typo3/cms-reports": "^12.4.11 || ^13.4.1 || ^14.3.0",
     "typo3/cms-workspaces": "^12.4.11 || ^13.4.1 || ^14.3.0",
     "logiscape/mcp-sdk-php": "^1.7",

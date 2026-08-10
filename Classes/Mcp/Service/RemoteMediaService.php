@@ -35,10 +35,9 @@ final class RemoteMediaService
     ) {}
 
     /**
-     * @param int          $maxBytes      hard size cap in bytes; 0 = no explicit cap
-     * @param list<string> $extraDenyList additional hostnames / IPs / CIDRs to block
+     * @param list<string> $extraDenyList
      *
-     * @throws \RuntimeException on any unsafe or failed fetch (message is safe to surface)
+     * @throws \RuntimeException
      */
     public function fetch(string $url, int $maxBytes = 0, array $extraDenyList = [], int $timeoutSeconds = 30): FetchedMedia
     {
@@ -76,9 +75,7 @@ final class RemoteMediaService
     }
 
     /**
-     * @param int $maxBytes hard size cap in bytes; 0 = no explicit cap
-     *
-     * @throws \RuntimeException on invalid or oversized content
+     * @throws \RuntimeException
      */
     public function decodeBase64ToTempFile(string $content, int $maxBytes = 0): FetchedMedia
     {
@@ -136,7 +133,7 @@ final class RemoteMediaService
     }
 
     /**
-     * @param array<string, string> $metadata sys_file_metadata field => value (empty values are skipped)
+     * @param array<string, string> $metadata
      */
     public function applyMetadata(File $file, array $metadata): void
     {
@@ -155,7 +152,7 @@ final class RemoteMediaService
     }
 
     /**
-     * @throws \RuntimeException when no extension can be determined
+     * @throws \RuntimeException
      */
     public function resolveExtension(string $mimeType, string $url, string $fileName): string
     {
@@ -215,7 +212,7 @@ final class RemoteMediaService
     /**
      * @param list<string> $extraDenyList
      *
-     * @throws \RuntimeException when the URL or any resolved target is not allowed
+     * @throws \RuntimeException
      */
     public function assertUrlIsSafe(string $url, array $extraDenyList = []): void
     {
@@ -321,7 +318,7 @@ final class RemoteMediaService
     /**
      * @param list<string> $entries
      *
-     * @return array{0: list<string>, 1: list<string>} [hostNames, ipsAndCidrs]
+     * @return array{0: list<string>, 1: list<string>}
      */
     private function splitDenyList(array $entries): array
     {
@@ -370,7 +367,7 @@ final class RemoteMediaService
     }
 
     /**
-     * @throws \RuntimeException when the IP is not a public, routable address
+     * @throws \RuntimeException
      */
     private function assertIpIsPublic(string $ip, string $host): void
     {

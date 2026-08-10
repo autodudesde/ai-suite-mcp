@@ -8,6 +8,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
@@ -34,9 +35,6 @@ class DeleteRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        // No "ask the user first" here: confirmation is a host concern (the chat drawer gates
-        // destructive calls, MCP clients raise an approval dialog). Telling the model to ask made
-        // it answer in prose instead of calling the tool at all.
         return 'Delete one or more records from any TCA table (deletes). Soft-delete only — refused if the table does not support it. '
             .'Always pass a records array, even for a single record.';
     }
@@ -58,6 +56,7 @@ class DeleteRecordTool extends AbstractDataTool
                         'required' => ['table', 'uid'],
                     ],
                 ],
+                'table' => ['type' => 'string', 'description' => 'Default TCA table for entries that do not carry their own `table`.'],
             ],
             'required' => ['records'],
         ];
@@ -71,6 +70,8 @@ class DeleteRecordTool extends AbstractDataTool
             return $this->textError('records must be a non-empty array.');
         }
 
+        $records = BatchDefaults::applyTable($records, (string) ($params['table'] ?? ''));
+
         $this->batchEntryValidator->assertShape($records, 'records', ['table', 'uid']);
 
         return $this->batchResultBuilder->run($records, 'record(s)', function (mixed $record): array {
@@ -81,8 +82,6 @@ class DeleteRecordTool extends AbstractDataTool
                 throw new InvalidParameterException('Skipped (missing table or uid).');
             }
 
-            // Validation is now inside the per-item handler so an excluded/missing table marks only
-            // this record as failed instead of aborting the whole batch.
             $this->recordAccess->validateTableWriteAccess($table);
 
             if (!$this->tcaCompatibilityService->hasSoftDelete($table)) {

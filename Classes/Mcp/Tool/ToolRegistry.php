@@ -9,10 +9,6 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 class ToolRegistry
 {
-    /**
-     * Built-in tool namespace. Only tools from this namespace may extend
-     * AbstractTool directly. Third-party tools MUST use AbstractCustomTool.
-     */
     private const BUILTIN_NAMESPACE = 'AutoDudes\AiSuiteMcp\Mcp\Tool\\';
 
     /** @var array<string, ToolInterface> */
@@ -54,10 +50,10 @@ class ToolRegistry
             return true;
         }
 
-        // Third-party extending AbstractTool directly: rejected
         if ($tool instanceof AbstractTool
             && !str_starts_with($className, 'AutoDudes\AiSuite\\')
             && !str_starts_with($className, 'AutoDudes\AiSuiteMcp\\')
+            && !str_starts_with($className, 'AutoDudes\Cheddi\\')
         ) {
             $this->logger->warning('Rejected third-party MCP tool: must extend AbstractCustomTool', [
                 'class' => $className,

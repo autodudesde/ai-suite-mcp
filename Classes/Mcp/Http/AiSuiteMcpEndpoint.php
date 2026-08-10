@@ -59,20 +59,15 @@ class AiSuiteMcpEndpoint
         }
 
         try {
-            // Extract and validate Bearer token
             $rawToken = $this->extractBearerToken($request);
             $tokenData = $this->oauthService->validateToken($rawToken);
 
-            // Backend user status live check
             $this->validateBackendUserStatus($tokenData, $rawToken);
 
-            // Check MCP access permission
             $this->validateMcpAccessPermission($tokenData);
 
-            // Initialize backend user context
             $this->backendUserInitializer->initialize($tokenData->beUserUid, $tokenData->workspaceUid);
 
-            // Initialize MCP user context
             $this->userContext->initialize(
                 $tokenData->beUserUid,
                 $tokenData->scopes,
@@ -92,7 +87,6 @@ class AiSuiteMcpEndpoint
             $payload = $payload instanceof \stdClass ? $payload : null;
             $rawBody = $this->stripInitializeMeta($rawBody, $payload);
 
-            // Build HttpMessage from PSR-7 request
             $httpMessage = new HttpMessage($rawBody);
             $httpMessage->setMethod($request->getMethod());
             $httpMessage->setUri((string) $request->getUri());
@@ -103,10 +97,8 @@ class AiSuiteMcpEndpoint
 
             $this->mintSessionForStatelessClient($httpMessage, $request, $mcpSessionId, $payload);
 
-            // process the JSON-RPC request
             $sdkResponse = $this->createRunner()->handleRequest($httpMessage);
 
-            // Inject server icon into initialize response (SDK doesn't support this natively)
             $body = $sdkResponse->getBody();
             if (null !== $body) {
                 $body = $this->injectServerIcon($body, $request);
@@ -120,7 +112,6 @@ class AiSuiteMcpEndpoint
                 'request' => $this->describeRequest($payload, $rawBody),
             ]);
 
-            // Convert SDK HttpMessage to PSR-7 response
             $response = new Response('php://temp', $sdkResponse->getStatusCode());
             foreach ($sdkResponse->getHeaders() as $name => $value) {
                 $response = $response->withHeader($name, $value);
@@ -170,9 +161,7 @@ class AiSuiteMcpEndpoint
 
         $initOptions = $server->createInitializationOptions();
 
-        // Stateless HTTP only: no long-lived SSE streams that would pin a
-        // PHP-FPM worker per client. auto_detect would otherwise flip
-        // enable_sse on in non-shared-hosting environments.
+        // Stateless HTTP only: SSE would pin one PHP-FPM worker per client.
         $httpOptions = [
             'auto_detect' => false,
             'enable_sse' => false,
@@ -389,11 +378,6 @@ class AiSuiteMcpEndpoint
         return $instructions;
     }
 
-    /**
-     * Validate the MCP-Protocol-Version request header.
-     *
-     * Spec (MCP 2025-11-25, Transports §Protocol Version Header)
-     */
     private function validateProtocolVersionHeader(ServerRequestInterface $request): ?ResponseInterface
     {
         $version = trim($request->getHeaderLine('MCP-Protocol-Version'));

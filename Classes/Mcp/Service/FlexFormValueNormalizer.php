@@ -9,15 +9,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Brings a client-supplied FlexForm value into the canonical shape DataHandler expects
- * (data → sheet → lDEF → field → vDEF) and validates it against the real data structure.
- *
- * Without this, DataHandler::checkValueForFlex() only looks at $value['data']: foreign top-level
- * keys survive, get serialised by flexArray2Xml() and are merged into the stored value. The
- * result is XML with an empty <data> node, which xml2array() reads back as a string — every
- * later read of the record then dies with "Cannot access offset of type string on string".
- */
 class FlexFormValueNormalizer
 {
     private const LANGUAGE_KEY = 'lDEF';
@@ -28,12 +19,11 @@ class FlexFormValueNormalizer
     ) {}
 
     /**
-     * @param array<string, mixed> $row   record row used to resolve the data structure (needs CType / list_type)
-     * @param mixed                $value the raw value as sent by the client
+     * @param array<string, mixed> $row
      *
-     * @return array<string, mixed> canonical structure: ['data' => [sheet => ['lDEF' => [field => ['vDEF' => …]]]]]
+     * @return array<string, mixed>
      *
-     * @throws InvalidParameterException when the value cannot be mapped onto the data structure
+     * @throws InvalidParameterException
      */
     public function normalize(string $table, string $field, array $row, mixed $value): array
     {
@@ -73,7 +63,7 @@ class FlexFormValueNormalizer
     /**
      * @param array<string, mixed> $row
      *
-     * @return array<string, array<string, mixed>> sheet name => field name => field definition
+     * @return array<string, array<string, mixed>>
      */
     private function resolveSheets(string $table, string $field, array $row): array
     {
@@ -119,8 +109,6 @@ class FlexFormValueNormalizer
                 return [];
             }
 
-            // Valid FlexForm XML: the atomic rollback and the safe-edit tools feed the stored
-            // XML string straight back through the write path, so it must stay acceptable.
             if (str_starts_with($trimmed, '<')) {
                 // xml2arrayProcess() over xml2array(): same parser, but without the runtime cache.
                 $parsed = GeneralUtility::xml2arrayProcess($trimmed);
@@ -141,12 +129,10 @@ class FlexFormValueNormalizer
     }
 
     /**
-     * Accepts the canonical form, sheets on top level, and a flat field map.
-     *
      * @param array<string, mixed>                $input
      * @param array<string, array<string, mixed>> $sheets
      *
-     * @return array<string, mixed> sheet name => sheet value
+     * @return array<string, mixed>
      */
     private function extractDataPart(string $table, string $field, array $input, array $sheets): array
     {
@@ -167,7 +153,6 @@ class FlexFormValueNormalizer
             return $input;
         }
 
-        // Flat field map: {field: value} — resolve the sheet from the data structure.
         $flat = [];
         foreach ($input as $fieldName => $fieldValue) {
             $fieldName = (string) $fieldName;
@@ -194,9 +179,6 @@ class FlexFormValueNormalizer
     }
 
     /**
-     * Section containers carry their own nested structure — only the canonical form is accepted,
-     * guessing a shape here would corrupt the containers.
-     *
      * @return array<string, mixed>
      */
     private function normalizeSection(string $table, string $field, string $sheetName, string $fieldName, mixed $value): array

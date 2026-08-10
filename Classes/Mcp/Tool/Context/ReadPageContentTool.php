@@ -66,8 +66,8 @@ class ReadPageContentTool extends AbstractTool
                 ],
                 'includeHidden' => [
                     'type' => 'boolean',
-                    'default' => false,
-                    'description' => 'Include hidden content elements.',
+                    'default' => true,
+                    'description' => 'Include hidden content elements, marked [HIDDEN] in the output. Default: true, as in the backend. Set false for the visitor-facing set.',
                 ],
                 'limit' => [
                     'type' => 'integer',
@@ -91,7 +91,7 @@ class ReadPageContentTool extends AbstractTool
     {
         $pageId = (int) $params['pageId'];
         $languageUid = $this->recordAccess->resolveLanguageUid($params['language'] ?? null, $pageId);
-        $includeHidden = (bool) ($params['includeHidden'] ?? false);
+        $includeHidden = (bool) ($params['includeHidden'] ?? true);
         $limit = (int) ($params['limit'] ?? 50);
         $offset = (int) ($params['offset'] ?? 0);
 
@@ -174,11 +174,6 @@ class ReadPageContentTool extends AbstractTool
 
         $text .= sprintf("\n_Showing %d of %d elements (offset: %d)._", count($rows), $total, $offset);
 
-        // A page with no content elements, or a SysFolder, is exactly where an editor keeps domain
-        // records (news, events, ...) instead of page content — and where a tt_content-only view looks
-        // misleadingly empty. Surface those records so the model writes into the right table rather
-        // than defaulting to a tt_content element or a subpage. Skipped for normal content pages to
-        // keep the common read cheap.
         if (0 === $total || 254 === (int) ($page['doktype'] ?? 0)) {
             $text .= $this->buildOtherRecordsSummary($pageId);
         }
@@ -186,10 +181,6 @@ class ReadPageContentTool extends AbstractTool
         return $this->textResult($text);
     }
 
-    /**
-     * Lists the non-content record tables that actually hold rows on this page, so a folder full of
-     * news/events is not read as empty. Returns '' when there are none.
-     */
     private function buildOtherRecordsSummary(int $pageId): string
     {
         $found = [];
@@ -239,9 +230,6 @@ class ReadPageContentTool extends AbstractTool
     private function formatElement(array $row, int $languageUid): array
     {
         $bodytext = strip_tags((string) ($row['bodytext'] ?? ''));
-        // Expose the referenced file UIDs (not just a count) so a caller can act
-        // on "the images on this page" directly — e.g. generateFileMetadata(fileUid)
-        // — instead of a separate, brittle FAL-resolution step.
         $fileUids = $this->contentRepository->getReferencedFileUids((int) $row['uid']);
 
         return [
@@ -316,8 +304,6 @@ class ReadPageContentTool extends AbstractTool
                 foreach ($rows as $row) {
                     foreach ($row['columns.'] ?? [] as $col) {
                         if ((int) ($col['colPos'] ?? -1) === $colPos) {
-                            // resolveLabel() knows both the LLL: form and the v14 short form; a plain
-                            // literal column name passes through it unchanged.
                             $name = $this->tcaLabel->resolveLabel((string) ($col['name'] ?? ''));
 
                             return '' !== $name ? $name : 'Column '.$colPos;

@@ -42,27 +42,9 @@ class SysWorkspaceRepository
     }
 
     /**
-     * @return list<int>
-     */
-    public function findAllUids(): array
-    {
-        $qb = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
-        $qb->getRestrictions()->removeByType(HiddenRestriction::class);
-        $rows = $qb
-            ->select('uid')
-            ->from(self::TABLE)
-            ->orderBy('uid', 'ASC')
-            ->executeQuery()
-            ->fetchFirstColumn()
-        ;
-
-        return array_map(static fn ($v): int => (int) $v, $rows);
-    }
-
-    /**
      * @param list<int> $uids
      *
-     * @return array<int, string> map of uid => title
+     * @return array<int, string>
      */
     public function findTitlesByUids(array $uids): array
     {
@@ -88,11 +70,6 @@ class SysWorkspaceRepository
         return $titles;
     }
 
-    /**
-     * Find the auto-provisioned per-user MCP workspace, if it exists. Matches the
-     * deterministic title AND requires the user to be a listed member, so a title
-     * collision cannot hand a user someone else's workspace.
-     */
     public function findUserWorkspaceUid(int $beUserUid): ?int
     {
         if ($beUserUid <= 0) {

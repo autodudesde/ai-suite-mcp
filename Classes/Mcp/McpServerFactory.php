@@ -7,13 +7,12 @@ namespace AutoDudes\AiSuiteMcp\Mcp;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpPromptHandler;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpResourceHandler;
-use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolAccessContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolGateway;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolInterface;
-use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolRegistry;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
 use Mcp\Types\CallToolResult;
-use Mcp\Types\TextContent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
@@ -22,11 +21,10 @@ use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 class McpServerFactory
 {
     public function __construct(
-        private readonly ToolRegistry $toolRegistry,
+        private readonly ToolGateway $toolGateway,
         private readonly McpUserContext $userContext,
         private readonly McpResourceHandler $resourceHandler,
         private readonly McpPromptHandler $promptHandler,
-        private readonly PermissionService $permissionService,
         private readonly SendRequestService $sendRequestService,
         private readonly LoggerInterface $logger,
         #[Autowire(service: 'cache.hash')]
@@ -57,15 +55,9 @@ class McpServerFactory
     private function handleToolsList(mixed $params): array
     {
         $serverAvailable = $this->checkServerAvailability();
-        $tokenScopes = $this->userContext->getScopes();
         $tools = [];
 
-        foreach ($this->toolRegistry->getTools() as $tool) {
-            // Scope AND backend-group flags, so a tool is never listed that a call would reject.
-            if (!$this->permissionService->isToolAvailable($tool->getName(), $tokenScopes)) {
-                continue;
-            }
-
+        foreach ($this->toolGateway->listTools($this->accessContext()) as $tool) {
             $description = $tool->getDescription();
 
             if (!$serverAvailable && $this->isAiTool($tool)) {
@@ -86,45 +78,17 @@ class McpServerFactory
     private function handleToolsCall(mixed $params): CallToolResult
     {
         $params = RequestParamsNormalizer::toArray($params);
-        $toolName = $params['name'] ?? '';
-        $arguments = (array) ($params['arguments'] ?? []);
-        $startTime = microtime(true);
 
-        $this->logger->info('MCP tool call', [
-            'tool' => $toolName,
-            'user' => $this->userContext->getBeUserUid(),
-            'client' => $this->userContext->getClientId(),
-            'arguments' => array_keys($arguments),
-        ]);
+        return $this->toolGateway->callTool(
+            (string) ($params['name'] ?? ''),
+            (array) ($params['arguments'] ?? []),
+            $this->accessContext(),
+        );
+    }
 
-        $tool = $this->toolRegistry->getTool($toolName);
-
-        if (null === $tool) {
-            $this->logger->warning('MCP unknown tool requested', ['tool' => $toolName]);
-
-            $duration = $this->getDurationMs($startTime);
-            $this->logger->info('MCP tool result', [
-                'tool' => $toolName,
-                'duration_ms' => $duration,
-                'isError' => true,
-            ]);
-
-            return new CallToolResult(
-                [new TextContent(sprintf('Unknown tool: %s. Use tools/list to see available tools.', $toolName))],
-                isError: true,
-            );
-        }
-
-        $result = $tool->execute($arguments);
-
-        $duration = $this->getDurationMs($startTime);
-        $this->logger->info('MCP tool result', [
-            'tool' => $toolName,
-            'duration_ms' => $duration,
-            'isError' => $result->isError ?? false,
-        ]);
-
-        return $result;
+    private function accessContext(): ToolAccessContext
+    {
+        return new ToolAccessContext($this->userContext->getScopes(), ToolAccessContext::VIA_MCP);
     }
 
     private function checkServerAvailability(): bool
@@ -147,10 +111,5 @@ class McpServerFactory
         $scope = $tool->getRequiredScope();
 
         return null !== $scope && !in_array($scope, ['mcp:read', 'mcp:write'], true);
-    }
-
-    private function getDurationMs(float $startTime): int
-    {
-        return (int) round((microtime(true) - $startTime) * 1000);
     }
 }

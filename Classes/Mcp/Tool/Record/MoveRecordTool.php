@@ -9,6 +9,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
@@ -60,6 +61,7 @@ class MoveRecordTool extends AbstractDataTool
                         'required' => ['table', 'uid'],
                     ],
                 ],
+                'table' => ['type' => 'string', 'description' => 'Default TCA table for entries that do not carry their own `table`.'],
             ],
             'required' => ['moves'],
         ];
@@ -72,6 +74,8 @@ class MoveRecordTool extends AbstractDataTool
         if (!is_array($moves) || empty($moves)) {
             return $this->textError('moves must be a non-empty array of {table, uid, targetPid|afterUid}.');
         }
+
+        $moves = BatchDefaults::applyTable($moves, (string) ($params['table'] ?? ''));
 
         $this->batchEntryValidator->assertShape($moves, 'moves', ['table', 'uid'], ['targetPid', 'afterUid']);
 

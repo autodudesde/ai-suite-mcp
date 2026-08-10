@@ -22,6 +22,7 @@ class RecordPreviewService
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly DataHandlerSanitizerService $sanitizer,
         private readonly RecordTypeAliasNormalizer $typeAliasNormalizer,
+        private readonly TranslationFieldAliasNormalizer $translationAliasNormalizer,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -107,6 +108,7 @@ class RecordPreviewService
             } elseif (null !== $uid) {
                 $this->recordAccess->assertRecordEditAccess($table, $uid);
             }
+            $fields = $this->translationAliasNormalizer->normalizeFields($table, $fields)['fields'];
             $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
             $this->recordAccess->assertKnownRecordType($table, $fields);
         } catch (InsufficientPermissionException $e) {
@@ -127,8 +129,10 @@ class RecordPreviewService
                 'pid' => $pid,
                 'reason' => $e->getMessage(),
             ]);
+            $descriptor['action'] = 'invalid';
+            $descriptor['note'] = $e->getMessage();
 
-            return $this->invalid($e->getMessage());
+            return $descriptor;
         }
 
         $existing = null;
@@ -149,18 +153,22 @@ class RecordPreviewService
 
         $report = $this->sanitize($table, $fields, $existing);
         if ([] !== $report['blocked']) {
-            return $this->invalid(sprintf(
+            $descriptor['action'] = 'invalid';
+            $descriptor['note'] = sprintf(
                 'Raw markup is not allowed in the code editor field(s) %s of %s (setting "%s"); this record cannot be written',
                 implode(', ', $report['blocked']),
                 $table,
                 RawMarkupPolicyService::SETTING_KEY,
-            ));
+            );
+
+            return $descriptor;
         }
 
         $descriptor['pageLabel'] = $this->pageLabel(
             is_int($descriptor['pid']) ? $descriptor['pid'] : null,
         );
         $descriptor['fields'] = $this->describeFields($table, $report['data'], $existing, $maxValueLength);
+        $descriptor['translations'] = $this->plannedTranslationLanguages($record);
 
         return $descriptor;
     }
@@ -343,6 +351,30 @@ class RecordPreviewService
             'position' => null,
             'note' => null,
             'fields' => [],
+            'translations' => [],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     *
+     * @return list<string>
+     */
+    private function plannedTranslationLanguages(array $record): array
+    {
+        $translations = $record[TranslationExpanderService::TRANSLATIONS_KEY] ?? null;
+        if (!is_array($translations)) {
+            return [];
+        }
+
+        $languages = [];
+        foreach (array_keys($translations) as $language) {
+            $code = trim((string) $language);
+            if ('' !== $code) {
+                $languages[] = $code;
+            }
+        }
+
+        return $languages;
     }
 }

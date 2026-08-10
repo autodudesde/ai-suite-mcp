@@ -141,12 +141,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Atomically claim the right to rotate this refresh token.
-     *
-     * Exactly one of N concurrent refresh requests wins; the losers see false and
-     * fall into the grace window instead of tripping the reuse alarm.
-     */
     public function claimRotation(int $uid, int $now): bool
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -176,15 +170,6 @@ class TokenRepository
         ;
     }
 
-    /**
-     * Revoke every live token of one rotation lineage.
-     *
-     * Unlike revokeAllTokensForUserAndClient() this targets the actual chain: dynamic
-     * client registration hands the same connector a fresh client_id, so (be_user, client_id)
-     * both misses siblings of the old id and sweeps up unrelated live sessions.
-     *
-     * @return int number of tokens actually revoked
-     */
     public function revokeFamily(int $familyId): int
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);

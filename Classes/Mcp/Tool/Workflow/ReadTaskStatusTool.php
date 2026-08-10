@@ -33,8 +33,6 @@ class ReadTaskStatusTool extends AbstractTool
 
     public function getDescription(): string
     {
-        // The "do not poll, wait for the user to ask" workflow lives in OperatingGuidelines
-        // ("## Background tasks"), exactly once. Repeating it here costs tokens on every turn.
         return 'Progress of a background batch operation (e.g. from batchGenerateMetadata). Returns the current '
             .'status immediately without waiting for the batch. readTaskResults returns the finished output.';
     }

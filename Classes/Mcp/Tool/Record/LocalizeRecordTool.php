@@ -22,8 +22,6 @@ class LocalizeRecordTool extends AbstractDataTool
 
     public function getDescription(): string
     {
-        // "no credits" is the disambiguator against translateRecord, which does the same thing with
-        // an external AI model and bills for it. The verb alone cannot carry that.
         return 'Create a translation of a record with the built-in TYPO3 localization (writes, no credits). '
             .'Mode "localize" creates an empty linked shell; "copyToLanguage" creates an independent full copy. '
             .'Returns the UID of the new translation record, which is empty until content is written into it.';

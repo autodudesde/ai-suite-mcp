@@ -25,11 +25,7 @@ class UploadMediaTool extends AbstractTool
     protected ?string $requiredScope = 'mcp:media';
     // Fetches agent-controlled remote URLs (SSRF-guarded) → interacts with the outside world.
     protected bool $openWorldHint = true;
-    // Writes sys_file + the physical file straight through FAL (no versioningWS), so no write mode
-    // can undo it — it lands on live in every mode. Flagged destructive so the client's approval
-    // dialog (its only gate) and ChEddi's confirmation card treat it like a deletion rather than a
-    // reversible workspace write. Semantically the upload is additive, but "cannot be undone by a
-    // workspace" is exactly what destructiveHint gates on here (see deleteRecords, applyTaskResults).
+    // FAL writes bypass versioningWS, so no write mode undoes this.
     protected bool $destructiveHint = true;
 
     public function __construct(
@@ -107,7 +103,11 @@ class UploadMediaTool extends AbstractTool
             ];
         });
 
-        return new CallToolResult([new TextContent($outcome->text), ...$previews], isError: $outcome->hadError());
+        return new CallToolResult(
+            [new TextContent($outcome->text), ...$previews],
+            isError: $outcome->hadError(),
+            structuredContent: $this->batchResultBuilder->structuredFor($outcome),
+        );
     }
 
     /**

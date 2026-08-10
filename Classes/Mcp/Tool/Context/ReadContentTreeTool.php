@@ -13,13 +13,6 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-/**
- * Bulk read of the editorial content across a whole page subtree, paginated by page.
- * Collapses the N×readPageContent loop that site-wide tasks would otherwise need
- * (du/Sie consistency, tone/terminology audits, "find/replace X everywhere",
- * preparing a bulk edit) into a few calls — and returns each element's UID so the
- * model can feed them straight into a writeRecords batch.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadContentTreeTool extends AbstractTool
 {
@@ -57,9 +50,11 @@ class ReadContentTreeTool extends AbstractTool
                 'rootPageId' => ['type' => 'integer', 'default' => 0, 'description' => 'Subtree root page UID (0 = all accessible sites).'],
                 'depth' => ['type' => 'integer', 'default' => 3, 'minimum' => 1, 'maximum' => 10, 'description' => 'Levels to descend. Default: 3.'],
                 'language' => ['type' => 'string', 'description' => 'ISO language code to read (e.g. "fr"). Default: default language. Resolved against the rootPageId site.'],
-                'includeHidden' => ['type' => 'boolean', 'default' => false, 'description' => 'Include hidden content elements.'],
+                'includeHidden' => ['type' => 'boolean', 'default' => true, 'description' => 'Include hidden content elements, marked [hidden]. Default: true, as in the backend.'],
                 'maxLength' => ['type' => 'integer', 'default' => 200, 'description' => 'Truncate each element text to this many characters. Use 0 / fullText for no truncation.'],
-                'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return untruncated element text.'],
+                'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return untruncated element text. '
+                    .'Expensive on a whole tree: every element\'s full text enters the conversation and is paid for in this and every later turn. '
+                    .'Read the one element you need with readRecords instead.'],
                 'limitPages' => ['type' => 'integer', 'default' => 25, 'minimum' => 1, 'maximum' => 100, 'description' => 'Pages per call. Default: 25. Page through the rest with offset.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip the first N pages (pagination).'],
             ],
@@ -70,7 +65,7 @@ class ReadContentTreeTool extends AbstractTool
     {
         $rootPageId = (int) ($params['rootPageId'] ?? 0);
         $depth = max(1, min(10, (int) ($params['depth'] ?? 3)));
-        $includeHidden = (bool) ($params['includeHidden'] ?? false);
+        $includeHidden = (bool) ($params['includeHidden'] ?? true);
         $limitPages = max(1, min(100, (int) ($params['limitPages'] ?? 25)));
         $offset = max(0, (int) ($params['offset'] ?? 0));
 

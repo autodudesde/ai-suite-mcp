@@ -146,8 +146,6 @@ abstract class AbstractSafeEditTool extends AbstractDataTool
     }
 
     /**
-     * Folds whitespace to locate the match, then maps it back onto the original byte offsets.
-     *
      * @return list<array{offset: int, length: int}>
      */
     private function findNormalized(string $subject, string $search): array

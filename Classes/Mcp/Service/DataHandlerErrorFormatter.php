@@ -10,7 +10,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\DataHandlerException;
 class DataHandlerErrorFormatter
 {
     /**
-     * @param array<int|string, mixed> $errorLog the DataHandler::$errorLog array
+     * @param array<int|string, mixed> $errorLog
      */
     public function toException(string $operation, string $table, ?int $uid, array $errorLog): DataHandlerException
     {

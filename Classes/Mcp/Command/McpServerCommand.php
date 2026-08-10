@@ -20,12 +20,6 @@ use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Local stdio MCP server.
- *
- *   vendor/bin/typo3 ai-suite-mcp:server --user=1
- *   vendor/bin/typo3 ai-suite-mcp:server --user=editor --scopes="mcp:read mcp:write"
- */
 class McpServerCommand extends Command
 {
     use CliBackendBootstrapTrait;

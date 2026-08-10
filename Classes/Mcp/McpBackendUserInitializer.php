@@ -30,9 +30,7 @@ class McpBackendUserInitializer implements SingletonInterface
     ) {}
 
     /**
-     * @param null|int $workspaceUid Workspace the token is bound to (null = fall back to mcpWriteMode)
-     *
-     * @throws InsufficientPermissionException when the resolved workspace is not accessible
+     * @throws InsufficientPermissionException
      */
     public function initialize(int $beUserUid, ?int $workspaceUid): BackendUserAuthentication
     {

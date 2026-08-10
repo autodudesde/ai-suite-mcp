@@ -21,19 +21,25 @@ class BatchResultBuilderService
     ) {}
 
     /**
-     * `succeededUids` alone cannot be mapped back onto the input items once a single
-     * item fails, because failed items leave no entry. Handlers that report `table`
-     * (and optionally `action`) therefore also get a `records` list of change
-     * descriptors, which is what audit consumers such as ChEddi's change tracker read.
-     *
      * @param iterable<mixed>                                                                             $items
      * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, action?: ?string} $handler
-     * @param string                                                                                      $summaryNoun e.g. "record(s)", "copy/copies"
      */
     public function run(iterable $items, string $summaryNoun, callable $handler): CallToolResult
     {
         $outcome = $this->build($items, $summaryNoun, $handler);
 
+        return new CallToolResult(
+            [new TextContent($outcome->text)],
+            isError: $outcome->hadError(),
+            structuredContent: $this->structuredFor($outcome),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function structuredFor(BatchOutcome $outcome): array
+    {
         $batch = [
             'total' => $outcome->total,
             'succeededUids' => $outcome->succeeded,
@@ -52,16 +58,12 @@ class BatchResultBuilderService
             ];
         }
 
-        return new CallToolResult(
-            [new TextContent($outcome->text)],
-            isError: $outcome->hadError(),
-            structuredContent: $structured,
-        );
+        return $structured;
     }
 
     /**
      * @param iterable<mixed>                                          $items
-     * @param callable(mixed, int): array{message: string, uid?: ?int} $handler same contract as run()
+     * @param callable(mixed, int): array{message: string, uid?: ?int} $handler
      */
     public function renderText(iterable $items, string $summaryNoun, callable $handler): string
     {
@@ -124,9 +126,6 @@ class BatchResultBuilderService
 
         $hadError = $failedCount > 0;
 
-        // The verdict belongs in the first line. A small model skims the head of a tool result, and
-        // "## Batch result" above a list that mixes ✅ and ❌ reads as success -- measured: gpt-5.4-nano
-        // reported "done" after writing one of two records. The success-path header stays byte-identical.
         if ($hadError) {
             $text = sprintf(
                 "## Batch FAILED: %d of %d %s could not be written, %d succeeded%s\n\n",

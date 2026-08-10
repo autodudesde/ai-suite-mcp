@@ -46,7 +46,7 @@ class WorkspaceComparisonService
     /**
      * @return array{status: string, liveUid: int, label: string, changes: array<string, array{old: string, new: string}>, newFields: array<string, string>}
      *
-     * @throws \RuntimeException when the record does not exist
+     * @throws \RuntimeException
      */
     public function compareSingle(string $table, int $uid, int $currentWs): array
     {
@@ -58,7 +58,6 @@ class WorkspaceComparisonService
         $rowWsid = (int) ($row['t3ver_wsid'] ?? 0);
         $state = (int) ($row['t3ver_state'] ?? 0);
 
-        // Case A: the caller passed a workspace-version uid (offline / new / delete record).
         if ($rowWsid === $currentWs && $rowWsid > 0) {
             if ($this->tcaCompatibilityService->isNewPlaceholderState($state)) {
                 return $this->result('added', $uid, $this->recordLabel($table, $row), [], $this->presentFields($table, $row));
@@ -76,7 +75,6 @@ class WorkspaceComparisonService
             return $this->result([] !== $changes ? 'changed' : 'unchanged', $liveUid > 0 ? $liveUid : $uid, $this->recordLabel($table, $liveRow ?? $row), $changes);
         }
 
-        // Case B: the caller passed a live uid,  look up its workspace overlay (if any).
         $wsVersion = BackendUtility::getWorkspaceVersionOfRecord($currentWs, $table, $uid);
         if (!is_array($wsVersion)) {
             return $this->result('unchanged', $uid, $this->recordLabel($table, $row));
@@ -93,7 +91,7 @@ class WorkspaceComparisonService
 
     /**
      * @param array<string, null|scalar> $sanitizedFilters
-     * @param null|list<int>             $allowedPids      null = no PID restriction (admin / page mode)
+     * @param null|list<int>             $allowedPids
      *
      * @return array{changed: list<array{liveUid: int, label: string, changes: array<string, array{old: string, new: string}>}>, added: list<array{uid: int, label: string, fields: array<string, string>}>, removed: list<array{liveUid: int, label: string}>, unchangedCount: null|int, truncated: bool}
      */

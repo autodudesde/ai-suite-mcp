@@ -9,15 +9,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 final class BatchOutcome
 {
     /**
-     * @param list<int|string>                                            $succeeded persisted UIDs of the successful items
-     * @param list<array{table: string, uid: int|string, action: string}> $records   change descriptors of the successful
-     *                                                                               items, in the same order as $succeeded.
-     *                                                                               Only populated by handlers that report a
-     *                                                                               table; consumers must treat it as optional.
-     * @param ?McpErrorType                                               $errorType type of the first failed item, so a partial
-     *                                                                               failure can be classified machine-readably.
-     *                                                                               Null when nothing failed.
-     * @param int                                                         $skipped   items that had nothing to do; never a failure
+     * @param list<int|string>                                            $succeeded
+     * @param list<array{table: string, uid: int|string, action: string}> $records
      */
     public function __construct(
         public readonly string $text,

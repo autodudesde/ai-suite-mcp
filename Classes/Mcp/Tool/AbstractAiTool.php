@@ -18,9 +18,6 @@ use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-/**
- * Abstract base class for AI tools that contact the AI Suite Server.
- */
 abstract class AbstractAiTool extends AbstractTool
 {
     protected bool $openWorldHint = true;
@@ -236,11 +233,8 @@ abstract class AbstractAiTool extends AbstractTool
     }
 
     /**
-     * @param LibraryService        $libraryService injected from the concrete tool
-     * @param string                $libraryType    GenerationLibraryEnumeration constant
-     * @param string                $endpoint       server endpoint name
-     * @param list<string>          $featureTypes   library response keys (e.g. ['text'], ['text', 'image'])
-     * @param array<string, string> $featureLabels  human labels per feature key (e.g. ['text' => 'Text models'])
+     * @param list<string>          $featureTypes
+     * @param array<string, string> $featureLabels
      */
     protected function listAvailableModels(
         LibraryService $libraryService,
@@ -330,7 +324,6 @@ abstract class AbstractAiTool extends AbstractTool
         [$storagePrefix] = explode(':', $combinedIdentifier, 2);
         $combinedIdentifier = $storagePrefix.':'.$folderPath;
 
-        // Filemount-aware
         $folder = $this->recordAccess->assertFolderReadAccess($combinedIdentifier);
         $files = $folder->getStorage()->getFilesInFolder($folder);
 

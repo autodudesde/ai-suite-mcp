@@ -12,14 +12,15 @@ use TYPO3\CMS\Core\SingletonInterface;
 
 class SearchableTablesService implements SingletonInterface
 {
-    /** @var null|list<string> */
-    private ?array $additional = null;
+    /** @var array<string, list<string>> */
+    private array $additional = [];
 
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly McpExcludedTablesService $excludedTables,
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly ChildTableRegistryService $childTableRegistry,
+        private readonly SurfaceSettingOverrides $surfaceOverrides,
     ) {}
 
     /**
@@ -27,8 +28,9 @@ class SearchableTablesService implements SingletonInterface
      */
     public function getAdditionalTables(): array
     {
-        if (null !== $this->additional) {
-            return $this->additional;
+        $signature = $this->surfaceOverrides->getSignature();
+        if (isset($this->additional[$signature])) {
+            return $this->additional[$signature];
         }
 
         $extConf = [];
@@ -39,8 +41,14 @@ class SearchableTablesService implements SingletonInterface
             // An unconfigured extension still gets the auto-detected child tables.
         }
 
-        $excludedFromAuto = $this->parseList($extConf['mcpExcludeAdditionalTablesFromSearch'] ?? '');
-        $configured = $this->parseList($extConf['mcpSearchAdditionalTables'] ?? '');
+        $excludedFromAuto = array_merge(
+            $this->parseList($extConf['mcpExcludeAdditionalTablesFromSearch'] ?? ''),
+            $this->surfaceOverrides->getSearchTablesExcludedFromAuto(),
+        );
+        $configured = array_merge(
+            $this->parseList($extConf['mcpSearchAdditionalTables'] ?? ''),
+            $this->surfaceOverrides->getAdditionalSearchTables(),
+        );
 
         $candidates = array_merge(
             array_diff($this->childTableRegistry->getChildTables(), $excludedFromAuto),
@@ -71,7 +79,7 @@ class SearchableTablesService implements SingletonInterface
         $tables = array_values(array_unique($tables));
         sort($tables);
 
-        return $this->additional = $tables;
+        return $this->additional[$signature] = $tables;
     }
 
     /**

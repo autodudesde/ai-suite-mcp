@@ -26,7 +26,7 @@ class SessionTrackerService
     }
 
     /**
-     * @throws \RuntimeException If budget exceeded
+     * @throws \RuntimeException
      */
     public function trackUsage(int $credits): void
     {

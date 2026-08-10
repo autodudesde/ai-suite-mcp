@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordPreviewService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
@@ -43,12 +44,11 @@ class PreviewRecordTool extends AbstractDataTool
             'type' => 'object',
             'properties' => [
                 'records' => [
-                    // Kept in step with writeRecords: a union type here would train the model into the
-                    // string branch for the write that follows. See RecordsArgumentDecoder.
                     'type' => 'array',
                     'description' => 'The records writeRecords would receive. Each: {table, fields, pid?, uid?}. An uid diffs against that record; a pid previews a create.',
                     'items' => ['type' => 'object'],
                 ],
+                'table' => ['type' => 'string', 'description' => 'Default TCA table for entries that do not carry their own `table`. Mirrors writeRecords.'],
             ],
             'required' => ['records'],
         ];
@@ -61,6 +61,8 @@ class PreviewRecordTool extends AbstractDataTool
         if (empty($records)) {
             return $this->textError('records must be a non-empty array.');
         }
+
+        $records = BatchDefaults::applyTable($records, (string) ($params['table'] ?? ''));
 
         $described = $this->recordPreview->describeWrite($records);
 
@@ -82,9 +84,6 @@ class PreviewRecordTool extends AbstractDataTool
 
         $text = $this->render($described, $invalid, $validCount);
 
-        // Only when there is literally nothing to show. isError does not abort the turn -- the host
-        // appends the result as a failed tool message and the model gets another turn to correct
-        // itself -- but a mixed batch still has something worth rendering, so it stays a success.
         if (0 === $validCount) {
             return $this->errorResult($text, McpErrorType::InvalidParameter, [], $preview);
         }
@@ -94,7 +93,7 @@ class PreviewRecordTool extends AbstractDataTool
 
     /**
      * @param list<array<string, mixed>> $described
-     * @param list<array<string, mixed>> $invalid   the subset of $described that cannot be written
+     * @param list<array<string, mixed>> $invalid
      */
     private function render(array $described, array $invalid, int $validCount): string
     {
@@ -142,14 +141,19 @@ class PreviewRecordTool extends AbstractDataTool
                 }
             }
 
+            $translations = $record['translations'] ?? [];
+            if (is_array($translations) && [] !== $translations) {
+                $text .= sprintf(
+                    "- _Plus one translation per language: %s_\n",
+                    implode(', ', array_map('strval', $translations)),
+                );
+            }
+
             $text .= "\n";
         }
 
         $text .= "---\n";
 
-        // An invalid record cannot be written, so inviting a write is worse than useless: it is what
-        // sent gpt-5.4-nano into writeRecords with a hallucinated CType and a record whose table was
-        // a placeholder string. The invitation is now tied to there being something writable.
         if ([] !== $invalid) {
             $notes = implode('; ', array_map(
                 static fn (array $record): string => is_string($record['note'] ?? null) ? $record['note'] : 'invalid',
@@ -171,9 +175,6 @@ class PreviewRecordTool extends AbstractDataTool
             );
         }
 
-        // Not "wait for their confirmation": measured, gpt-5.4-nano and gpt-oss-120b took that
-        // literally, ended the turn, and never called writeRecords. The host owns the approval
-        // gate; a tool result that tells the model to wait simply strands the task.
         $text .= 'Show this preview to the user, then call writeRecords to save it.';
 
         return $text;

@@ -40,9 +40,6 @@ class CopyRecordTool extends AbstractDataTool
 
     public function getSchema(): array
     {
-        // Array-only. The former dual mode (a `copies` array *or* top-level table/uid/targetPid,
-        // with zero required properties) cannot be expressed in JSON Schema, so the model had to
-        // guess a mode from prose. One shape, one required property.
         return [
             'type' => 'object',
             'properties' => [

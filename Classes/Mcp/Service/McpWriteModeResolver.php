@@ -22,7 +22,7 @@ class McpWriteModeResolver implements SingletonInterface
     ) {}
 
     /**
-     * @throws InsufficientPermissionException when write mode "workspace" cannot provide a draft workspace
+     * @throws InsufficientPermissionException
      */
     public function resolveWorkspaceId(BackendUserAuthentication $backendUser, ?int $boundWorkspaceUid = null, ?string $writeModeOverride = null): int
     {
@@ -32,12 +32,7 @@ class McpWriteModeResolver implements SingletonInterface
 
         $writeMode = ('' !== (string) $writeModeOverride) ? (string) $writeModeOverride : $this->getWriteMode();
 
-        return match (true) {
-            'live' === $writeMode => 0,
-            'workspace' === $writeMode => $this->resolveWorkspaceModeId($backendUser),
-            'auto' === $writeMode => $this->resolveAutoWorkspaceId($backendUser),
-            default => 0,
-        };
+        return 'live' === $writeMode ? 0 : $this->resolveWorkspaceModeId($backendUser);
     }
 
     public function getWriteMode(): string
@@ -57,7 +52,6 @@ class McpWriteModeResolver implements SingletonInterface
 
         $beUserUid = (int) ($backendUser->user['uid'] ?? 0);
 
-        // Reuse a previously auto-created per-user workspace if present (idempotent).
         try {
             $existing = $this->sysWorkspaceRepository->findUserWorkspaceUid($beUserUid);
         } catch (\Throwable $e) {
@@ -72,7 +66,6 @@ class McpWriteModeResolver implements SingletonInterface
             return $existing;
         }
 
-        // Create one on demand so approved writes never silently hit live.
         try {
             $username = (string) ($backendUser->user['username'] ?? ('uid '.$beUserUid));
             $newUid = $this->sysWorkspaceRepository->createForUser($beUserUid, $username);
@@ -101,36 +94,5 @@ class McpWriteModeResolver implements SingletonInterface
         }
 
         return $message;
-    }
-
-    private function resolveAutoWorkspaceId(BackendUserAuthentication $backendUser): int
-    {
-        if ($backendUser->workspace > 0) {
-            return $backendUser->workspace;
-        }
-
-        try {
-            $rows = $this->sysWorkspaceRepository->findAllUids();
-        } catch (\Throwable $e) {
-            $this->logger->warning('Auto-workspace resolution: could not query sys_workspace, falling back to live', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return 0;
-        }
-
-        foreach ($rows as $wsUid) {
-            if ($wsUid > 0 && $backendUser->checkWorkspace($wsUid)) {
-                // Logged per request in a chat session, so it only produces noise.
-                // $this->logger->info('Auto-workspace resolution: user has no default workspace, picking first accessible', [
-                //     'beUserUid' => $backendUser->user['uid'] ?? 0,
-                //     'pickedWorkspace' => $wsUid,
-                // ]);
-
-                return $wsUid;
-            }
-        }
-
-        return 0;
     }
 }

@@ -11,16 +11,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-/**
- * Persists the translations of a finished batch into the localization records.
- *
- * This used to be `getTaskResults(apply: true)`. MCP tool annotations are static, so a single
- * tool whose `apply` flag flips it from a read into a DataHandler write cannot describe itself
- * honestly: it advertised `readOnlyHint: true`, which made the chat drawer auto-execute it
- * without a confirmation dialog, and its (missing) scope-map entry let a read-only token write.
- * Splitting read from write is what makes the annotations — and therefore both the host-side
- * approval gate and the OAuth scope gate — true.
- */
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ApplyTaskResultsTool extends AbstractTool
 {
