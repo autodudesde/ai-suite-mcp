@@ -57,6 +57,13 @@ class PermissionService
         'copyMediaReference' => 'mcp:write',
         'replaceMediaReference' => 'mcp:write',
 
+        'auditSeo' => 'mcp:read',
+        'auditAccessibility' => 'mcp:read',
+        'auditQuestions' => 'mcp:read',
+        'auditContentGap' => 'mcp:read',
+        'auditTopicCluster' => 'mcp:read',
+        'auditCompetitors' => 'mcp:read',
+        'readAuditResults' => 'mcp:read',
         'batchGenerateMetadata' => 'mcp:workflow',
         'batchGenerateFileMetadata' => 'mcp:workflow',
         'batchGenerateFolderMetadata' => 'mcp:workflow',
@@ -99,6 +106,27 @@ class PermissionService
     private const TOOL_PERMISSION_MAP = [
         'readRenderedPage' => [
             'tx_aisuite_features:enable_mcp_rendered_page_read',
+        ],
+        'auditSeo' => [
+            'tx_aisuite_features:enable_audit',
+        ],
+        'auditAccessibility' => [
+            'tx_aisuite_features:enable_audit',
+        ],
+        'auditQuestions' => [
+            'tx_aisuite_features:enable_audit',
+        ],
+        'auditContentGap' => [
+            'tx_aisuite_features:enable_audit',
+        ],
+        'auditTopicCluster' => [
+            'tx_aisuite_features:enable_audit',
+        ],
+        'auditCompetitors' => [
+            'tx_aisuite_features:enable_audit',
+        ],
+        'readAuditResults' => [
+            'tx_aisuite_features:enable_audit',
         ],
     ];
 

@@ -269,6 +269,7 @@ The TYPO3 backend user the token / OAuth consent is issued for needs the followi
 - `enable_massaction_generation`: for batch / background-task tools
 - `enable_mcp_media_upload`: for `uploadMedia` (`mcp:media` scope)
 - `enable_mcp_rendered_page_read`: for `readRenderedPage` (see "Per-tool permissions" below)
+- `enable_audit`: for `auditSeo` / `auditAccessibility` (see "Per-tool permissions" below)
 
 Without `enable_mcp_access` the connector connects but every tool call returns "no permission". Without the feature-specific flags the affected tools simply don't appear in the model's tool list.
 
@@ -279,8 +280,17 @@ Most flags gate a whole scope (see the table under [OAuth scopes](#oauth-scopes)
 | Tool | Scope | Additional flag |
 |---|---|---|
 | `readRenderedPage` | `mcp:read` | `enable_mcp_rendered_page_read` |
+| `auditSeo` | `mcp:read` | `enable_audit` |
+| `auditAccessibility` | `mcp:read` | `enable_audit` |
+| `auditQuestions` | `mcp:read` | `enable_audit` |
+| `auditContentGap` | `mcp:read` | `enable_audit` |
+| `auditTopicCluster` | `mcp:read` | `enable_audit` |
+| `auditCompetitors` | `mcp:read` | `enable_audit` |
+| `readAuditResults` | `mcp:read` | `enable_audit` |
 
 `readRenderedPage` renders the page through a backend preview session of the MCP user, so it also returns **hidden pages, unpublished pages and workspace drafts**: content a plain HTTP fetch of the public URL could never reach. The other `mcp:read` tools return stored records and need no flag, so the gate sits on the tool rather than on the scope: putting it on `mcp:read` would revoke every read tool and change which scopes OAuth grants.
+
+The audit tools (`auditSeo`, `auditAccessibility`, `auditQuestions`, `auditContentGap`, `auditTopicCluster`, `auditCompetitors`) follow the same pattern: they send the page URL to the AutoDudes audit infrastructure (AI Suite Server → Tool Gateway), so page URL and — transitively — public page content leave the TYPO3 instance. They stay read-only towards TYPO3, hence `mcp:read` plus the dedicated `enable_audit` flag instead of an own OAuth scope.
 
 The user's own page permissions still apply on top. Without the flag the tool does not appear in `tools/list`, and a forced call returns a permission error.
 
@@ -296,8 +306,8 @@ Issues that can happen with any client, regardless of transport:
 | Tools list is empty after a successful connect | The BE user has no AI Suite feature permissions, so all scope filtering returns empty | Grant `enable_mcp_access` plus the relevant feature permissions on the BE group (see [BE-group permissions](#be-group-permissions) above), then re-authenticate from the connector |
 | Connector reports auth / connection failure after a successful OAuth dance, and the webserver access log shows `404` on a path like `/<site-prefix>/aisuite-mcp` | The connector URL contains a TYPO3 site prefix. `McpServerMiddleware` only matches `/aisuite-mcp` at the domain root, so requests with a prefix fall through TYPO3 routing and 404. Editors are often more affected than admins, because the backend URL they see already contains the site prefix and they paste that into the connector | Re-create the connector with the **root URL** (no site prefix): `<host>/aisuite-mcp` |
 | Connector misbehaves (401 / 404 / no response), but `var/log/aisuite_mcp.log` has **no entry** for the request | The request never reached the MCP middleware at all; the dedicated log only records requests that hit `McpServerMiddleware` | Inspect the webserver access log for the actual URL that was hit. Typical root causes: site prefix in the connector URL (see previous row), `enableMcp = 0` (returns a generic `404 mcp_disabled` without writing to the MCP log), TLS / firewall rejection at the webserver layer |
-| `401` on every MCP / OAuth request, with **no entry** in `aisuite_mcp.log` | The site is behind HTTP Basic Auth (`.htaccess`). Basic Auth and the MCP Bearer token share the `Authorization` header, so the webserver rejects the request before PHP runs | Carve the MCP paths out of Basic Auth, see [Systems behind HTTP Basic Auth (.htaccess)](#systems-behind-http-basic-auth-htaccess) |
-| External connector (claude.ai / ChatGPT) reports *"Couldn't register with … sign-in service"*, and `curl` shows `/.well-known/oauth-*` returning `403` while `/aisuite-mcp` works | The site is behind an HTTP Basic Auth / env-flag guard (e.g. `Deny from env=SECURED`) that catches dot-paths. The client cannot complete OAuth discovery, so dynamic client registration fails before it starts | Exempt the discovery + MCP paths from the guard, keyed on `%{THE_REQUEST}`: see [Systems behind HTTP Basic Auth (.htaccess)](#systems-behind-http-basic-auth-htaccess), step 2 |
+| `401` on every MCP / OAuth request, with **no entry** in `aisuite_mcp.log` | The site is behind HTTP Basic Auth (`.htaccess`). Basic Auth and the MCP Bearer token share the `Authorization` header, so the webserver rejects the request before PHP runs | Carve the MCP paths out of Basic Auth, see [Systems behind HTTP Basic Auth](#systems-behind-http-basic-auth) |
+| External connector (claude.ai / ChatGPT) reports *"Couldn't register with … sign-in service"*, and `curl` shows `/.well-known/oauth-*` returning `403` while `/aisuite-mcp` works | The site is behind an HTTP Basic Auth / env-flag guard (e.g. `Deny from env=SECURED`) that catches dot-paths. The client cannot complete OAuth discovery, so dynamic client registration fails before it starts | Exempt the discovery + MCP paths from the guard, keyed on `%{THE_REQUEST}`: see [Systems behind HTTP Basic Auth](#systems-behind-http-basic-auth), Apache step 2 |
 
 ### Calling tools manually
 
@@ -340,6 +350,13 @@ there is no management scope at all. Requesting an unknown scope fails the autho
 | `readPageContent` | Read the content of a page (tt_content, optionally nested containers) |
 | `readContentTree` | Read the content of every page in a subtree at once (paginated) |
 | `readRenderedPage` | The page as a visitor sees it, incl. plugin output; needs `enable_mcp_rendered_page_read` (see [Per-tool permissions](#per-tool-permissions)) |
+| `auditSeo` | Full SEO audit for a public page URL (on-page checks, Lighthouse/CrUX, GEO signals; optional focus keyword adds SERP position, top-10 and search volume); needs `enable_audit` (see [Per-tool permissions](#per-tool-permissions)) |
+| `auditAccessibility` | WCAG 2.1 AA audit for a public page URL (axe-core + HTML_CodeSniffer, summary + top issue groups); needs `enable_audit` (see [Per-tool permissions](#per-tool-permissions)) |
+| `auditQuestions` | Question coverage of a public page URL (GEO/FAQ): People-also-ask + AI-derived questions rated answered/partial/open against the page content; needs `enable_audit`, costs 2 credits |
+| `auditContentGap` | Content gap of a public page URL: keywords the page ranks weakly for (public ranking data with volume/difficulty), rated against the page content; needs `enable_audit`, costs 3 credits |
+| `auditTopicCluster` | Topic clusters (query fan-out) around a focus keyword, each cluster rated against the page content; needs `enable_audit`, costs 3 credits |
+| `auditCompetitors` | Top competitors of the page's domain plus the keyword gap vs. the strongest one, rated against the page content; needs `enable_audit`, costs 3 credits |
+| `readAuditResults` | The audit results already stored for a page (all six types, scores/coverage, optional full details per type) — free, no new audit is started; needs `enable_audit` |
 | `readEditorialGuidelines` | The tone / target audience / style the editors configured for a page subtree |
 | `readChildren` | List a record's container / IRRE children, grouped by relation |
 | `searchContent` | Full-text search across pages, content elements and the auto-detected IRRE child tables. Every hit carries `languageUid` and, where the page belongs to a site, its ISO `language` |
@@ -666,7 +683,7 @@ location ~ \.php$ {
 
 Also raise `client_max_body_size` to at least the MCP body cap (1 MB) plus margin for batch payloads; `8m` is a safe default.
 
-### Systems behind HTTP Basic Auth (.htaccess)
+### Systems behind HTTP Basic Auth
 
 Sites are often shielded with HTTP Basic Auth (`.htaccess` / `AuthType Basic`), staging environments, internal instances, not-yet-launched sites, and so on. This **collides** with the MCP server, because Basic Auth and the MCP endpoint both use the same `Authorization` request header: Basic Auth sends `Authorization: Basic …`, while the MCP endpoint requires `Authorization: Bearer <token>`. A request can carry only one `Authorization` header, so a connector placed behind Basic Auth fails: the webserver answers `401` before PHP ever runs (the request never reaches `McpServerMiddleware`, so there is also no entry in `aisuite_mcp.log`).
 
@@ -674,8 +691,11 @@ You can run MCP on a Basic-Auth-protected system, but the MCP paths must be carv
 
 Which paths must be reachable **without** Basic Auth:
 - `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`: OAuth discovery (RFC 8414 / 9728); the client fetches these first.
+- `/.well-known/openid-configuration`: the RFC 8414 §5 fallback path, serving the same document as `oauth-authorization-server`. Several clients probe it first, so it needs the same exemption.
 - `/aisuite-mcp/oauth/*`: the OAuth flow. The interactive login on `/aisuite-mcp/oauth/authorize` *is* the TYPO3 backend login (the actual "log in" step), so Basic Auth must not mask it.
 - `/aisuite-mcp` (and sub-paths), the MCP endpoint itself; its Bearer-token auth already protects it (every token is bound to a concrete BE user with enforced permissions).
+
+#### Apache (`.htaccess`)
 
 > ⚠️ Do **not** use `<Location>` / `<LocationMatch>` for this; they are only valid in the server / vhost configuration. Placing them in `.htaccess` triggers `500 Internal Server Error` (`<Location> not allowed here` in the Apache error log). Use the `Require expr` / `SetEnvIf` forms below.
 
@@ -689,7 +709,7 @@ AuthName "Restricted"
 AuthUserFile /path/to/.htpasswd
 
 <RequireAny>
-    Require expr %{THE_REQUEST} =~ m#\s/\.well-known/oauth-#
+    Require expr %{THE_REQUEST} =~ m#\s/\.well-known/(oauth-|openid-configuration)#
     Require expr %{THE_REQUEST} =~ m#\s/aisuite-mcp#
     Require valid-user
 </RequireAny>
@@ -712,7 +732,7 @@ This host-based `Deny` is evaluated independently of the `<RequireAny>` above an
 ```apache
 SetEnvIf Host staging\.example\.com$ SECURED=yes
 # Exempt OAuth discovery + MCP endpoint from the staging guard:
-SetEnvIfExpr "%{THE_REQUEST} =~ m#\s/(\.well-known/oauth-|aisuite-mcp)#" !SECURED
+SetEnvIfExpr "%{THE_REQUEST} =~ m#\s/(\.well-known/(oauth-|openid-configuration)|aisuite-mcp)#" !SECURED
 ```
 
 (Again `THE_REQUEST`, not `Request_URI`: and `SetEnvIfExpr` because `SetEnvIf` cannot match `THE_REQUEST`.)
@@ -726,15 +746,50 @@ RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
 
 TYPO3's default `.htaccess` ships it, but verify it survived customisation; without it the Bearer header never reaches PHP and the MCP endpoint returns `401` even though discovery and the OAuth flow work.
 
+#### Nginx
+
+Nginx has no per-directory configuration, so the exemption is expressed as a `map` that switches the realm off for the MCP paths. Define it at `http` level and reference it from the `server` block:
+
+```nginx
+map $request_uri $auth_realm {
+    default                              "Restricted Area";
+    ~^/aisuite-mcp                       "off";
+    ~^/\.well-known/oauth-               "off";
+    ~^/\.well-known/openid-configuration "off";
+}
+
+server {
+    # ...
+    auth_basic           $auth_realm;
+    auth_basic_user_file /etc/nginx/.htpasswd;
+}
+```
+
+`auth_basic` accepts a variable, and the literal value `off` disables the check for that request. That is the only way to relax Basic Auth per URI without rebuilding the `location` structure.
+
+**Use prefix regexes, not exact paths.** `$request_uri` is the raw request target *including the query string*, so an exact key such as `"/aisuite-mcp/oauth/authorize"` never matches: the authorize call always arrives as `/aisuite-mcp/oauth/authorize?response_type=code&client_id=…&state=…`. This fails in a way that reads as partial success, because discovery and `/aisuite-mcp/health` are requested without a query string and do match — so the connector completes discovery and then dies at the login step. `~^/aisuite-mcp` covers the transport endpoint, `/health` and all four `/oauth/…` endpoints in one line.
+
+Also confirm that the Authorization header reaches PHP (see [Webserver setup](#webserver-setup) above). Both problems produce a `401`, and the response tells them apart:
+
+| Response | Meaning |
+|---|---|
+| `401` with `WWW-Authenticate: Basic`, **no** entry in `aisuite_mcp.log` | The exemption is not matching; the request never reached PHP. Check the `map`. |
+| `401` with `WWW-Authenticate: Bearer`, entry in `aisuite_mcp.log` | The exemption works, but the `Authorization` header is not forwarded. Add `fastcgi_param HTTP_AUTHORIZATION $http_authorization;`. |
+
 The rest of the site stays behind Basic Auth; only the MCP surface is opened up, and it remains protected by OAuth. To verify, `curl` the discovery URLs and the endpoint:
 
 ```bash
-curl -i https://<host>/.well-known/oauth-protected-resource     # expect 200 JSON
-curl -i https://<host>/.well-known/oauth-authorization-server   # expect 200 JSON
-curl -i https://<host>/aisuite-mcp/health                       # expect 200 JSON
+curl -i "https://<host>/.well-known/oauth-protected-resource"     # expect 200 JSON
+curl -i "https://<host>/.well-known/oauth-authorization-server"   # expect 200 JSON
+curl -i "https://<host>/.well-known/openid-configuration"         # expect 200 JSON
+curl -i "https://<host>/aisuite-mcp/health"                       # expect 200 JSON
+curl -i "https://<host>/aisuite-mcp/oauth/authorize?response_type=code&client_id=x&state=aaaaaaaaaaaaaaaaaaaaaa"
+curl -i "https://<host>/typo3/"                                   # expect 401 WWW-Authenticate: Basic
 ```
 
-A `403` here means an env-flag guard (step 2) or a host-level dot-path block is still catching the path; a `401` with `WWW-Authenticate: Basic` means the Basic-Auth exemption (step 1) is not matching; check that it keys off `THE_REQUEST`.
+The authorize call is the one that must not be skipped: it is the only request here carrying a query string, which is what an exact-match exemption fails on. What it answers does not matter, the dummy `client_id` will be rejected; what matters is that the response carries no `WWW-Authenticate: Basic`. The last call proves the rest of the site is still protected.
+
+A `403` here means an env-flag guard (Apache step 2) or a host-level dot-path block is still catching the path; a `401` with `WWW-Authenticate: Basic` means the Basic-Auth exemption is not matching — on Apache, check that it keys off `THE_REQUEST`, on nginx that the `map` uses prefix regexes.
 
 ### Scheduled maintenance
 

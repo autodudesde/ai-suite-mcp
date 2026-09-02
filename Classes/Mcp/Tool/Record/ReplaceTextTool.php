@@ -32,8 +32,8 @@ class ReplaceTextTool extends AbstractSafeEditTool
                 'field' => ['type' => 'string', 'description' => 'Field to edit (must be writable — see readRecordSchema).'],
                 'search' => ['type' => 'string', 'description' => 'Literal text to find (not a regular expression). Matched against the raw stored value, so in an RTE/HTML field a phrase that spans tags will not match.'],
                 'replace' => ['type' => 'string', 'description' => 'Replacement text.'],
-                'all' => ['type' => 'boolean', 'default' => false, 'description' => 'Replace every occurrence. Default false = require a single unique match.'],
-                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating the match. The replacement is spliced into the original, so text outside the match keeps its exact bytes. Default: true.'],
+                'all' => ['type' => 'boolean', 'default' => false, 'description' => 'Replace every occurrence. Otherwise a single unique match is required.'],
+                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating the match. The replacement is spliced into the original, so text outside the match keeps its exact bytes.'],
             ],
             'required' => ['table', 'uid', 'field', 'search', 'replace'],
         ];
@@ -70,6 +70,6 @@ class ReplaceTextTool extends AbstractSafeEditTool
             $text .= sprintf("\n\n> note: HTML removed from non-RTE field(s): %s", implode(', ', $result->strippedFields));
         }
 
-        return $this->textResult($text);
+        return $this->structuredResult($text, ['batch' => ['records' => [['table' => $table, 'uid' => $uid]]]]);
     }
 }

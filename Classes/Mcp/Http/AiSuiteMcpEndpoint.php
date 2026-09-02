@@ -13,8 +13,8 @@ use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidTokenException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\SessionOrientationService;
-use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
+use AutoDudes\AiSuiteMcp\Mcp\Service\ServerInstructionsService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
 use Mcp\Server\HttpServerRunner;
 use Mcp\Server\Transport\Http\FileSessionStore;
 use Mcp\Server\Transport\Http\HttpMessage;
@@ -32,8 +32,7 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class AiSuiteMcpEndpoint
 {
     /**
-     * Spec: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#protocol-version-header
-     * — Server MUST respond 400 for unknown values; SHOULD assume 2025-03-26 when header is absent.
+     * Spec: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#protocol-version-header.
      */
     private const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
@@ -45,8 +44,9 @@ class AiSuiteMcpEndpoint
         private readonly McpUserContext $userContext,
         private readonly BackendUserService $backendUserService,
         private readonly McpBackendUserInitializer $backendUserInitializer,
+        private readonly SessionTrackerService $creditTracker,
         private readonly ExtensionConfiguration $extensionConfiguration,
-        private readonly SessionOrientationService $sessionOrientation,
+        private readonly ServerInstructionsService $serverInstructions,
         private readonly IconService $iconService,
         private readonly LoggerInterface $logger,
     ) {}
@@ -76,6 +76,8 @@ class AiSuiteMcpEndpoint
                 $tokenData->issuedVersion,
             );
             $this->userContext->setServerRequest($request);
+
+            $this->creditTracker->initializeFromToken($tokenData->tokenId, $this->maxCreditsPerSession());
 
             $mcpSessionId = trim($request->getHeaderLine('Mcp-Session-Id'));
             if ('' !== $mcpSessionId) {
@@ -346,7 +348,7 @@ class AiSuiteMcpEndpoint
             ];
         }
 
-        $result->instructions = $this->getServerInstructions();
+        $result->instructions = $this->serverInstructions->build();
 
         return (string) json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
@@ -362,20 +364,6 @@ class AiSuiteMcpEndpoint
             'webp' => 'image/webp',
             default => 'image/svg+xml',
         };
-    }
-
-    private function getServerInstructions(): string
-    {
-        $instructions = 'You are connected to a TYPO3 CMS via AI Suite MCP.'
-            ."\n\n"
-            .OperatingGuidelines::getForInstructions();
-
-        $orientation = $this->sessionOrientation->buildInstructionBlock();
-        if ('' !== $orientation) {
-            $instructions .= "\n\n".$orientation;
-        }
-
-        return $instructions;
     }
 
     private function validateProtocolVersionHeader(ServerRequestInterface $request): ?ResponseInterface
@@ -470,5 +458,16 @@ class AiSuiteMcpEndpoint
                 'MCP access needs to be enabled for your user group. Contact your administrator to enable it.',
             );
         }
+    }
+
+    private function maxCreditsPerSession(): int
+    {
+        try {
+            $configured = (int) ($this->extensionConfiguration->get('ai_suite_mcp')['mcpMaxCreditsPerSession'] ?? 0);
+        } catch (\Throwable) {
+            return 0;
+        }
+
+        return max(0, $configured);
     }
 }

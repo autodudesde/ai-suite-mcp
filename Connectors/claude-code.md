@@ -62,13 +62,33 @@ claude mcp add typo3-ai-suite <typo3-url>/aisuite-mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-The configuration is written to `~/.claude.json` (or the project-local `.claude/mcp.json` if you pass `--scope project`). Verify:
+The configuration is written to `~/.claude.json` (or the project-local `.mcp.json` in the project root if you pass `--scope project`). Verify:
 
 ```bash
 claude mcp list
 ```
 
 `typo3-ai-suite` should appear in the output.
+
+Equivalently, paste the **Claude Code snippet** the MCP dashboard returns next to the token into
+`.mcp.json` — note that the transport key is `type` here, not `transport`:
+
+```json
+{
+  "mcpServers": {
+    "typo3-ai-suite": {
+      "type": "http",
+      "url": "<typo3-url>/aisuite-mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
+    }
+  }
+}
+```
+
+This HTTP form works in Claude Code only. Claude Desktop's `claude_desktop_config.json` takes
+stdio entries (`command` / `args`) and rejects it — see [`claude-desktop.md`](claude-desktop.md).
 
 ## Path B — OAuth 2.1 with localhost callback
 

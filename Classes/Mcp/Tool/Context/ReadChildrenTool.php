@@ -47,8 +47,8 @@ class ReadChildrenTool extends AbstractTool
             'type' => 'object',
             'properties' => [
                 'uid' => ['type' => 'integer', 'description' => 'UID of the parent record.'],
-                'table' => ['type' => 'string', 'default' => 'tt_content', 'description' => 'Parent table (default tt_content).'],
-                'language' => ['type' => 'integer', 'default' => 0, 'description' => 'Language UID for container children (default 0).'],
+                'table' => ['type' => 'string', 'default' => 'tt_content', 'description' => 'Parent table.'],
+                'language' => ['type' => 'integer', 'default' => 0, 'description' => 'Language UID for container children; 0 is the default language.'],
             ],
             'required' => ['uid'],
         ];

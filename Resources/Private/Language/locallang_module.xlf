@@ -66,6 +66,18 @@
             <trans-unit id="aiSuite.module.mcp.clientName">
                 <source>Client Name</source>
             </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeCode">
+                <source>Claude Code (.mcp.json)</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeCodeLocationHint">
+                <source>in the project root (shared with the team), or ~/.claude.json for a user-wide server</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeDesktop">
+                <source>Claude Desktop (claude_desktop_config.json)</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeDesktopBridgeHint">
+                <source>Claude Desktop only launches local commands, so the connection runs through the mcp-remote bridge (requires Node.js). With a self-signed certificate (DDEV/mkcert) add "env": {"NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem"} to the entry, because Node.js does not use the operating system trust store. Alternatively add the server URL under Settings, Connectors, Add custom connector and authenticate via OAuth.</source>
+            </trans-unit>
             <trans-unit id="aiSuite.module.mcp.configFileLocation">
                 <source>Config file location:</source>
             </trans-unit>

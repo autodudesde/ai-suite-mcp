@@ -72,8 +72,8 @@ class ListFilesTool extends AbstractTool
                     'default' => false,
                     'description' => 'Include files from subfolders. Default: false.',
                 ],
-                'limit' => ['type' => 'integer', 'default' => 10, 'minimum' => 1, 'maximum' => 200, 'description' => 'Max files to return. Default: 10.'],
-                'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N files for pagination. Default: 0.'],
+                'limit' => ['type' => 'integer', 'default' => 10, 'minimum' => 1, 'maximum' => 200, 'description' => 'Max files to return.'],
+                'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N files for pagination.'],
             ],
         ];
     }

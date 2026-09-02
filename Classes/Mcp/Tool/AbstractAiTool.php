@@ -305,7 +305,7 @@ abstract class AbstractAiTool extends AbstractTool
         }
 
         $text .= "\nEach operation costs at least one credit.\n";
-        $text .= 'Ask the user which model they would like to use.';
+        $text .= 'Call this tool again with the first model unless the request named one; say which you picked.';
 
         return $this->textResult($text);
     }

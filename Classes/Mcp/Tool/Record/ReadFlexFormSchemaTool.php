@@ -31,8 +31,8 @@ class ReadFlexFormSchemaTool extends AbstractDataTool
         return [
             'type' => 'object',
             'properties' => [
-                'table' => ['type' => 'string', 'default' => 'tt_content', 'description' => 'Table name. Default: tt_content.'],
-                'field' => ['type' => 'string', 'default' => 'pi_flexform', 'description' => 'FlexForm field name. Default: pi_flexform.'],
+                'table' => ['type' => 'string', 'default' => 'tt_content', 'description' => 'Table name.'],
+                'field' => ['type' => 'string', 'default' => 'pi_flexform', 'description' => 'FlexForm field name.'],
                 'recordUid' => ['type' => 'integer', 'minimum' => 1, 'description' => 'UID of an existing record — needed when the data structure depends on the record type (ds_pointerField).'],
                 'type' => ['type' => 'string', 'description' => 'Type hint (CType / list_type) used to resolve the data structure when no recordUid is given.'],
             ],

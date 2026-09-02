@@ -30,4 +30,6 @@ interface ToolInterface
     public function execute(array $params): CallToolResult;
 
     public function getRequiredScope(): ?string;
+
+    public function getCreditCost(): ?int;
 }

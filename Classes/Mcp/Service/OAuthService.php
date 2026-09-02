@@ -11,6 +11,9 @@ use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidGrantException;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidTokenException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
+use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationExtensionNotConfiguredException;
+use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationPathDoesNotExistException;
+use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 class OAuthService
@@ -21,11 +24,13 @@ class OAuthService
 
     private const REFRESH_GRACE_SECONDS = 30;
 
+    private const DEFAULT_TOKEN_LIFETIME_DAYS = 30;
+
     public function __construct(
         private readonly TokenRepository $tokenRepository,
         private readonly PermissionService $permissionService,
         private readonly LoggerInterface $logger,
-        private readonly int $tokenLifetimeDays = 30,
+        private readonly ExtensionConfiguration $extensionConfiguration,
     ) {}
 
     /**
@@ -257,6 +262,17 @@ class OAuthService
         return array_values(array_intersect($requestedScopes, $availableScopes));
     }
 
+    private function tokenLifetimeDays(): int
+    {
+        try {
+            $configured = (int) ($this->extensionConfiguration->get('ai_suite_mcp')['mcpTokenLifetimeDays'] ?? 0);
+        } catch (ExtensionConfigurationExtensionNotConfiguredException|ExtensionConfigurationPathDoesNotExistException) {
+            $configured = 0;
+        }
+
+        return $configured > 0 ? $configured : self::DEFAULT_TOKEN_LIFETIME_DAYS;
+    }
+
     /**
      * @param array<string, mixed> $row
      *
@@ -375,7 +391,7 @@ class OAuthService
         $rawAccessToken = bin2hex(random_bytes(32));
         $rawRefreshToken = bin2hex(random_bytes(32));
 
-        $expiresIn = $this->tokenLifetimeDays * 86400;
+        $expiresIn = $this->tokenLifetimeDays() * 86400;
 
         $uid = $this->tokenRepository->createToken([
             'token' => hash('sha256', $rawAccessToken),

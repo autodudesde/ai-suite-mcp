@@ -9,7 +9,11 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 class ToolRegistry
 {
-    private const BUILTIN_NAMESPACE = 'AutoDudes\AiSuiteMcp\Mcp\Tool\\';
+    private const ALLOWED_NAMESPACES = [
+        'AutoDudes\AiSuiteMcp\\',
+        'AutoDudes\AiSuite\\',
+        'AutoDudes\Cheddi\\',
+    ];
 
     /** @var array<string, ToolInterface> */
     private array $tools = [];
@@ -46,23 +50,18 @@ class ToolRegistry
     {
         $className = get_class($tool);
 
-        if (str_starts_with($className, self::BUILTIN_NAMESPACE)) {
-            return true;
+        foreach (self::ALLOWED_NAMESPACES as $namespace) {
+            if (str_starts_with($className, $namespace)) {
+                return true;
+            }
         }
 
-        if ($tool instanceof AbstractTool
-            && !str_starts_with($className, 'AutoDudes\AiSuite\\')
-            && !str_starts_with($className, 'AutoDudes\AiSuiteMcp\\')
-            && !str_starts_with($className, 'AutoDudes\Cheddi\\')
-        ) {
-            $this->logger->warning('Rejected third-party MCP tool: must extend AbstractCustomTool', [
-                'class' => $className,
-                'tool_name' => $tool->getName(),
-            ]);
+        $this->logger->warning('Rejected third-party MCP tool: class is outside the allowed namespaces', [
+            'class' => $className,
+            'tool_name' => $tool->getName(),
+            'allowed_namespaces' => self::ALLOWED_NAMESPACES,
+        ]);
 
-            return false;
-        }
-
-        return true;
+        return false;
     }
 }

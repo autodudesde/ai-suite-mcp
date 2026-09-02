@@ -48,7 +48,7 @@ class CompareWithLiveTool extends AbstractDataTool
                     'type' => 'object',
                     'description' => 'Field=value filters (exact match; "" matches empty) to scope the set, same shape as readRecords.',
                 ],
-                'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max CHANGED records to render. Default: 50, max: 200. ADDED and REMOVED are always listed in full.'],
+                'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max CHANGED records to render, up to 200. ADDED and REMOVED are always listed in full.'],
             ],
             'required' => ['table'],
         ];

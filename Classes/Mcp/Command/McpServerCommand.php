@@ -9,7 +9,8 @@ use AutoDudes\AiSuiteMcp\Mcp\McpBackendUserInitializer;
 use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
-use Mcp\Server\ServerRunner;
+use AutoDudes\AiSuiteMcp\Mcp\Service\ServerInstructionsService;
+use AutoDudes\AiSuiteMcp\Mcp\Transport\StdioServerRunner;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -29,6 +30,7 @@ class McpServerCommand extends Command
         private readonly McpBackendUserInitializer $backendUserInitializer,
         private readonly McpUserContext $userContext,
         private readonly PermissionService $permissionService,
+        private readonly ServerInstructionsService $serverInstructions,
         private readonly LoggerInterface $logger,
     ) {
         parent::__construct();
@@ -99,7 +101,7 @@ class McpServerCommand extends Command
 
         $server = $this->serverFactory->createServer();
         $initOptions = $server->createInitializationOptions();
-        $runner = new ServerRunner($server, $initOptions, $this->logger);
+        $runner = new StdioServerRunner($server, $initOptions, $this->serverInstructions->build(), $this->logger);
 
         try {
             $runner->run();

@@ -37,6 +37,7 @@ abstract class AbstractTool implements ToolInterface
     protected bool $destructiveHint = false;
     protected bool $idempotentHint = false;
     protected bool $openWorldHint = false;
+    protected ?int $creditCost = null;
 
     protected readonly McpUserContext $userContext;
     protected readonly PermissionService $permissionService;
@@ -151,6 +152,11 @@ abstract class AbstractTool implements ToolInterface
     public function getRequiredScope(): ?string
     {
         return $this->requiredScope;
+    }
+
+    public function getCreditCost(): ?int
+    {
+        return $this->creditCost;
     }
 
     /**

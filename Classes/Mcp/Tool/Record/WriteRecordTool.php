@@ -69,23 +69,22 @@ class WriteRecordTool extends AbstractDataTool
                     'type' => 'array',
                     'description' => 'Array of records. Each: {table, fields, pid?, uid?, position?}. '
                         .'pid/uid/position are siblings of `fields`, never inside it. '
-                        .'Use "$ref:N" (0-based index) in a field value to reference the UID of a record created earlier in the same batch. '
+                        .'Use "$ref:N" (0-based) in a field value for the UID of a record created earlier in this batch. '
                         .'Container children: create the container first, then set `tx_container_parent: "$ref:0"` and a `colPos` from its grid (listContentTypes). '
-                        .'IRRE children (accordion_item, card_group_item, …): either nest them as objects in the parent\'s inline field (they are expanded into their own records automatically, only when creating the parent) or write them yourself with their own `pid` and a reference back to the parent. '
+                        .'IRRE children (accordion_item, card_group_item, …): nest them as objects in the parent\'s inline field (expanded into their own records automatically, on create only), or write them yourself with their own `pid` and a reference back to the parent. '
                         .'Never write the parent\'s inline field as a list of child UIDs — that list is read as the complete set and renumbers the children. '
-                        .'Images: nest {uid_local:<sysFile UID>} objects in the image/assets field, or add explicit sys_file_reference records {uid_local, uid_foreign:"$ref:N", tablenames, fieldname, pid} — never put a bare sys_file UID into the image/assets field. '
+                        .'Images: nest {uid_local:<sysFile UID>} objects in the image/assets field, or add explicit sys_file_reference records {uid_local, uid_foreign:"$ref:N", tablenames, fieldname, pid} — never a bare sys_file UID there. '
                         .'`sorting` is not writable; reorder with moveRecords. '
                         .'FlexForm fields (pi_flexform, …) take a nested object {"data": {"<sheet>": {"lDEF": {"<field>": {"vDEF": <value>}}}}} — '
                         .'call readFlexFormSchema first for the sheets and fields, never invent them and never pass XML. '
                         .'TCA-required fields are enforced on create (readRecordSchema lists them). '
-                        .'Translations: add `translations` next to `fields`, keyed by ISO code — {"en": {"header": "…"}}. '
-                        .'The linked translation is created (or updated if it already exists) with the parent pointer set for you.',
+                        .'Translations: add `translations` next to `fields`, keyed by ISO code — {"en": {"header": "…"}}; created, or updated if it exists, with the parent pointer set for you.',
                     'items' => ['type' => 'object'],
                 ],
                 'table' => ['type' => 'string', 'description' => 'Default TCA table for entries that do not carry their own `table`. Convenient for a batch that writes to one table.'],
-                'position' => ['type' => 'string', 'default' => 'end', 'description' => 'Default position for the first tt_content record: "start", "end" (default), "after:UID", or "after:$ref:N" to place it after a record created earlier in this same batch. Records already keep their batch order, so you rarely need this.'],
-                'atomic' => ['type' => 'boolean', 'default' => false, 'description' => 'All-or-nothing: roll back already-applied changes if any record fails. Default false (best-effort, partial writes kept).'],
-                'allowEmptyContainer' => ['type' => 'boolean', 'default' => false, 'description' => 'Permit creating a container element that gets no children in this call. Off by default: an empty container renders as an empty box, so the batch is refused and tells you how to wire the children up.'],
+                'position' => ['type' => 'string', 'default' => 'end', 'description' => 'Position of the first tt_content record: "start", "end", "after:UID", or "after:$ref:N" for a record created earlier in this batch. Records keep their batch order, so you rarely need this.'],
+                'atomic' => ['type' => 'boolean', 'default' => false, 'description' => 'All-or-nothing: roll back already-applied changes if any record fails. Best-effort otherwise, partial writes kept.'],
+                'allowEmptyContainer' => ['type' => 'boolean', 'default' => false, 'description' => 'Permit creating a container element that gets no children in this call. Refused by default because an empty container renders as an empty box; the error names how to wire the children up.'],
             ],
             'required' => ['records'],
         ];

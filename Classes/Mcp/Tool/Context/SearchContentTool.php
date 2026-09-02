@@ -53,15 +53,15 @@ class SearchContentTool extends AbstractTool
             'type' => 'object',
             'properties' => [
                 'query' => ['type' => 'string', 'description' => 'Search term'],
-                'searchIn' => ['type' => 'string', 'enum' => ['all', 'pages', 'content'], 'default' => 'all', 'description' => 'Where to search. Default: all.'],
-                'rootPageId' => ['type' => 'integer', 'description' => 'Subtree root page UID: restrict the search to this page and everything below it. Default: all pages within your webmounts.'],
-                'field' => ['type' => 'string', 'description' => 'Restrict the content search to a single column name, given as a tt_content field (e.g. bodytext, header, subheader). Child tables are then searched in that column too, and skipped when they do not have it. Default: all text-bearing fields of each table.'],
-                'matchHtml' => ['type' => 'boolean', 'default' => false, 'description' => 'Keep HTML markup in the bodytext preview (so <a>, class names etc. are visible/searchable). Default: false (stripped).'],
-                'includeFullContent' => ['type' => 'boolean', 'default' => false, 'description' => 'Return full content text instead of preview snippets. Default: false. '
-                    .'Expensive: every hit\'s full text enters the conversation and is paid for in this and every later turn. '
-                    .'The snippets are there to decide which hit is the right one — read that one record fully instead.'],
-                'limit' => ['type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100, 'description' => 'Maximum number of results. Default: 20.'],
-                'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N results for pagination. Default: 0.'],
+                'searchIn' => ['type' => 'string', 'enum' => ['all', 'pages', 'content'], 'default' => 'all', 'description' => 'Where to search.'],
+                'rootPageId' => ['type' => 'integer', 'description' => 'Subtree root page UID: restrict the search to this page and everything below it. Otherwise all pages within your webmounts.'],
+                'field' => ['type' => 'string', 'description' => 'Restrict the content search to one tt_content column (e.g. bodytext, header, subheader). Child tables are searched in that column too, and skipped when they lack it. Otherwise all text-bearing fields of each table.'],
+                'matchHtml' => ['type' => 'boolean', 'default' => false, 'description' => 'Keep HTML markup in the bodytext preview (so <a>, class names etc. stay visible). Stripped otherwise.'],
+                'includeFullContent' => ['type' => 'boolean', 'default' => false, 'description' => 'Return full content text instead of preview snippets. '
+                    .'This pulls every hit\'s full text into the conversation, where it stays. '
+                    .'The snippets are there to pick the right hit — then read that one record fully.'],
+                'limit' => ['type' => 'integer', 'default' => 20, 'minimum' => 1, 'maximum' => 100, 'description' => 'Maximum number of results.'],
+                'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N results for pagination.'],
             ],
             'required' => ['query'],
         ];

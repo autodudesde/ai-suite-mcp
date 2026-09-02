@@ -175,7 +175,7 @@ class PreviewRecordTool extends AbstractDataTool
             );
         }
 
-        $text .= 'Show this preview to the user, then call writeRecords to save it.';
+        $text .= 'Call writeRecords with the same records to save them.';
 
         return $text;
     }

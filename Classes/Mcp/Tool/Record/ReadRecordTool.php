@@ -71,30 +71,28 @@ class ReadRecordTool extends AbstractDataTool
                 'pid' => ['type' => 'integer', 'description' => 'Page UID — list all records on this page'],
                 'rootPageId' => [
                     'type' => 'integer',
-                    'description' => 'Subtree root page UID: this page and everything below it, resolved server-side. '
-                        .'Combine with filters to sweep a whole branch in one call, e.g. table "pages" with {"seo_title": ""}. '
+                    'description' => 'Subtree root page UID: this page and everything below it. '
+                        .'Combine with filters to sweep a branch in one call, e.g. table "pages" with {"seo_title": ""}. '
                         .'Alternative to pid; give exactly one of the two.',
                 ],
                 'filters' => [
-                    // Stays a free-form object: the keys are TCA field names of the requested table.
                     'type' => 'object',
                     'description' => 'Field name => value, exact match. An empty string "" finds records whose field is empty, e.g. {"description": ""}. '
-                        .'To list the children of a container/IRRE parent, filter on the relation field, e.g. table "tx_bootstrappackage_card_group_item" with {"tt_content": PARENT_UID}.',
+                        .'For the children of a container/IRRE parent, filter on the relation field, e.g. table "tx_bootstrappackage_card_group_item" with {"tt_content": PARENT_UID}.',
                 ],
-                'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max records. Default: 50, max: 200.'],
-                'offset' => ['type' => 'integer', 'default' => 0, 'description' => 'Skip first N records for pagination. Default: 0.'],
+                'limit' => ['type' => 'integer', 'default' => 50, 'description' => 'Max records, up to 200.'],
+                'offset' => ['type' => 'integer', 'default' => 0, 'description' => 'Skip first N records for pagination.'],
                 'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return long text fields untruncated. Ignored (always full) for a single-uid read. '
-                    .'Expensive on a list read: every record\'s full text enters the conversation and is paid for in this and every later turn. '
-                    .'Measured once at 45,000 fresh tokens, five times the cost of the whole task around it. '
-                    .'Use it when you are about to edit the text; to find out which fields exist use readRecordSchema, and to see a value use `fields`.'],
+                    .'On a list read this pulls every record\'s full text into the conversation, where it stays. '
+                    .'Use it when you are about to edit the text; readRecordSchema shows which fields exist, `fields` shows one value.'],
                 'maxLength' => ['type' => 'integer', 'description' => 'Truncate text fields to this many characters in list mode (default 300). Use 0 or fullText=true for no truncation.'],
                 'raw' => ['type' => 'boolean', 'default' => false, 'description' => 'Return verbatim stored values (markup intact, untruncated, no tag stripping). Required before editing bodytext/RTE fields to round-trip the HTML.'],
-                'includeEmpty' => ['type' => 'boolean', 'default' => true, 'description' => 'Include empty-valued fields. Default true (enables finding records with empty fields); set false to show only populated fields.'],
-                'includeSystem' => ['type' => 'boolean', 'default' => false, 'description' => 'Include housekeeping/system fields (timestamps, versioning, sorting). Default false (hidden as noise).'],
+                'includeEmpty' => ['type' => 'boolean', 'default' => true, 'description' => 'Include empty-valued fields; set false to show only populated ones. On by default so that empty-field searches work.'],
+                'includeSystem' => ['type' => 'boolean', 'default' => false, 'description' => 'Include housekeeping/system fields (timestamps, versioning, sorting). Hidden by default as noise.'],
                 'fields' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
-                    'description' => 'Return only these fields. uid and the label field are always included. Cuts a tt_content read from 60+ lines to a handful — use it whenever you know which field you are after.',
+                    'description' => 'Return only these fields. uid and the label field are always included. Cuts a tt_content read from 60+ lines to a handful; use it whenever you know the field you are after.',
                 ],
             ],
             'required' => ['table'],

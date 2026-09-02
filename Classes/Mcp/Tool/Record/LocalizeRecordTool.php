@@ -106,6 +106,8 @@ class LocalizeRecordTool extends AbstractDataTool
             $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to see it.");
         }
 
-        return $this->textResult($text);
+        return $this->structuredResult($text, [
+            'translation' => ['table' => $table, 'uid' => $newUid ?? $uid],
+        ]);
     }
 }

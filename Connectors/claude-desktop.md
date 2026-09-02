@@ -54,17 +54,32 @@ For background on Claude Desktop and MCP refer to the official docs:
    {
      "mcpServers": {
        "typo3-ai-suite": {
-         "url": "<typo3-url>/aisuite-mcp",
-         "transport": "http",
-         "headers": {
-           "Authorization": "Bearer <token>"
-         }
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-remote",
+           "<typo3-url>/aisuite-mcp",
+           "--header",
+           "Authorization: Bearer <token>"
+         ]
        }
      }
    }
    ```
 
    Token lifetime is controlled by `mcpTokenLifetimeDays` in the extension configuration (default `30`).
+
+   **Why a command and not a URL.** `claude_desktop_config.json` accepts **stdio** servers only —
+   `command`, `args`, `env`. An entry with `url` / `headers` (and `transport`, which no client
+   knows) makes Claude Desktop report the MCP servers as misconfigured. The
+   [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridge therefore runs locally and
+   forwards to the HTTP endpoint with the bearer token attached; it needs **Node.js ≥ 18** on the
+   machine that runs Claude Desktop. With a self-signed certificate (DDEV / mkcert) the entry
+   additionally needs `NODE_EXTRA_CA_CERTS`, see
+   [Self-signed certificates](#self-signed-certificates-ddev-mkcert) below. Two alternatives avoid the bridge entirely:
+   [custom connector](#alternative-custom-connector-oauth-no-static-token) (OAuth instead of a
+   static token) and [local stdio](#alternative-local-stdio-transport-no-wrapper-script) (no HTTP
+   at all).
 
 ## Step 2 — Paste the snippet into the Claude Desktop config
 
@@ -74,7 +89,7 @@ For background on Claude Desktop and MCP refer to the official docs:
    |---|---|
    | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
    | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-   | Linux | `~/.config/claude/claude_desktop_config.json` |
+   | Linux | `~/.config/Claude/claude_desktop_config.json` |
 
 2. **Merge** the snippet from Step 1 into the existing config — do not blindly overwrite if you already have other MCP servers under `mcpServers`. Example merged file:
 
@@ -83,17 +98,51 @@ For background on Claude Desktop and MCP refer to the official docs:
      "mcpServers": {
        "some-other-server": { "command": "...", "args": ["..."] },
        "typo3-ai-suite": {
-         "url": "<typo3-url>/aisuite-mcp",
-         "transport": "http",
-         "headers": {
-           "Authorization": "Bearer <token>"
-         }
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-remote",
+           "<typo3-url>/aisuite-mcp",
+           "--header",
+           "Authorization: Bearer <token>"
+         ]
        }
      }
    }
    ```
 
 3. Save the file and **fully quit and restart Claude Desktop** (a window close is not enough; use the macOS Quit, Windows tray exit, or `pkill -x Claude` / equivalent).
+
+## Self-signed certificates (DDEV / mkcert)
+
+`mkcert -install` writes the CA into the **OS** trust store, which covers browsers and `curl`.
+Node.js ignores it: it ships its own CA bundle, so the bridge fails with
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE` while the same URL answers `200` in the browser. Point Node at
+the mkcert root via `env` in the same server entry (`mkcert -CAROOT` prints the directory):
+
+```json
+{
+  "mcpServers": {
+    "typo3-ai-suite": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "<typo3-url>/aisuite-mcp", "--header", "Authorization: Bearer <token>"],
+      "env": {
+        "NODE_EXTRA_CA_CERTS": "<mkcert -CAROOT>/rootCA.pem"
+      }
+    }
+  }
+}
+```
+
+Check it outside Claude Desktop first:
+
+```bash
+NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" \
+  node -e "require('https').get('<typo3-url>/aisuite-mcp/health', r => console.log(r.statusCode))"
+```
+
+This is the whole reason a `*.ddev.site` host would otherwise seem unreachable to Claude Desktop
+— no tunnel (cloudflared, ngrok) is needed, the bridge resolves local hostnames just fine.
 
 ## Step 3 — Verify the connector is loaded
 
@@ -107,8 +156,10 @@ For background on Claude Desktop and MCP refer to the official docs:
 | Symptom | Cause | Fix |
 |---|---|---|
 | `typo3-ai-suite` does not appear in the tools list after restarting Claude Desktop | `claude_desktop_config.json` has a JSON syntax error, or it lives in the wrong path for the OS | Validate the file with `python -m json.tool < claude_desktop_config.json`; double-check the path from Step 2 |
+| Claude Desktop reports the MCP servers as **misconfigured** right after the config was saved | The server entry has `url` / `transport` / `headers` instead of `command` / `args`. `claude_desktop_config.json` supports stdio entries only — an older version of the AI Suite MCP dashboard emitted the HTTP form here | Re-issue the token (Step 1) to get the current `mcp-remote` snippet, or switch to the [custom connector](#alternative-custom-connector-oauth-no-static-token) / [local stdio](#alternative-local-stdio-transport-no-wrapper-script) route |
+| `npx: command not found` / the server entry stays grey in the tools list | The `mcp-remote` bridge needs Node.js on the machine that runs Claude Desktop, and GUI apps start with a minimal `PATH` | Install Node.js ≥ 18, or replace `"npx"` with the absolute path to it (`/usr/local/bin/npx`, `~/.nvm/versions/node/<v>/bin/npx`). Verify the bridge manually first: `npx -y mcp-remote <typo3-url>/aisuite-mcp --header "Authorization: Bearer <token>"` |
 | Tools list shows the server but every call returns *"Authentication required"* / 401 | Token is invalid, expired, or was revoked; or the URL in the config has a TYPO3 site prefix that the MCP middleware does not match | Re-issue the token via Step 1 (old tokens are invalidated automatically). Make sure the URL is the **root** form `<typo3-url>/aisuite-mcp` — not `<typo3-url>/<site>/aisuite-mcp` |
-| `SSL: CERTIFICATE_VERIFY_FAILED` / `unable to verify the first certificate` in Claude Desktop logs | The TYPO3 host uses a self-signed certificate whose CA is not in your OS trust store | For DDEV: run `mkcert -install` once on your host, then restart Claude Desktop. For other dev setups: import the CA into your OS keychain / certificate store |
+| `SSL: CERTIFICATE_VERIFY_FAILED` / `UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `unable to verify the first certificate` in Claude Desktop logs | The TYPO3 host uses a self-signed certificate. `mkcert -install` alone is not enough for the `mcp-remote` bridge, because Node.js uses its own CA bundle instead of the OS trust store | Run `mkcert -install` once, then add `NODE_EXTRA_CA_CERTS` to the server entry — see [Self-signed certificates](#self-signed-certificates-ddev-mkcert) |
 | Model says *"I have no access to MCP"* even though the tools list shows the server | The conversation does not have the AI Suite tools enabled in the per-chat tool picker | Open the **🔨 tools / connectors** menu under the chat input and toggle the AI Suite tools on |
 | A 🔒 lock icon next to a tool — *"Always allow"* is greyed out | Claude Desktop only auto-approves tools whose MCP `readOnlyHint` annotation is `true`. Read tools (`listTables`, `readPageTree`, `readRecords`, `previewRecords`, …) are flagged read-only and **can** be set to *Always allow*. Write/delete/AI tools (`writeRecords`, `deleteRecords`, `generate*`, `translate*`, `uploadMedia`, …) intentionally keep the lock so every change and every credit-spending call is confirmed per invocation | Expected behaviour — confirm write/AI tools each time; only the read tools are auto-approvable |
 
@@ -122,7 +173,7 @@ For state-gate, RateLimiter DI-cache, Apache `Authorization`-header strip and em
   |---|---|
   | macOS | `~/Library/Logs/Claude/` (look for `mcp.log` and `mcp-server-typo3-ai-suite.log`) |
   | Windows | `%APPDATA%\Claude\logs\` |
-  | Linux | `~/.config/claude/logs/` |
+  | Linux | `~/.config/Claude/logs/` |
 
 - **AI Suite MCP** — TYPO3 exception pages are returned directly in the HTTP response. Stack traces also land in `/var/log/` where applicable.
 - **Webserver access log** — watch for `404` on `/aisuite-mcp` (site-prefix problem) or repeated `401` on `/aisuite-mcp` (Authorization-header problem).
@@ -132,6 +183,24 @@ For state-gate, RateLimiter DI-cache, Apache `Authorization`-header strip and em
 - The bearer token is stored in the AI Suite MCP database table `tx_aisuite_oauth_tokens` (the static-token flow reuses the same token store as the OAuth flow). Lifetime is controlled by `mcpTokenLifetimeDays` in the extension configuration (default `30`).
 - The Claude Desktop side stores nothing beyond the config file you wrote in Step 2 — there is no separate token cache.
 - Revoking access can be done from either side — in Claude Desktop by removing the entry from `claude_desktop_config.json` (and restarting), or in the TYPO3 backend via the **MCP dashboard → Revoke Token**.
+
+## Alternative: custom connector (OAuth, no static token)
+
+Claude Desktop can talk to a remote MCP server without any config file, through
+*Settings → Connectors → **Add custom connector***. Paste the server URL `<typo3-url>/aisuite-mcp`
+and confirm; Desktop then runs the OAuth 2.1 dance against the AI Suite MCP server (dynamic client
+registration included) and stores the tokens itself.
+
+Two differences to the token flow above:
+
+- **No custom headers.** The connector UI has no header field, so the static bearer token cannot be
+  used here. Authentication is OAuth only, which means `mcpAllowedRedirectUris` and
+  `mcpAllowedOrigins` must be filled — the values are identical to Claude.ai, see
+  [`claude-ai.md`](claude-ai.md).
+- **No Node.js needed**, since nothing is launched locally.
+
+The connection is still made from your machine, so localhost / `*.ddev.site` / internal hosts stay
+reachable.
 
 ## Alternative: local stdio transport (no wrapper script)
 

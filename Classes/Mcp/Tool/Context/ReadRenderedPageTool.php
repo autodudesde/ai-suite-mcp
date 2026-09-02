@@ -42,7 +42,7 @@ class ReadRenderedPageTool extends AbstractTool
             'type' => 'object',
             'properties' => [
                 'pageId' => ['type' => 'integer', 'description' => 'UID of the page to render.'],
-                'language' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'sys_language_uid of the language to render. Default: 0 (default language).'],
+                'language' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'sys_language_uid of the language to render; 0 is the default language.'],
             ],
             'required' => ['pageId'],
         ];

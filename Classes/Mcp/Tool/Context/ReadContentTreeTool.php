@@ -48,14 +48,14 @@ class ReadContentTreeTool extends AbstractTool
             'type' => 'object',
             'properties' => [
                 'rootPageId' => ['type' => 'integer', 'default' => 0, 'description' => 'Subtree root page UID (0 = all accessible sites).'],
-                'depth' => ['type' => 'integer', 'default' => 3, 'minimum' => 1, 'maximum' => 10, 'description' => 'Levels to descend. Default: 3.'],
-                'language' => ['type' => 'string', 'description' => 'ISO language code to read (e.g. "fr"). Default: default language. Resolved against the rootPageId site.'],
-                'includeHidden' => ['type' => 'boolean', 'default' => true, 'description' => 'Include hidden content elements, marked [hidden]. Default: true, as in the backend.'],
+                'depth' => ['type' => 'integer', 'default' => 3, 'minimum' => 1, 'maximum' => 10, 'description' => 'Levels to descend.'],
+                'language' => ['type' => 'string', 'description' => 'ISO language code to read (e.g. "fr"), resolved against the rootPageId site. Otherwise the default language.'],
+                'includeHidden' => ['type' => 'boolean', 'default' => true, 'description' => 'Include hidden content elements, marked [hidden]. On by default, as in the backend.'],
                 'maxLength' => ['type' => 'integer', 'default' => 200, 'description' => 'Truncate each element text to this many characters. Use 0 / fullText for no truncation.'],
                 'fullText' => ['type' => 'boolean', 'default' => false, 'description' => 'Return untruncated element text. '
-                    .'Expensive on a whole tree: every element\'s full text enters the conversation and is paid for in this and every later turn. '
+                    .'Over a whole tree this pulls every element\'s full text into the conversation, where it stays. '
                     .'Read the one element you need with readRecords instead.'],
-                'limitPages' => ['type' => 'integer', 'default' => 25, 'minimum' => 1, 'maximum' => 100, 'description' => 'Pages per call. Default: 25. Page through the rest with offset.'],
+                'limitPages' => ['type' => 'integer', 'default' => 25, 'minimum' => 1, 'maximum' => 100, 'description' => 'Pages per call; page through the rest with offset.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip the first N pages (pagination).'],
             ],
         ];

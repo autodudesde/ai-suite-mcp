@@ -65,11 +65,18 @@ class McpController extends AbstractBackendController
 
     public function handleRequest(ServerRequestInterface $request): ResponseInterface
     {
+        if (null !== ($denied = $this->denyWithoutMcpAccess())) {
+            return $denied;
+        }
+
         return $this->indexAction($request);
     }
 
     public function createTokenAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (null !== ($denied = $this->denyWithoutMcpAccess())) {
+            return $denied;
+        }
         $body = (array) ($request->getParsedBody() ?? []);
         $clientName = (string) ($body['clientName'] ?? 'Claude Desktop');
         $workspaceUid = (int) ($body['workspaceUid'] ?? 0);
@@ -103,11 +110,28 @@ class McpController extends AbstractBackendController
         $requestHost = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST');
         $baseUrl = rtrim($requestHost, '/');
 
+        $mcpUrl = $baseUrl.'/aisuite-mcp';
+
         $claudeConfig = json_encode([
             'mcpServers' => [
                 'typo3-ai-suite' => [
-                    'url' => $baseUrl.'/aisuite-mcp',
-                    'transport' => 'http',
+                    'command' => 'npx',
+                    'args' => [
+                        '-y',
+                        'mcp-remote',
+                        $mcpUrl,
+                        '--header',
+                        'Authorization: Bearer '.$tokenResult['access_token'],
+                    ],
+                ],
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        $claudeCodeConfig = json_encode([
+            'mcpServers' => [
+                'typo3-ai-suite' => [
+                    'type' => 'http',
+                    'url' => $mcpUrl,
                     'headers' => [
                         'Authorization' => 'Bearer '.$tokenResult['access_token'],
                     ],
@@ -122,16 +146,20 @@ class McpController extends AbstractBackendController
             'expiresIn' => $tokenResult['expires_in'],
             'revokedClientId' => $tokenResult['revoked_client_id'],
             'claudeDesktopConfig' => $claudeConfig,
+            'claudeCodeConfig' => $claudeCodeConfig,
             'configPaths' => [
                 'macOS' => '~/Library/Application Support/Claude/claude_desktop_config.json',
                 'windows' => '%APPDATA%\Claude\claude_desktop_config.json',
-                'linux' => '~/.config/claude/claude_desktop_config.json',
+                'linux' => '~/.config/Claude/claude_desktop_config.json',
             ],
         ]);
     }
 
     public function revokeTokenAction(ServerRequestInterface $request): ResponseInterface
     {
+        if (null !== ($denied = $this->denyWithoutMcpAccess())) {
+            return $denied;
+        }
         $body = (array) ($request->getParsedBody() ?? []);
         $tokenUid = (int) ($body['tokenUid'] ?? 0);
 
@@ -140,6 +168,17 @@ class McpController extends AbstractBackendController
         }
 
         return new JsonResponse(['success' => true]);
+    }
+
+    private function denyWithoutMcpAccess(): ?ResponseInterface
+    {
+        if ($this->aiSuiteContext->backendUserService->checkPermissions('tx_aisuite_features:enable_mcp_access')) {
+            return null;
+        }
+        $response = new Response();
+        $this->logError('MCP access is not enabled for this backend user (tx_aisuite_features:enable_mcp_access)', $response, 403);
+
+        return $response;
     }
 
     private function indexAction(ServerRequestInterface $request): ResponseInterface

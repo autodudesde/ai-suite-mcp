@@ -134,7 +134,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
                     $text .= $content->text;
                 }
             }
-            $text .= "\n\nPresent both options to the user and ask which approach they prefer.";
+            $text .= "\n\nPick Option 1 unless the caller asked to wait for the result, name the model you chose in one line, and call this tool again with it.";
 
             return $this->textResult($text);
         }

@@ -54,12 +54,12 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
             'properties' => [
                 'childTable' => ['type' => 'string', 'description' => 'TCA table of the records to edit (e.g. tt_content or tx_bootstrappackage_card_group_item).'],
                 'field' => ['type' => 'string', 'description' => 'Field on each record to edit (must be writable).'],
-                'parentUid' => ['type' => 'integer', 'description' => 'Parent-relation mode: UID of the parent record whose children are edited. Needs relationField. Mutually exclusive with pageIds.'],
+                'parentUid' => ['type' => 'integer', 'description' => 'Parent-relation mode: UID of the parent whose children are edited. Needs relationField. Excludes pageIds.'],
                 'relationField' => ['type' => 'string', 'description' => 'Parent-relation mode: field on childTable holding the parent UID (e.g. tx_container_parent, or the IRRE foreign_field).'],
                 'pageIds' => [
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
-                    'description' => 'Page mode: edit every childTable record stored on these pages (max '.self::MAX_PAGES.' pages, '.self::MAX_RECORDS.' records per run). Use readPageTree to collect the UIDs of a section. Mutually exclusive with parentUid.',
+                    'description' => 'Page mode: edit every childTable record on these pages (max '.self::MAX_PAGES.' pages, '.self::MAX_RECORDS.' records per run). readPageTree collects the UIDs of a section. Excludes parentUid.',
                 ],
                 'search' => ['type' => 'string', 'description' => 'Literal text to find (not a regular expression). Use `replacements` for more than one rule.'],
                 'replace' => ['type' => 'string', 'description' => 'Replacement text for `search`.'],
@@ -68,9 +68,9 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
                     'items' => ['type' => 'object'],
                     'description' => 'Several rules in one pass, applied in order to the running value: [{search, replace, all?}]. Max '.self::MAX_REPLACEMENTS.'. Use instead of search/replace.',
                 ],
-                'all' => ['type' => 'boolean', 'default' => false, 'description' => 'Replace every occurrence per record. Default false = require a single unique match per record.'],
-                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating the match. The replacement is spliced into the original, so text outside the match keeps its exact bytes. Default: true.'],
-                'dryRun' => ['type' => 'boolean', 'default' => false, 'description' => 'Report what would change without writing anything. Surveys up to '.self::MAX_RECORDS_DRY_RUN.' records, so the full blast radius can be measured before splitting the write into runs.'],
+                'all' => ['type' => 'boolean', 'default' => false, 'description' => 'Replace every occurrence per record. Otherwise a single unique match per record is required.'],
+                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating the match. The replacement is spliced into the original, so text outside the match keeps its exact bytes.'],
+                'dryRun' => ['type' => 'boolean', 'default' => false, 'description' => 'Report what would change without writing. Surveys up to '.self::MAX_RECORDS_DRY_RUN.' records, so the blast radius can be measured before splitting the write into runs.'],
             ],
             'required' => ['childTable', 'field'],
         ];

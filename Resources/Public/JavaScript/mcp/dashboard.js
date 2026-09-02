@@ -19,11 +19,9 @@ class McpDashboard {
     }
 
     initCopyConfig() {
-        const btn = document.getElementById('copyConfigBtn');
-        if (!btn) {
-            return;
-        }
-        btn.addEventListener('click', () => this.copyConfig(btn));
+        document.querySelectorAll('[data-copy-target]').forEach((btn) => {
+            btn.addEventListener('click', () => this.copyConfig(btn));
+        });
     }
 
     initRevokeTokens() {
@@ -69,6 +67,7 @@ class McpDashboard {
                 const configPre = document.getElementById('claudeConfig');
 
                 configPre.textContent = data.claudeDesktopConfig;
+                document.getElementById('claudeCodeConfig').textContent = data.claudeCodeConfig;
                 resultDiv.style.display = 'block';
                 resultDiv.dataset.config = data.claudeDesktopConfig;
 
@@ -95,7 +94,7 @@ class McpDashboard {
     }
 
     async copyConfig(btn) {
-        const config = document.getElementById('claudeConfig')?.textContent;
+        const config = document.getElementById(btn.dataset.copyTarget)?.textContent;
         if (!config) {
             return;
         }

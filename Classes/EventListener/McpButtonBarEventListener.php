@@ -8,6 +8,9 @@ use AutoDudes\AiSuite\Events\AfterButtonBarGeneratedEvent;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\IconService;
 use AutoDudes\AiSuite\Template\Components\Buttons\AiSuiteLinkButton;
+use Psr\Http\Message\ServerRequestInterface;
+use TYPO3\CMS\Backend\Module\ModuleInterface;
+use TYPO3\CMS\Backend\Module\ModuleProvider;
 use TYPO3\CMS\Backend\Routing\UriBuilder;
 use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -19,6 +22,7 @@ final class McpButtonBarEventListener
         private readonly UriBuilder $uriBuilder,
         private readonly LanguageServiceFactory $languageServiceFactory,
         private readonly IconService $iconService,
+        private readonly ModuleProvider $moduleProvider,
     ) {}
 
     public function __invoke(AfterButtonBarGeneratedEvent $event): void
@@ -28,6 +32,10 @@ final class McpButtonBarEventListener
         }
 
         $request = $event->getRequest();
+        if (!$this->currentModuleAccessGranted($request)) {
+            return;
+        }
+
         $site = $request->getAttribute('site');
         $rootPageId = $site?->getRootPageId() ?? 0;
         $uriParameters = [
@@ -49,5 +57,26 @@ final class McpButtonBarEventListener
         ;
 
         $event->getButtonBar()->addButton($button);
+    }
+
+    private function currentModuleAccessGranted(ServerRequestInterface $request): bool
+    {
+        $backendUser = $this->backendUserService->getBackendUser();
+        if (null === $backendUser) {
+            return false;
+        }
+        if ($backendUser->isAdmin()) {
+            return true;
+        }
+        $module = $request->getAttribute('module');
+        if (!$module instanceof ModuleInterface) {
+            return true;
+        }
+
+        try {
+            return $this->moduleProvider->accessGranted($module->getIdentifier(), $backendUser);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }

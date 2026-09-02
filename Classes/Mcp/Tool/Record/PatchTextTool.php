@@ -38,7 +38,7 @@ class PatchTextTool extends AbstractSafeEditTool
                     'description' => 'Ordered list of edits, applied top to bottom on the running raw stored value. Each: {search, replace, all?}. `all` defaults to false, meaning the search text must occur exactly once.',
                     'items' => ['type' => 'object'],
                 ],
-                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating each match. The replacement is spliced into the original, so text outside the match keeps its exact bytes. Default: true.'],
+                'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating each match. The replacement is spliced into the original, so text outside the match keeps its exact bytes.'],
             ],
             'required' => ['table', 'uid', 'field', 'replacements'],
         ];
@@ -96,6 +96,6 @@ class PatchTextTool extends AbstractSafeEditTool
             $text .= sprintf("\n\n> note: HTML removed from non-RTE field(s): %s", implode(', ', $result->strippedFields));
         }
 
-        return $this->textResult($text);
+        return $this->structuredResult($text, ['batch' => ['records' => [['table' => $table, 'uid' => $uid]]]]);
     }
 }

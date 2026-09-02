@@ -24,3 +24,13 @@ $GLOBALS['TYPO3_CONF_VARS']['BE']['customPermOptions']['tx_aisuite_features']['i
     'tx-aisuite-permissions',
     $lll.'aiSuite.mcp.permissions.enableMcpRenderedPageReadDescription',
 ];
+
+// SEO/accessibility audits call the AutoDudes audit infrastructure with a page URL —
+// data leaves the TYPO3 instance (the URL and, transitively, the page content). The tools
+// stay read-only towards TYPO3 (scope mcp:read), so the gate is this dedicated flag —
+// same pattern as enable_mcp_rendered_page_read.
+$GLOBALS['TYPO3_CONF_VARS']['BE']['customPermOptions']['tx_aisuite_features']['items']['enable_audit'] = [
+    $lll.'aiSuite.mcp.permissions.enableAudit',
+    'tx-aisuite-permissions',
+    $lll.'aiSuite.mcp.permissions.enableAuditDescription',
+];

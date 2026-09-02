@@ -52,19 +52,37 @@
                                     <br /><small><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.tokenShownOnce" /></small>
                                 </div>
 
+                                <h5><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configClaudeDesktop" /></h5>
+
                                 <div class="panel panel-default p-3 mb-3">
                                     <pre id="claudeConfig" style="margin: 0; white-space: pre-wrap; font-size: 0.85rem;"></pre>
                                 </div>
 
-                                <button type="button" id="copyConfigBtn" class="btn btn-sm btn-default">
+                                <button type="button" id="copyConfigBtn" class="btn btn-sm btn-default" data-copy-target="claudeConfig">
+                                    <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.copyToClipboard" />
+                                </button>
+
+                                <div class="mt-2 mb-4 text-muted small">
+                                    <strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configFileLocation" /></strong><br />
+                                    macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br />
+                                    Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code><br />
+                                    Linux: <code>~/.config/Claude/claude_desktop_config.json</code><br />
+                                    <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configClaudeDesktopBridgeHint" />
+                                </div>
+
+                                <h5><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configClaudeCode" /></h5>
+
+                                <div class="panel panel-default p-3 mb-3">
+                                    <pre id="claudeCodeConfig" style="margin: 0; white-space: pre-wrap; font-size: 0.85rem;"></pre>
+                                </div>
+
+                                <button type="button" id="copyCodeConfigBtn" class="btn btn-sm btn-default" data-copy-target="claudeCodeConfig">
                                     <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.copyToClipboard" />
                                 </button>
 
                                 <div class="mt-2 text-muted small">
                                     <strong><f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configFileLocation" /></strong><br />
-                                    macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br />
-                                    Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code><br />
-                                    Linux: <code>~/.config/claude/claude_desktop_config.json</code>
+                                    <code>.mcp.json</code> <f:translate key="LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.mcp.configClaudeCodeLocationHint" />
                                 </div>
                             </div>
                         </div>

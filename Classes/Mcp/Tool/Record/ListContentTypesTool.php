@@ -57,7 +57,7 @@ class ListContentTypesTool extends AbstractDataTool
             'properties' => [
                 'pageId' => ['type' => 'integer', 'description' => 'Page UID'],
                 'includeContainers' => ['type' => 'boolean', 'default' => false, 'description' => 'Also list the container elements that already exist on the page, each with its UID and inner slots. Needed to drop a child into an existing container via `tx_container_parent` + `colPos`.'],
-                'languageUid' => ['type' => 'integer', 'default' => 0, 'description' => 'Language of the container scan (default 0 = default language). Only used with includeContainers.'],
+                'languageUid' => ['type' => 'integer', 'default' => 0, 'description' => 'Language of the container scan; 0 is the default language. Only used with includeContainers.'],
             ],
             'required' => ['pageId'],
         ];

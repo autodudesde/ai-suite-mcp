@@ -54,7 +54,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
                     'type' => 'array',
                     'items' => ['type' => 'string', 'enum' => ['alternative', 'title', 'description']],
                     'default' => ['alternative', 'title'],
-                    'description' => 'Metadata fields to generate: alternative (alt text), title, description. Default: alternative, title.',
+                    'description' => 'Metadata fields to generate: alternative (alt text), title, description.',
                 ],
                 'language' => ['type' => 'string', 'description' => 'ISO language code (e.g. de, en). Defaults to the site default language.'],
                 'prompt' => ['type' => 'string', 'description' => 'Own instruction for the generation. Replaces the predefined instruction of the field, so it has to state the wanted length and style itself. Omit to keep the predefined one.'],
@@ -161,14 +161,14 @@ class GenerateFileMetadataTool extends AbstractAiTool
             );
         }
 
-        $text = "Present the following numbered list to the user and ask them to pick one:\n\n";
+        $text = "Available models:\n\n";
         $i = 1;
         foreach ($filtered as $library) {
             $text .= sprintf("%d. %s\n", $i, $library['model_identifier']);
             ++$i;
         }
-        $text .= "\nEach generation costs at least one credit. Tell the user this before they choose.";
-        $text .= "\nDo NOT pick a model yourself. Show this exact list and wait for the user to choose.";
+        $text .= "\nEach generation costs at least one credit.";
+        $text .= "\nCall this tool again with the first model unless the request named one; say which you picked.";
 
         return $this->textResult($text);
     }
