@@ -9,7 +9,7 @@ use Mcp\Types\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
-class TranslateRecordTool extends AbstractTranslateTool
+class TranslateRecordTool extends AbstractTranslateTool implements SelfTranslatingToolInterface
 {
     protected ?string $requiredScope = 'mcp:translate';
 
@@ -20,10 +20,9 @@ class TranslateRecordTool extends AbstractTranslateTool
 
     public function getDescription(): string
     {
-        return 'Translate one record of any language-aware TCA table, using the site glossary. '
+        return 'Translate one record of any language-aware TCA table with its inline children, using the site glossary. '
             .'Without a model you translate the handed-back fields yourself, for free; with one the server translates '
-            .DescriptionSnippets::COSTS_CREDITS.'. '
-            .'Creates the translation record either way; localizeRecord only creates an empty shell.';
+            .DescriptionSnippets::COSTS_CREDITS.'. Creates the translation record either way.';
     }
 
     public function getSchema(): array
@@ -42,6 +41,7 @@ class TranslateRecordTool extends AbstractTranslateTool
                     'type' => 'string',
                     'description' => 'ISO source language. Default: site default language.',
                 ]),
+                'hidden' => ['type' => 'boolean', 'default' => true, 'description' => 'Keep the translation hidden, as TYPO3 creates it (default). Pass false to make it visible right away.'],
             ],
             'required' => ['table', 'uid', 'targetLanguage'],
         ];
@@ -55,6 +55,7 @@ class TranslateRecordTool extends AbstractTranslateTool
             (string) $params['targetLanguage'],
             (string) ($params['model'] ?? ''),
             (string) ($params['sourceLanguage'] ?? ''),
+            (bool) ($params['hidden'] ?? true),
         );
     }
 }

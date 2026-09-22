@@ -20,9 +20,9 @@ class PatchTextTool extends AbstractSafeEditTool
 
     public function getDescription(): string
     {
-        return 'Apply several literal search/replace edits to one field of an existing record in a single write '
-            .'(writes). For multiple small corrections without resending the whole field. Atomic: if any '
-            .'replacement fails, nothing is written.';
+        return 'Replace literal text in one field of an existing record (writes) — one correction or several '
+            .'in a single write, instead of resending the whole field. Atomic: if any replacement fails, '
+            .'nothing is written.';
     }
 
     public function getSchema(): array
@@ -35,7 +35,7 @@ class PatchTextTool extends AbstractSafeEditTool
                 'field' => ['type' => 'string', 'description' => 'Field to edit (must be writable — see readRecordSchema).'],
                 'replacements' => [
                     'type' => 'array',
-                    'description' => 'Ordered list of edits, applied top to bottom on the running raw stored value. Each: {search, replace, all?}. `all` defaults to false, meaning the search text must occur exactly once.',
+                    'description' => 'Edits, applied top to bottom on the running raw stored value; one entry is the single-correction case. Each: {search, replace, all?}. `search` is literal, not a regular expression, and is matched against the raw stored value, so in an RTE/HTML field a phrase spanning tags will not match. `all` defaults to false, meaning the search text must occur exactly once.',
                     'items' => ['type' => 'object'],
                 ],
                 'normalizeWhitespace' => ['type' => 'boolean', 'default' => true, 'description' => 'Ignore line-ending and spacing differences when locating each match. The replacement is spliced into the original, so text outside the match keeps its exact bytes.'],
@@ -61,6 +61,14 @@ class PatchTextTool extends AbstractSafeEditTool
         $this->normalizeWhitespace = (bool) ($params['normalizeWhitespace'] ?? true);
         $value = $this->loadEditableField($table, $uid, $field)['value'];
 
+        $firstSearch = \is_array($replacements[array_key_first($replacements)] ?? null)
+            ? (string) ($replacements[array_key_first($replacements)]['search'] ?? '')
+            : '';
+        $firstReplace = \is_array($replacements[array_key_first($replacements)] ?? null)
+            ? (string) ($replacements[array_key_first($replacements)]['replace'] ?? '')
+            : '';
+        $oldSnippet = $this->snippet($value, $firstSearch);
+
         $applied = 0;
         foreach ($replacements as $i => $replacement) {
             if (!is_array($replacement)) {
@@ -84,13 +92,17 @@ class PatchTextTool extends AbstractSafeEditTool
         $result = $this->recordWrite->update($table, $uid, [$field => $value]);
 
         $text = sprintf(
-            '## Applied %d replacement(s) (%d occurrence(s)) to %s:%d `%s`',
+            "## Applied %d replacement(s) (%d occurrence(s)) to %s:%d `%s`\n\n- **before:** %s\n- **after:** %s",
             count($replacements),
             $applied,
             $this->tcaLabel->getTableLabel($table),
             $uid,
             $field,
+            $oldSnippet,
+            $this->snippet($value, $firstReplace),
         );
+
+        $text .= "\n\nWritten to ".$this->editLayer().'.';
 
         if ([] !== $result->strippedFields) {
             $text .= sprintf("\n\n> note: HTML removed from non-RTE field(s): %s", implode(', ', $result->strippedFields));

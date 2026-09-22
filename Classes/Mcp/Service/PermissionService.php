@@ -34,7 +34,6 @@ class PermissionService
         'readContentTree' => 'mcp:read',
         'previewRecords' => 'mcp:write',
         'writeRecords' => 'mcp:write',
-        'replaceText' => 'mcp:write',
         'patchText' => 'mcp:write',
         'bulkReplaceText' => 'mcp:write',
         'readRecords' => 'mcp:read',
@@ -59,17 +58,12 @@ class PermissionService
 
         'auditSeo' => 'mcp:read',
         'auditAccessibility' => 'mcp:read',
-        'auditQuestions' => 'mcp:read',
-        'auditContentGap' => 'mcp:read',
-        'auditTopicCluster' => 'mcp:read',
-        'auditCompetitors' => 'mcp:read',
+        'auditContent' => 'mcp:read',
         'readAuditResults' => 'mcp:read',
         'batchGenerateMetadata' => 'mcp:workflow',
         'batchGenerateFileMetadata' => 'mcp:workflow',
-        'batchGenerateFolderMetadata' => 'mcp:workflow',
         'batchTranslatePage' => 'mcp:workflow',
         'batchTranslateFileMetadata' => 'mcp:workflow',
-        'batchTranslateFolderMetadata' => 'mcp:workflow',
         'readTaskStatus' => 'mcp:read',
         'readTaskResults' => 'mcp:read',
         'applyTaskResults' => 'mcp:write',
@@ -113,19 +107,7 @@ class PermissionService
         'auditAccessibility' => [
             'tx_aisuite_features:enable_audit',
         ],
-        'auditQuestions' => [
-            'tx_aisuite_features:enable_audit',
-        ],
-        'auditContentGap' => [
-            'tx_aisuite_features:enable_audit',
-        ],
-        'auditTopicCluster' => [
-            'tx_aisuite_features:enable_audit',
-        ],
-        'auditCompetitors' => [
-            'tx_aisuite_features:enable_audit',
-        ],
-        'readAuditResults' => [
+        'auditContent' => [
             'tx_aisuite_features:enable_audit',
         ],
     ];
@@ -140,7 +122,6 @@ class PermissionService
         'localizeRecord',
         'batchTranslatePage',
         'batchTranslateFileMetadata',
-        'batchTranslateFolderMetadata',
     ];
 
     public function __construct(
@@ -148,6 +129,14 @@ class PermissionService
         private readonly LocalizationService $localizationService,
         private readonly SiteLanguageService $siteLanguages,
     ) {}
+
+    /**
+     * @return list<string>
+     */
+    public static function supportedScopes(): array
+    {
+        return array_keys(self::SCOPE_PERMISSION_MAP);
+    }
 
     /**
      * @param list<string> $tokenScopes

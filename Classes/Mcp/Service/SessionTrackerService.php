@@ -25,9 +25,6 @@ class SessionTrackerService
         $this->initialized = true;
     }
 
-    /**
-     * @throws \RuntimeException
-     */
     public function trackUsage(int $credits): void
     {
         if ('' !== $this->tokenId) {
@@ -38,16 +35,21 @@ class SessionTrackerService
         } else {
             $this->creditsUsedInSession += $credits;
         }
+    }
 
-        if ($this->maxCreditsPerSession > 0 && $this->creditsUsedInSession >= $this->maxCreditsPerSession) {
-            throw new \RuntimeException(sprintf(
-                "You've used %d credits in this session — great productivity! "
-                .'Your session budget of %d credits has been reached. '
-                .'Start a new session or contact your administrator for a higher budget.',
-                $this->creditsUsedInSession,
-                $this->maxCreditsPerSession,
-            ));
-        }
+    public function isExhausted(): bool
+    {
+        return $this->maxCreditsPerSession > 0 && $this->creditsUsedInSession >= $this->maxCreditsPerSession;
+    }
+
+    public function exhaustedMessage(): string
+    {
+        return sprintf(
+            'This access token has used %d of its %d-credit budget, so no further AI requests are sent with it. '
+            .'A newly issued token starts with a fresh budget, and an administrator can raise the limit (mcpMaxCreditsPerSession).',
+            $this->creditsUsedInSession,
+            $this->maxCreditsPerSession,
+        );
     }
 
     public function getUsed(): int

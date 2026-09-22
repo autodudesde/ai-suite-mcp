@@ -56,6 +56,9 @@ class FieldCurationService
         if (\is_array($value)) {
             return [] === $value;
         }
+        if (\is_object($value)) {
+            return $value instanceof \Stringable && '' === trim((string) $value);
+        }
 
         return '' === trim((string) $value);
     }

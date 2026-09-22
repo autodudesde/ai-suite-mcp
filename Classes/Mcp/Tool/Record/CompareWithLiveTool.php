@@ -43,7 +43,7 @@ class CompareWithLiveTool extends AbstractDataTool
             'properties' => [
                 'table' => ['type' => 'string', 'description' => 'TCA table name'],
                 'uid' => ['type' => 'integer', 'description' => 'Single record (the live UID as shown in the backend)'],
-                'pid' => ['type' => 'integer', 'description' => 'Page UID — diff all changed records on this page. A set reports CHANGED (differing fields), ADDED (new in the workspace) and REMOVED (deleted in the workspace); unchanged records are summarized as a count.'],
+                'pid' => ['type' => 'integer', 'description' => 'Page UID — diff all changed records on this page; for the pages table that is its direct child pages. A set reports CHANGED (differing fields), ADDED (new in the workspace) and REMOVED (deleted in the workspace); unchanged records are summarized as a count. One level only, nothing further below.'],
                 'filters' => [
                     'type' => 'object',
                     'description' => 'Field=value filters (exact match; "" matches empty) to scope the set, same shape as readRecords.',
@@ -179,6 +179,10 @@ class CompareWithLiveTool extends AbstractDataTool
     {
         $scope = null !== $pid ? sprintf('on page %d', $pid) : 'matching filters';
         $lines = [sprintf('## Compare with Live — `%s` %s (Workspace %d vs Live)', $table, $scope, $currentWs), ''];
+        if (null !== $pid) {
+            $lines[] = sprintf('Only records directly on page %d are compared, nothing further below it.', $pid);
+            $lines[] = '';
+        }
 
         $total = count($set['changed']) + count($set['added']) + count($set['removed']);
         if (0 === $total) {

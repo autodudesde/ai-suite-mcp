@@ -114,6 +114,34 @@
                 <source>Content guidelines for page %d successfully created. They will automatically apply to all AI operations on this page.</source>
                 <target>Redaktionsrichtlinien für Seite %d erfolgreich erstellt. Sie werden automatisch auf alle KI-Operationen dieser Seite angewandt.</target>
             </trans-unit>
+
+            <!-- Backend link bounce page -->
+            <trans-unit id="aiSuite.mcp.backendLink.title">
+                <source>Opening TYPO3</source>
+                <target>TYPO3 wird geöffnet</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.backendLink.continue">
+                <source>Continue to TYPO3</source>
+                <target>Weiter zu TYPO3</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.backendLink.invalid">
+                <source>This link was not issued by this TYPO3 installation or is no longer valid.</source>
+                <target>Dieser Link stammt nicht von dieser TYPO3-Installation oder ist nicht mehr gültig.</target>
+            </trans-unit>
+
+            <!-- Navigation: stored audits -->
+            <trans-unit id="aiSuite.mcp.navigation.audit.group">
+                <source>Audit</source>
+                <target>Audit</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.navigation.audit.open">
+                <source>Open audit result</source>
+                <target>Audit-Ergebnis öffnen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.navigation.audit.export">
+                <source>Download CSV</source>
+                <target>CSV herunterladen</target>
+            </trans-unit>
         </body>
     </file>
 </xliff>

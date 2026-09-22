@@ -11,6 +11,7 @@ use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -27,6 +28,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         protected readonly TranslationService $translationService,
         protected readonly GlossarService $glossarService,
         protected readonly GlobalInstructionService $globalInstructionService,
+        protected readonly TranslatedPageSlugService $translatedPageSlugs,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -55,7 +57,12 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             'Translate the field values below from %s into %s and write them back with `writeRecords`, '
             .'using the record UIDs given here — those records already exist and are empty or still hold the source text. '
             .'Keep every HTML tag, attribute and entity exactly as it is and translate only the text between them. '
-            ."Do not translate field names, and do not add or drop fields.\n\n",
+            ."Do not translate field names, and do not add or drop fields.\n\n"
+            // The shape is spelled out because the UIDs below are the translations themselves: a model
+            // that reaches for `translations` here asks for a translation of a translation and, once
+            // refused, has been measured filling `fields` with the source text instead.
+            ."One entry per record, addressed by its uid, and no `translations` key:\n"
+            ."`{\"records\": [{\"table\": \"pages\", \"uid\": 22, \"fields\": {\"title\": \"…\"}}]}`\n\n",
             '' !== $sourceLanguage ? strtoupper($sourceLanguage) : 'the source language',
             strtoupper($targetLanguage),
         );
@@ -76,42 +83,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             $text .= "**Editorial instructions:**\n".trim($globalInstructions)."\n\n";
         }
 
-        return $text.sprintf(
-            "To have the AI Suite Server translate instead — which costs credits — call this tool again with `model`. Available: %s.\n\n",
-            implode(', ', $this->permittedTranslationModels()),
-        );
-    }
-
-    /**
-     * @return list<string>
-     */
-    protected function permittedTranslationModels(): array
-    {
-        try {
-            $answer = $this->sendRequestService->sendLibrariesRequest(
-                GenerationLibraryEnumeration::TRANSLATE,
-                'translate',
-                ['text'],
-            );
-            if ('Error' === $answer->getType()) {
-                return ['none reachable'];
-            }
-            $libraries = $answer->getResponseData()['textGenerationLibraries'] ?? [];
-            $permitted = $this->libraryService->prepareLibraries(\is_array($libraries) ? $libraries : []);
-        } catch (\Throwable $e) {
-            $this->logger->warning('Could not list translation models for the self-translation hint', [
-                'reason' => $e->getMessage(),
-            ]);
-
-            return ['none reachable'];
-        }
-
-        $identifiers = array_values(array_map(
-            static fn (array $library): string => (string) $library['model_identifier'],
-            $permitted,
-        ));
-
-        return [] === $identifiers ? ['none permitted for this user'] : $identifiers;
+        return $text."Translating this yourself is the intended path and costs nothing. Only if the request named a translation model, call this tool again with `model` to have the AI Suite Server translate instead.\n\n";
     }
 
     /**
@@ -130,12 +102,69 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         );
     }
 
+    /**
+     * @param list<int> $uids
+     */
+    protected function revealTranslations(string $table, array $uids): void
+    {
+        $hiddenField = $this->tcaCompatibilityService->getDisabledFieldName($table);
+        if (null === $hiddenField) {
+            return;
+        }
+
+        foreach ($uids as $uid) {
+            $this->writeViaDataHandler($table, $uid, [$hiddenField => 0]);
+        }
+    }
+
+    /**
+     * @param array<array-key, mixed> $translationResults
+     * @param array<array-key, mixed> $sentFields
+     *
+     * @return array<string, array<array-key, array<array-key, mixed>>>
+     */
+    protected function restrictToSentFields(array $translationResults, array $sentFields): array
+    {
+        $restricted = [];
+        foreach ($translationResults as $table => $records) {
+            if (!\is_array($records) || !\is_array($sentFields[$table] ?? null)) {
+                continue;
+            }
+            foreach ($records as $uid => $fields) {
+                $sent = $sentFields[$table][$uid] ?? null;
+                if (!\is_array($fields) || !\is_array($sent)) {
+                    continue;
+                }
+                $kept = array_intersect_key($fields, $sent);
+                if ([] !== $kept) {
+                    $restricted[(string) $table][$uid] = $this->translationService->claimTranslatedFields((string) $table, $kept);
+                }
+            }
+        }
+
+        return $restricted;
+    }
+
+    /**
+     * @param array<array-key, mixed> $translatedRecords
+     */
+    protected function refreshTranslatedPageSlugs(array $translatedRecords): void
+    {
+        $pages = \is_array($translatedRecords['pages'] ?? null) ? $translatedRecords['pages'] : [];
+        foreach ($pages as $pageUid => $fields) {
+            if (\is_array($fields)) {
+                $this->translatedPageSlugs->refreshInheritedSlug((int) $pageUid, $fields);
+            }
+        }
+    }
+
     protected function translateSingleRecord(
         string $table,
         int $uid,
         string $targetLanguage,
         string $model,
         string $sourceLanguage = '',
+        bool $hidden = true,
     ): CallToolResult {
         try {
             $record = $this->recordAccess->assertRecordEditAccess($table, $uid);
@@ -174,13 +203,38 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             return $this->textError('Could not create or find localization record.');
         }
 
-        $fields = $this->collectTranslatableFields($table, $uid, $record);
+        $skipped = [];
+        $translateFields = $this->collectTranslatableTree($table, $uid, $destLangUid, (int) $translatedUid, $record, $skipped);
 
-        if (empty($fields)) {
-            return $this->textError('No translatable fields found in this record.');
+        if (!$hidden) {
+            $this->revealTranslations($table, [(int) $translatedUid]);
+            foreach ($translateFields as $revealTable => $records) {
+                $this->revealTranslations((string) $revealTable, array_map('intval', array_keys($records)));
+            }
         }
 
-        $translateFields = [$table => [(int) $translatedUid => $fields]];
+        if (empty($translateFields)) {
+            return $this->structuredResult(
+                sprintf(
+                    "Nothing to translate in %s:%d, it holds no translatable text. Its %s translation `%s:%d` is in place, so the element is rendered in that language.\n",
+                    $table,
+                    $uid,
+                    $targetLanguage,
+                    $table,
+                    (int) $translatedUid,
+                ).$this->describeSkippedRecords($skipped),
+                ['translation' => [
+                    'mode' => 'none',
+                    'table' => $table,
+                    'sourceUid' => $uid,
+                    'uid' => (int) $translatedUid,
+                    'targetLanguage' => $targetLanguage,
+                    'skipped' => $skipped,
+                ]],
+            );
+        }
+
+        $recordCount = array_sum(array_map('count', $translateFields));
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
         $site = $this->siteFinder->getSiteByPageId($pageId);
@@ -194,7 +248,8 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             return $this->structuredResult(
                 sprintf("## Translate %s:%d → %s yourself\n\n", $table, $uid, $targetLanguage)
                     .$this->describeSelfTranslation($targetLanguage, $sourceLanguage, $glossarEntries, $globalInstructions)
-                    .sprintf("**Write the translated values to `%s:%d`.**\n", $table, (int) $translatedUid),
+                    .$this->describeHandedOverRecords($translateFields)
+                    .$this->describeSkippedRecords($skipped),
                 ['translation' => [
                     'mode' => 'self',
                     'table' => $table,
@@ -202,7 +257,8 @@ abstract class AbstractTranslateTool extends AbstractAiTool
                     'uid' => (int) $translatedUid,
                     'targetLanguage' => $targetLanguage,
                     'sourceLanguage' => $sourceLanguage,
-                    'fields' => $fields,
+                    'records' => $translateFields,
+                    'skipped' => $skipped,
                 ]],
             );
         }
@@ -211,7 +267,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
 
         $result = $this->sendAiRequest('translate', [
             'translate_fields' => $translateFieldsJson,
-            'translate_fields_count' => 1,
+            'translate_fields_count' => $recordCount,
             'glossary' => json_encode($glossarEntries, SendRequestService::JSON_SAFE_FLAGS),
             'source_lang' => strtoupper($sourceLanguage),
             'target_lang' => strtoupper($targetLanguage),
@@ -229,17 +285,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             return $this->textError('No translation results returned by the server.');
         }
 
-        $cleanedResults = [];
-        foreach ($translationResults as $tbl => $records) {
-            if (!\is_array($records)) {
-                continue;
-            }
-            foreach ($records as $recUid => $recFields) {
-                if (\is_array($recFields)) {
-                    $cleanedResults[$tbl][$recUid] = $recFields;
-                }
-            }
-        }
+        $cleanedResults = $this->restrictToSentFields($translationResults, $translateFields);
 
         if (empty($cleanedResults)) {
             return $this->textError('Translation results could not be processed (invalid format).');
@@ -256,30 +302,34 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             );
         }
 
+        $this->refreshTranslatedPageSlugs($cleanedResults);
+
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: %s:%d → %s\n\n", $table, $uid, $targetLanguage);
         $text .= sprintf("**Translation record:** %s:%d\n", $table, (int) $translatedUid);
 
-        foreach ($translationResults as $tbl => $records) {
-            if (!\is_array($records)) {
-                continue;
-            }
-            foreach ($records as $recUid => $recFields) {
-                if (!\is_array($recFields)) {
-                    continue;
-                }
+        foreach ($cleanedResults as $resultTable => $records) {
+            foreach ($records as $resultUid => $recFields) {
+                $text .= sprintf("### %s:%s\n", $resultTable, $resultUid);
                 foreach ($recFields as $field => $value) {
+                    if (\is_array($value)) {
+                        continue;
+                    }
                     $displayValue = strip_tags((string) $value);
                     if (mb_strlen($displayValue) > 120) {
                         $displayValue = mb_substr($displayValue, 0, 120).'...';
                     }
                     $text .= sprintf("- **%s**: %s\n", $field, $displayValue);
                 }
+                $text .= "\n";
             }
         }
 
-        $text .= "\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
+        if ($hidden) {
+            $text .= "\n**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
+        }
         $text .= $this->describeUntranslated($result);
+        $text .= $this->describeSkippedRecords($skipped);
 
         $untranslated = \is_array($result['untranslated'] ?? null) ? array_map('strval', $result['untranslated']) : [];
 
@@ -290,24 +340,68 @@ abstract class AbstractTranslateTool extends AbstractAiTool
                 'uid' => (int) $translatedUid,
                 'targetLanguage' => $targetLanguage,
                 'model' => $model,
+                'records' => $recordCount,
                 'untranslated' => array_values($untranslated),
+                'skipped' => $skipped,
             ]]),
             $result,
         );
     }
 
     /**
-     * @param array<string, mixed> $record
+     * @param array<string, mixed>  $record
+     * @param array<string, string> $skipped
      *
-     * @return array<string, mixed>
+     * @param-out array<string, string> $skipped
+     *
+     * @return array<string, array<int, array<string, mixed>>>
      */
-    protected function collectTranslatableFields(string $table, int $uid, array $record): array
+    protected function collectTranslatableTree(string $table, int $uid, int $targetLanguageUid, int $translatedUid, array $record, array &$skipped): array
     {
-        $request = $this->userContext->getServerRequest();
-        $fields = $this->translationService->fetchTranslationFields($request, [], $uid, $table);
+        return $this->translationService->collectRecordTreeTranslatableFields(
+            $table,
+            $uid,
+            $targetLanguageUid,
+            $this->userContext->getServerRequest(),
+            $skipped,
+        );
+    }
 
-        return array_filter($fields, static function ($field) {
-            return !\is_array($field) || isset($field['data']);
-        });
+    /**
+     * @param array<string, mixed> $translateFields
+     */
+    protected function describeHandedOverRecords(array $translateFields): string
+    {
+        $text = "**Write the translated values to these records, using exactly these field names:**\n";
+        foreach ($translateFields as $table => $records) {
+            if (!\is_array($records)) {
+                continue;
+            }
+            foreach ($records as $uid => $fields) {
+                $names = \is_array($fields) ? array_keys($fields) : [];
+                $text .= [] === $names
+                    ? sprintf("- `%s:%s`\n", $table, $uid)
+                    : sprintf("- `%s:%s` — %s\n", $table, $uid, implode(', ', array_map('strval', $names)));
+            }
+        }
+
+        return $text."\nThe field values themselves are in this answer's structured content, under `translation.records`.\n";
+    }
+
+    /**
+     * @param array<string, string> $skipped
+     */
+    protected function describeSkippedRecords(array $skipped): string
+    {
+        if ([] === $skipped) {
+            return '';
+        }
+
+        $text = "\n**Skipped, not part of this translation:**\n";
+        foreach ($skipped as $record => $reason) {
+            $text .= sprintf("- `%s`: %s\n", $record, $reason);
+        }
+
+        return $text;
     }
 }

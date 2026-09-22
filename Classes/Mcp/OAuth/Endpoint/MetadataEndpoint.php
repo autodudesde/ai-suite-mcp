@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint;
 
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
@@ -25,15 +26,8 @@ class MetadataEndpoint
             'grant_types_supported' => ['authorization_code', 'refresh_token'],
             'token_endpoint_auth_methods_supported' => ['none'],
             'code_challenge_methods_supported' => ['S256'],
-            'scopes_supported' => [
-                'mcp:read',
-                'mcp:write',
-                'mcp:generate',
-                'mcp:translate',
-                'mcp:image',
-                'mcp:media',
-                'mcp:workflow',
-            ],
+            'authorization_response_iss_parameter_supported' => true,
+            'scopes_supported' => PermissionService::supportedScopes(),
         ]);
     }
 }

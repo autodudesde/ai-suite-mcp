@@ -13,6 +13,7 @@ use AutoDudes\AiSuite\Service\WorkflowProcessingService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\FolderFileSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -22,6 +23,8 @@ use TYPO3\CMS\Core\Resource\File;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateFileMetadataTool extends AbstractAiTool
 {
+    use FolderFileSelectionTrait;
+
     protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
@@ -41,8 +44,8 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Generate file metadata (alt text, title, description) for specific files with an external AI model (costs credits). '
-            .'For processing all files in a folder, use batchGenerateFolderMetadata instead. '
+        return 'Generate file metadata (alt text, title, description) with an external AI model (costs credits), '
+            .'for files given by UID or for every file in the given FAL folders. '
             .DescriptionSnippets::BATCH_ASYNC;
     }
 
@@ -54,8 +57,9 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
                 'fileUids' => [
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
-                    'description' => 'Array of sys_file UIDs to generate metadata for.',
+                    'description' => 'sys_file UIDs to generate metadata for. Alternative to folderIdentifiers; give one of the two.',
                 ],
+                'folderIdentifiers' => self::folderIdentifiersSchemaProperty(),
                 'fields' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
@@ -66,7 +70,6 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
                 'language' => ['type' => 'string', 'description' => 'ISO language code (e.g. de, en). Defaults to the site default language.'],
                 'prompt' => ['type' => 'string', 'description' => 'Own instruction for the generation. Replaces the predefined instruction of the field, so it has to state the wanted length and style itself. Omit to keep the predefined one.'],
             ],
-            'required' => ['fileUids'],
         ];
     }
 
@@ -78,18 +81,23 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
 
     protected function doExecute(array $params): CallToolResult
     {
+        $params = $this->withFilesFromFolders($params);
+        if ($params instanceof CallToolResult) {
+            return $params;
+        }
+
         $fileUids = $params['fileUids'] ?? [];
         $model = (string) ($params['model'] ?? '');
         $fields = $params['fields'] ?? ['alternative', 'title'];
         $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), 1);
 
         if (empty($fileUids)) {
-            return $this->textError('fileUids must be a non-empty array.');
+            return $this->textError('Give fileUids or folderIdentifiers — one of the two, non-empty.');
         }
 
         if ('' === $model) {
             $fileCount = count($fileUids);
-            $text = sprintf("## Generate file metadata for %d files\n\n", $fileCount);
+            $text = sprintf("## Generate file metadata for %s\n\n", $this->outputFormatter->countOf($fileCount, 'file'));
 
             $text .= "**Option 1 — Async (recommended):**\n";
             $text .= "  An external AI model (e.g. Vision) processes all files simultaneously in the background.\n";
@@ -246,7 +254,13 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped files: %s (not found or not accessible)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf(
+            "\nProcessing happens in the background, and nothing is written yet. Poll "
+            .'**readTaskStatus(taskId: "%s")**; once it reports finished, read the suggestions with '
+            .'**readTaskResults(taskId: "%s")** and persist the ones you keep with **writeRecords**.',
+            $parentUuid,
+            $parentUuid,
+        );
 
         return $this->textResult($text);
     }

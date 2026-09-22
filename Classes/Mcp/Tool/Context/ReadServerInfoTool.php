@@ -6,6 +6,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpWriteModeResolver;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Server\Server;
@@ -31,6 +32,7 @@ class ReadServerInfoTool extends AbstractTool
         private readonly Typo3Version $typo3Version,
         private readonly SysWorkspaceRepository $sysWorkspaceRepository,
         private readonly McpSessionStoreService $sessionStore,
+        private readonly McpWriteModeResolver $writeModeResolver,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -93,7 +95,7 @@ class ReadServerInfoTool extends AbstractTool
         if ($isAdmin) {
             $lines[] = '## Configuration';
             $lines[] = sprintf('- **MCP enabled:** %s', $mcpEnabled ? 'yes' : 'no');
-            $lines[] = sprintf('- **Write mode (default):** %s', (string) ($extConf['mcpWriteMode'] ?? 'workspace'));
+            $lines[] = sprintf('- **Write mode (default):** %s', $this->writeModeResolver->getWriteMode());
             $lines[] = sprintf('- **Session timeout:** %ds', (int) ($extConf['mcpSessionTimeoutSeconds'] ?? 1800));
             $lines[] = sprintf('- **Workspace extension:** %s', ExtensionManagementUtility::isLoaded('workspaces') ? 'installed' : 'not installed');
             $lines[] = '';
@@ -137,7 +139,8 @@ class ReadServerInfoTool extends AbstractTool
                 $warnings[] = 'MCP is disabled in extension configuration.';
             }
             if (!$sdkInstalled) {
-                $warnings[] = 'MCP SDK is not installed. Run: composer require logiscape/mcp-sdk-php';
+                $warnings[] = 'MCP SDK (logiscape/mcp-sdk-php) is not loaded. Composer installations require the package, '
+                    .'classic mode installations ship it in Resources/Private/PHP/ComposerVendor of the extension.';
             }
             if (!$sessionWritable) {
                 $warnings[] = sprintf('Session directory is not writable: %s', $sessionPath);

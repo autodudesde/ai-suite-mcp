@@ -18,6 +18,52 @@ class SysFileReferenceRepository
     ) {}
 
     /**
+     * @param list<int> $uidsForeign
+     *
+     * @return array<int, string>
+     */
+    public function findFirstMediaLabelPerParent(string $tablenames, array $uidsForeign): array
+    {
+        if ([] === $uidsForeign) {
+            return [];
+        }
+
+        $qb = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
+        $qb->getRestrictions()->removeAll()->add(GeneralUtility::makeInstance(DeletedRestriction::class));
+
+        $rows = $qb
+            ->select('r.uid_foreign', 'r.alternative', 'r.title', 'r.description', 'f.name')
+            ->from(self::TABLE, 'r')
+            ->leftJoin('r', 'sys_file', 'f', $qb->expr()->eq('f.uid', $qb->quoteIdentifier('r.uid_local')))
+            ->where(
+                $qb->expr()->eq('r.tablenames', $qb->createNamedParameter($tablenames)),
+                $qb->expr()->in('r.uid_foreign', $qb->createNamedParameter($uidsForeign, Connection::PARAM_INT_ARRAY)),
+            )
+            ->orderBy('r.sorting_foreign', 'ASC')
+            ->executeQuery()
+            ->fetchAllAssociative()
+        ;
+
+        $labels = [];
+        foreach ($rows as $row) {
+            $parent = (int) $row['uid_foreign'];
+            if (isset($labels[$parent])) {
+                continue;
+            }
+            foreach (['alternative', 'title', 'description', 'name'] as $candidate) {
+                $value = trim((string) ($row[$candidate] ?? ''));
+                if ('' !== $value) {
+                    $labels[$parent] = $value;
+
+                    break;
+                }
+            }
+        }
+
+        return $labels;
+    }
+
+    /**
      * @return list<array{uid: int, uid_local: int, pid: int}>
      */
     public function findReferences(string $tablenames, int $uidForeign, string $fieldname): array

@@ -12,6 +12,15 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
+use Mcp\Shared\ErrorData;
+use Mcp\Shared\McpError;
+use Mcp\Types\CacheableResult;
+use Mcp\Types\ListResourcesResult;
+use Mcp\Types\ListResourceTemplatesResult;
+use Mcp\Types\ReadResourceResult;
+use Mcp\Types\Resource;
+use Mcp\Types\ResourceTemplate;
+use Mcp\Types\TextResourceContents;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
 
@@ -40,83 +49,72 @@ class McpResourceHandler
         return $this->permissionService->isScopeGranted(self::REQUIRED_SCOPE, $this->userContext->getScopes());
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleList(mixed $params): array
+    private function handleList(mixed $params): ListResourcesResult
     {
-        // Scope gate: a session without mcp:read sees no resources (mirrors tools/list filtering).
         if (!$this->canReadResources()) {
-            return ['resources' => []];
+            return $this->cacheable(new ListResourcesResult([]));
         }
 
         $resources = [];
 
-        $resources[] = [
-            'uri' => 'aisuite://guidelines',
-            'name' => 'AI Suite Operating Guidelines',
-            'description' => 'Workflow rules the server expects clients to follow',
-            'mimeType' => 'text/markdown',
-        ];
+        $resources[] = new Resource(
+            name: 'AI Suite Operating Guidelines',
+            uri: 'aisuite://guidelines',
+            description: 'Workflow rules the server expects clients to follow',
+            mimeType: 'text/markdown',
+        );
 
         foreach ($this->globalInstructionsRepository->findDistinctPidScopes() as $instr) {
-            $resources[] = [
-                'uri' => 'aisuite://instructions/page/'.$instr['pid'],
-                'name' => 'Content guidelines for page '.$instr['pid'],
-                'description' => 'Tone, target audience, and style guidelines for AI operations',
-                'mimeType' => 'text/plain',
-            ];
+            $resources[] = new Resource(
+                name: 'Content guidelines for page '.$instr['pid'],
+                uri: 'aisuite://instructions/page/'.$instr['pid'],
+                description: 'Tone, target audience, and style guidelines for AI operations',
+                mimeType: 'text/plain',
+            );
         }
 
-        $resources[] = [
-            'uri' => 'aisuite://config/site',
-            'name' => 'Site Configuration',
-            'description' => 'Available languages, domains, and site settings',
-            'mimeType' => 'application/json',
-        ];
+        $resources[] = new Resource(
+            name: 'Site Configuration',
+            uri: 'aisuite://config/site',
+            description: 'Available languages, domains, and site settings',
+            mimeType: 'application/json',
+        );
 
-        $resources[] = [
-            'uri' => 'aisuite://credits/status',
-            'name' => 'AI Suite Credit Status',
-            'description' => 'Current credit balance, configured providers, and session usage',
-            'mimeType' => 'application/json',
-        ];
+        $resources[] = new Resource(
+            name: 'AI Suite Credit Status',
+            uri: 'aisuite://credits/status',
+            description: 'Current credit balance, configured providers, and session usage',
+            mimeType: 'application/json',
+        );
 
-        $resources[] = [
-            'uri' => 'aisuite://dashboard/usage',
-            'name' => 'AI Suite Usage Dashboard',
-            'description' => 'Request statistics and credit consumption overview',
-            'mimeType' => 'application/json',
-        ];
+        $resources[] = new Resource(
+            name: 'AI Suite Usage Dashboard',
+            uri: 'aisuite://dashboard/usage',
+            description: 'Request statistics and credit consumption overview',
+            mimeType: 'application/json',
+        );
 
-        return ['resources' => $resources];
+        return $this->cacheable(new ListResourcesResult($resources));
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleTemplatesList(mixed $params): array
+    private function handleTemplatesList(mixed $params): ListResourceTemplatesResult
     {
         if (!$this->canReadResources()) {
-            return ['resourceTemplates' => []];
+            return $this->cacheable(new ListResourceTemplatesResult([]));
         }
 
-        return ['resourceTemplates' => [
-            [
-                'uriTemplate' => 'aisuite://instructions/page/{pid}',
-                'name' => 'Content guidelines for a page',
-                'description' => 'Tone, target audience, and style guidelines for AI operations on the given page UID',
-                'mimeType' => 'text/plain',
-            ],
-        ]];
+        return $this->cacheable(new ListResourceTemplatesResult([
+            new ResourceTemplate(
+                name: 'Content guidelines for a page',
+                uriTemplate: 'aisuite://instructions/page/{pid}',
+                description: 'Tone, target audience, and style guidelines for AI operations on the given page UID',
+                mimeType: 'text/plain',
+            ),
+        ]));
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleRead(mixed $params): array
+    private function handleRead(mixed $params): ReadResourceResult
     {
-        // Scope gate: reading any resource requires mcp:read (the SDK turns this into a JSON-RPC error).
         if (!$this->canReadResources()) {
             throw new InsufficientScopeException('Reading AI Suite resources requires the "mcp:read" scope.');
         }
@@ -124,48 +122,75 @@ class McpResourceHandler
         $uri = (string) (RequestParamsNormalizer::toArray($params)['uri'] ?? '');
 
         if ('aisuite://guidelines' === $uri) {
-            return ['contents' => [[
-                'uri' => $uri,
-                'mimeType' => 'text/markdown',
-                'text' => OperatingGuidelines::get(),
-            ]]];
+            return $this->cacheable(new ReadResourceResult([
+                new TextResourceContents(
+                    text: OperatingGuidelines::get(),
+                    uri: $uri,
+                    mimeType: 'text/markdown',
+                ),
+            ]));
         }
 
         if (str_starts_with($uri, 'aisuite://instructions/page/')) {
             $pid = (int) substr($uri, strlen('aisuite://instructions/page/'));
 
-            return ['contents' => [[
-                'uri' => $uri,
-                'mimeType' => 'text/plain',
-                'text' => $this->globalInstructionService->buildGlobalInstruction('', 'pages', $pid) ?: 'No instructions configured for this page.',
-            ]]];
+            return $this->cacheable(new ReadResourceResult([
+                new TextResourceContents(
+                    text: $this->globalInstructionService->buildGlobalInstruction('', 'pages', $pid) ?: 'No instructions configured for this page.',
+                    uri: $uri,
+                    mimeType: 'text/plain',
+                ),
+            ]));
         }
 
         if ('aisuite://config/site' === $uri) {
-            return ['contents' => [[
-                'uri' => $uri,
-                'mimeType' => 'application/json',
-                'text' => json_encode($this->getSiteConfig(), JSON_PRETTY_PRINT),
-            ]]];
+            return $this->cacheable(new ReadResourceResult([
+                new TextResourceContents(
+                    text: (string) json_encode($this->getSiteConfig(), JSON_PRETTY_PRINT),
+                    uri: $uri,
+                    mimeType: 'application/json',
+                ),
+            ]));
         }
 
         if ('aisuite://credits/status' === $uri) {
-            return ['contents' => [[
-                'uri' => $uri,
-                'mimeType' => 'application/json',
-                'text' => json_encode($this->getCreditStatus(), JSON_PRETTY_PRINT),
-            ]]];
+            return $this->cacheable(new ReadResourceResult([
+                new TextResourceContents(
+                    text: (string) json_encode($this->getCreditStatus(), JSON_PRETTY_PRINT),
+                    uri: $uri,
+                    mimeType: 'application/json',
+                ),
+            ]));
         }
 
         if ('aisuite://dashboard/usage' === $uri) {
-            return ['contents' => [[
-                'uri' => $uri,
-                'mimeType' => 'application/json',
-                'text' => json_encode($this->getDashboardUsage(), JSON_PRETTY_PRINT),
-            ]]];
+            return $this->cacheable(new ReadResourceResult([
+                new TextResourceContents(
+                    text: (string) json_encode($this->getDashboardUsage(), JSON_PRETTY_PRINT),
+                    uri: $uri,
+                    mimeType: 'application/json',
+                ),
+            ]));
         }
 
-        return ['contents' => []];
+        throw new McpError(new ErrorData(
+            code: -32602,
+            message: sprintf('Unknown resource URI: %s', $uri),
+        ));
+    }
+
+    /**
+     * @template T of CacheableResult
+     *
+     * @param T $result
+     *
+     * @return T
+     */
+    private function cacheable(CacheableResult $result): CacheableResult
+    {
+        $result->setCacheHints(0, CacheableResult::CACHE_SCOPE_PUBLIC);
+
+        return $result;
     }
 
     /**

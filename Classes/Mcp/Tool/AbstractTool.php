@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
+use AutoDudes\AiSuite\Domain\Model\Dto\ProvenanceContext;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
@@ -32,6 +33,7 @@ use TYPO3\CMS\Core\Site\SiteFinder;
 
 abstract class AbstractTool implements ToolInterface
 {
+    public const MAX_FOUND_RECORDS = 20;
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = false;
     protected bool $destructiveHint = false;
@@ -79,6 +81,14 @@ abstract class AbstractTool implements ToolInterface
 
     final public function execute(array $params): CallToolResult
     {
+        $clientId = $this->mcpToolContext->userContext->getClientId();
+        // The model is left empty for refineModel() to fill; the client is recorded separately.
+        $this->mcpToolContext->provenanceCapture->begin(ProvenanceContext::generated(
+            'cheddi' === $clientId ? ProvenanceContext::FEATURE_CHAT : ProvenanceContext::FEATURE_MCP,
+            '',
+            $clientId,
+        ));
+
         try {
             $params = $this->parameterValidator->validate($params, $this->getSchema());
             $unknownParameters = $this->parameterValidator->getUnknownParameters();
@@ -86,7 +96,7 @@ abstract class AbstractTool implements ToolInterface
             $this->initialize();
 
             return $this->appendBackendLinks(
-                $this->noteUnknownParameters($this->doExecute($params), $unknownParameters),
+                $this->noteUnknownParameters($this->completeResult($this->doExecute($params)), $unknownParameters),
             );
         } catch (InvalidParameterException $e) {
             $this->logger->warning('MCP tool received invalid input', [
@@ -146,6 +156,8 @@ abstract class AbstractTool implements ToolInterface
                 ),
                 McpErrorType::InternalError,
             );
+        } finally {
+            $this->mcpToolContext->provenanceCapture->end();
         }
     }
 
@@ -170,6 +182,11 @@ abstract class AbstractTool implements ToolInterface
             'idempotentHint' => $this->idempotentHint,
             'openWorldHint' => $this->openWorldHint,
         ];
+    }
+
+    protected function completeResult(CallToolResult $result): CallToolResult
+    {
+        return $result;
     }
 
     /**
@@ -221,6 +238,22 @@ abstract class AbstractTool implements ToolInterface
     protected function structuredResult(string $text, array $structured): CallToolResult
     {
         return new CallToolResult([new TextContent($text)], structuredContent: $structured);
+    }
+
+    /**
+     * @param list<array{table: string, uid: int}> $found
+     */
+    protected function withFoundRecords(CallToolResult $result, array $found): CallToolResult
+    {
+        if ($result->isError || [] === $found || !$this->userContext->wantsFoundRecords()) {
+            return $result;
+        }
+
+        return new CallToolResult(
+            $result->content,
+            isError: $result->isError,
+            structuredContent: ($result->structuredContent ?? []) + ['found' => \array_slice($found, 0, self::MAX_FOUND_RECORDS)],
+        );
     }
 
     protected function textError(string $text, McpErrorType $errorType = McpErrorType::InvalidParameter): CallToolResult

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint;
 
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
@@ -19,15 +20,7 @@ class ProtectedResourceMetadataEndpoint
         return new JsonResponse([
             'resource' => CanonicalResource::get(),
             'authorization_servers' => [$baseUrl],
-            'scopes_supported' => [
-                'mcp:read',
-                'mcp:write',
-                'mcp:generate',
-                'mcp:translate',
-                'mcp:image',
-                'mcp:media',
-                'mcp:workflow',
-            ],
+            'scopes_supported' => PermissionService::supportedScopes(),
             'bearer_methods_supported' => ['header'],
         ]);
     }

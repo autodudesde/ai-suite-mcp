@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Transport;
 use Mcp\Server\InitializationOptions;
 use Mcp\Server\ServerSession;
 use Mcp\Server\Transport\Transport;
+use Mcp\Types\DiscoverResult;
 use Mcp\Types\InitializeResult;
 use Mcp\Types\RequestWrapperInterface;
 use Psr\Log\LoggerInterface;
@@ -26,6 +27,17 @@ class InstructingServerSession extends ServerSession
     {
         parent::handleInitialize($request, function (mixed $result) use ($respond): void {
             if ($result instanceof InitializeResult && '' !== $this->instructions) {
+                $result->instructions = $this->instructions;
+            }
+
+            $respond($result);
+        });
+    }
+
+    protected function handleDiscover(callable $respond): void
+    {
+        parent::handleDiscover(function (mixed $result) use ($respond): void {
+            if ($result instanceof DiscoverResult && '' !== $this->instructions) {
                 $result->instructions = $this->instructions;
             }
 

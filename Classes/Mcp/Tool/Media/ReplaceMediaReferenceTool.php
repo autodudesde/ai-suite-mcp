@@ -17,6 +17,7 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 class ReplaceMediaReferenceTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
+    protected bool $idempotentHint = true;
 
     public function __construct(
         ToolContext $mcpToolContext,

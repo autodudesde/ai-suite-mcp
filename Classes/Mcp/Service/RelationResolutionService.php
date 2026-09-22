@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 
@@ -20,6 +21,7 @@ class RelationResolutionService
     public function __construct(
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly RecordAccessService $recordAccess,
+        private readonly RecordRepository $recordRepository,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -38,6 +40,13 @@ class RelationResolutionService
             return null;
         }
 
+        if (!$listMode) {
+            $resolvedFiles = $this->resolveFileField($table, $field, $fullRow);
+            if (null !== $resolvedFiles) {
+                return $resolvedFiles;
+            }
+        }
+
         $foreignTable = $this->resolveForeignTable($config);
         $uids = null !== $foreignTable ? $this->extractUids($rawValue) : [];
 
@@ -49,8 +58,26 @@ class RelationResolutionService
     }
 
     /**
-     * Seam: getProcessedValue()'s signature differs across TYPO3 majors.
-     *
+     * @param array<string, mixed> $row
+     */
+    public function resolveFileField(string $table, string $field, array $row): ?string
+    {
+        try {
+            $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ([] === $config || !$this->isFileField($config)) {
+            return null;
+        }
+
+        $fileUids = $this->recordRepository->findReferencedFileUids($table, (int) ($row['uid'] ?? 0), $field);
+
+        return [] !== $fileUids ? $this->renderTitles('sys_file', $fileUids, false) : null;
+    }
+
+    /**
      * @param array<string, mixed> $row
      */
     protected function getProcessedValue(string $table, string $field, string $value, array $row): string
@@ -64,6 +91,17 @@ class RelationResolutionService
             false,
             (int) ($row['uid'] ?? 0),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function isFileField(array $config): bool
+    {
+        $type = (string) ($config['type'] ?? '');
+
+        return 'file' === $type
+            || ('inline' === $type && 'sys_file_reference' === (string) ($config['foreign_table'] ?? ''));
     }
 
     /**

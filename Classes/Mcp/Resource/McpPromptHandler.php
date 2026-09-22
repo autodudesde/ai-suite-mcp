@@ -10,6 +10,14 @@ use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
+use Mcp\Types\CacheableResult;
+use Mcp\Types\GetPromptResult;
+use Mcp\Types\ListPromptsResult;
+use Mcp\Types\Prompt;
+use Mcp\Types\PromptArgument;
+use Mcp\Types\PromptMessage;
+use Mcp\Types\Role;
+use Mcp\Types\TextContent;
 use Psr\Log\LoggerInterface;
 
 class McpPromptHandler
@@ -27,28 +35,24 @@ class McpPromptHandler
         $server->registerHandler('prompts/get', $this->handleGet(...));
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleList(mixed $params): array
+    private function handleList(mixed $params): ListPromptsResult
     {
         $prompts = [];
 
         // fallback for clients that miss the initialize instruction
-        $prompts[] = [
-            'name' => 'operating-guidelines',
-            'description' => 'Load mandatory workflow rules for this MCP server (write workflow, model selection, batch operations)',
-            'arguments' => [],
-        ];
+        $prompts[] = new Prompt(
+            name: 'operating-guidelines',
+            description: 'Load mandatory workflow rules for this MCP server (write workflow, model selection, batch operations)',
+        );
 
-        $prompts[] = [
-            'name' => 'content-guidelines',
-            'description' => 'Get content guidelines (tone, audience, style) for a specific page or section',
-            'arguments' => [
-                ['name' => 'pageId', 'description' => 'Page UID to get guidelines for', 'required' => true],
-                ['name' => 'scope', 'description' => 'Context: metadata, translation, editContent, pages', 'required' => false],
+        $prompts[] = new Prompt(
+            name: 'content-guidelines',
+            description: 'Get content guidelines (tone, audience, style) for a specific page or section',
+            arguments: [
+                new PromptArgument(name: 'pageId', description: 'Page UID to get guidelines for', required: true),
+                new PromptArgument(name: 'scope', description: 'Context: metadata, translation, editContent, pages'),
             ],
-        ];
+        );
 
         $prompts = array_merge(
             $prompts,
@@ -56,25 +60,20 @@ class McpPromptHandler
             $this->collectTemplatePrompts($this->serverPromptTemplateRepository, 'server'),
         );
 
-        return ['prompts' => $prompts];
+        $result = new ListPromptsResult($prompts);
+        $result->setCacheHints(0, CacheableResult::CACHE_SCOPE_PUBLIC);
+
+        return $result;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleGet(mixed $params): array
+    private function handleGet(mixed $params): GetPromptResult
     {
         $params = RequestParamsNormalizer::toArray($params);
         $name = $params['name'] ?? '';
         $args = (array) ($params['arguments'] ?? []);
 
         if ('operating-guidelines' === $name) {
-            return [
-                'messages' => [[
-                    'role' => 'user',
-                    'content' => ['type' => 'text', 'text' => OperatingGuidelines::get()],
-                ]],
-            ];
+            return $this->userMessage(OperatingGuidelines::get());
         }
 
         if ('content-guidelines' === $name) {
@@ -83,17 +82,9 @@ class McpPromptHandler
 
             $instructions = $this->globalInstructionService->buildGlobalInstruction('', $scope, $pageId);
 
-            return [
-                'messages' => [[
-                    'role' => 'user',
-                    'content' => [
-                        'type' => 'text',
-                        'text' => '' !== $instructions
-                            ? "Content guidelines for this page:\n\n".$instructions
-                            : 'No specific content guidelines configured for this page. Use general best practices.',
-                    ],
-                ]],
-            ];
+            return $this->userMessage('' !== $instructions
+                ? "Content guidelines for this page:\n\n".$instructions
+                : 'No specific content guidelines configured for this page. Use general best practices.');
         }
 
         if (str_starts_with($name, 'custom-')) {
@@ -110,11 +101,16 @@ class McpPromptHandler
             );
         }
 
-        return ['messages' => [['role' => 'user', 'content' => ['type' => 'text', 'text' => 'Unknown prompt: '.$name]]]];
+        return $this->userMessage('Unknown prompt: '.$name);
+    }
+
+    private function userMessage(string $text): GetPromptResult
+    {
+        return new GetPromptResult([new PromptMessage(Role::USER, new TextContent($text))]);
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<Prompt>
      */
     private function collectTemplatePrompts(
         CustomPromptTemplateRepository|ServerPromptTemplateRepository $repository,
@@ -132,14 +128,14 @@ class McpPromptHandler
 
         $prompts = [];
         foreach ($templates as $template) {
-            $prompts[] = [
-                'name' => $kind.'-'.$template['uid'],
-                'description' => (string) ($template['name'] ?? ''),
-                'arguments' => [
-                    ['name' => 'pageId', 'description' => 'Page UID for context', 'required' => false],
-                    ['name' => 'language', 'description' => 'ISO language code', 'required' => false],
+            $prompts[] = new Prompt(
+                name: $kind.'-'.$template['uid'],
+                description: (string) ($template['name'] ?? ''),
+                arguments: [
+                    new PromptArgument(name: 'pageId', description: 'Page UID for context'),
+                    new PromptArgument(name: 'language', description: 'ISO language code'),
                 ],
-            ];
+            );
         }
 
         return $prompts;
@@ -147,24 +143,17 @@ class McpPromptHandler
 
     /**
      * @param null|array<string, mixed> $template
-     *
-     * @return array<string, mixed>
      */
-    private function buildTemplateMessage(?array $template, string $kind): array
+    private function buildTemplateMessage(?array $template, string $kind): GetPromptResult
     {
         if (null === $template) {
-            return ['messages' => [['role' => 'user', 'content' => ['type' => 'text', 'text' => 'Template not found.']]]];
+            return $this->userMessage('Template not found.');
         }
 
         $text = 'custom' === $kind
             ? (string) ($template['prompt'] ?? $template['name'] ?? '')
             : 'Use the "'.($template['name'] ?? '').'" template for '.($template['scope'] ?? 'general').' tasks.';
 
-        return [
-            'messages' => [[
-                'role' => 'user',
-                'content' => ['type' => 'text', 'text' => $text],
-            ]],
-        ];
+        return $this->userMessage($text);
     }
 }

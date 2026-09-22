@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Seo;
 
-use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
-use AutoDudes\AiSuite\Service\LibraryService;
+use AutoDudes\AiSuite\Service\AuditModelService;
 use AutoDudes\AiSuite\Service\MetadataService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
@@ -27,7 +26,7 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
     public function __construct(
         ToolContext $mcpToolContext,
         protected readonly MetadataService $metadataService,
-        protected readonly LibraryService $libraryService,
+        protected readonly AuditModelService $auditModelService,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -39,7 +38,18 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
     {
         return [
             'type' => 'string',
-            'description' => 'Absolute, publicly reachable URL of the page to analyse.',
+            'description' => 'Absolute, publicly reachable URL — for a page outside this installation. Use pageId for one inside it.',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected static function pageIdSchemaProperty(): array
+    {
+        return [
+            'type' => 'integer',
+            'description' => 'UID of the page to analyse. Its public URL is resolved from the site configuration.',
         ];
     }
 
@@ -51,7 +61,7 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
         return [
             'model' => [
                 'type' => 'string',
-                'description' => 'Optional text model for the AI coverage rating (e.g. ChatGPT). Omit to use the first model available to your user.',
+                'description' => 'Optional text model for the AI coverage rating (e.g. ChatGPT). Omit to use the audit default model from the extension settings, or else the first text model available to your user.',
             ],
             'market' => [
                 'type' => 'string',
@@ -104,14 +114,7 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
      */
     protected function validatedUrl(array $params): CallToolResult|string
     {
-        $url = trim((string) ($params['url'] ?? ''));
-        if (!filter_var($url, FILTER_VALIDATE_URL)
-            || !\in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)
-        ) {
-            return $this->textError('url must be an absolute http(s) URL (e.g. https://example.com/page).');
-        }
-
-        return $url;
+        return $this->resolveAuditUrl($params);
     }
 
     /**
@@ -145,32 +148,20 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
     protected function resolveTextModel(array $params): CallToolResult|string
     {
         $model = trim((string) ($params['model'] ?? ''));
-        if ('' !== $model) {
-            $this->permissionService->validateModelAccess($model);
-
-            return $model;
+        if ('' === $model) {
+            $model = $this->auditModelService->defaultTextModel();
+        }
+        if ('' === $model) {
+            return $this->textError($this->translateOrFallback(
+                'hint.no_models_available',
+                [],
+                'No models available. Check your backend user permissions.',
+            ));
         }
 
-        $librariesAnswer = $this->sendRequestService->sendLibrariesRequest(
-            GenerationLibraryEnumeration::METADATA,
-            'createMetadata',
-            ['text'],
-        );
-        if ('Error' !== $librariesAnswer->getType()) {
-            $libraries = $this->libraryService->prepareLibraries(
-                $librariesAnswer->getResponseData()['textGenerationLibraries'] ?? [],
-            );
-            $first = $libraries[0]['model_identifier'] ?? '';
-            if ('' !== (string) $first) {
-                return (string) $first;
-            }
-        }
+        $this->permissionService->validateModelAccess($model);
 
-        return $this->textError($this->translateOrFallback(
-            'hint.no_models_available',
-            [],
-            'No models available. Check your backend user permissions.',
-        ));
+        return $model;
     }
 
     /**
@@ -179,7 +170,7 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
     protected static function coverageLine(array $summary): string
     {
         return sprintf(
-            '- Coverage: %d open, %d partial, %d answered (of %d)',
+            '- Coverage: %d open, %d partial, %d covered (of %d)',
             (int) ($summary['open'] ?? 0),
             (int) ($summary['partial'] ?? 0),
             (int) ($summary['answered'] ?? 0),

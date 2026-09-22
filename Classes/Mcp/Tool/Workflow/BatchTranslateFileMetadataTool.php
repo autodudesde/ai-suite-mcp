@@ -13,6 +13,7 @@ use AutoDudes\AiSuite\Service\WorkflowProcessingService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\FolderFileSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -22,6 +23,8 @@ use TYPO3\CMS\Core\Resource\File;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslateFileMetadataTool extends AbstractAiTool
 {
+    use FolderFileSelectionTrait;
+
     protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
@@ -42,8 +45,8 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Translate file metadata (alt text, title, description) for specific files with an external AI model (costs credits). '
-            .'For processing all files in a folder, use batchTranslateFolderMetadata instead. '
+        return 'Translate file metadata (alt text, title, description) with an external AI model (costs credits), '
+            .'for files given by UID or for every file in the given FAL folders. '
             .DescriptionSnippets::BATCH_ASYNC;
     }
 
@@ -55,8 +58,9 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
                 'fileUids' => [
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
-                    'description' => 'Array of sys_file UIDs to translate metadata for.',
+                    'description' => 'sys_file UIDs to translate metadata for. Alternative to folderIdentifiers; give one of the two.',
                 ],
+                'folderIdentifiers' => self::folderIdentifiersSchemaProperty(),
                 'targetLanguage' => $this->siteLanguages->withLanguageEnum([
                     'type' => 'string',
                     'description' => 'ISO target language code (de, en, fr, es, ...).',
@@ -73,7 +77,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
                 ],
                 'model' => ['type' => 'string', 'description' => 'Translation model identifier (e.g. DeepL). Omit to list available models.'],
             ],
-            'required' => ['fileUids', 'targetLanguage'],
+            'required' => ['targetLanguage'],
         ];
     }
 
@@ -85,18 +89,23 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
 
     protected function doExecute(array $params): CallToolResult
     {
+        $params = $this->withFilesFromFolders($params);
+        if ($params instanceof CallToolResult) {
+            return $params;
+        }
+
         $fileUids = $params['fileUids'] ?? [];
         $model = (string) ($params['model'] ?? '');
         $targetLanguage = (string) $params['targetLanguage'];
         $fields = $params['fields'] ?? ['alternative', 'title', 'description'];
 
         if (empty($fileUids)) {
-            return $this->textError('fileUids must be a non-empty array.');
+            return $this->textError('Give fileUids or folderIdentifiers — one of the two, non-empty.');
         }
 
         if ('' === $model) {
             $fileCount = count($fileUids);
-            $text = sprintf("## Translate file metadata for %d files to %s\n\n", $fileCount, $targetLanguage);
+            $text = sprintf("## Translate file metadata for %s to %s\n\n", $this->outputFormatter->countOf($fileCount, 'file'), $targetLanguage);
 
             $text .= "**Option 1 — Async (recommended):**\n";
             $text .= "  An external AI model translates all file metadata simultaneously in the background.\n";
@@ -298,7 +307,13 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped files: %s (not found, no source metadata, or not accessible)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf(
+            "\nProcessing happens in the background, and nothing is written yet. Poll "
+            .'**readTaskStatus(taskId: "%s")**; once it reports finished, **applyTaskResults(taskId: "%s")** '
+            .'writes the translations.',
+            $parentUuid,
+            $parentUuid,
+        );
 
         return $this->textResult($text);
     }

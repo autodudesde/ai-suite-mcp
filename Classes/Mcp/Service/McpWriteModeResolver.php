@@ -38,10 +38,12 @@ class McpWriteModeResolver implements SingletonInterface
     public function getWriteMode(): string
     {
         try {
-            return (string) ($this->extensionConfiguration->get('ai_suite_mcp')['mcpWriteMode'] ?? 'workspace');
+            $configured = (string) ($this->extensionConfiguration->get('ai_suite_mcp')['mcpWriteMode'] ?? 'workspace');
         } catch (\Throwable) {
             return 'workspace';
         }
+
+        return 'live' === $configured ? 'live' : 'workspace';
     }
 
     private function resolveWorkspaceModeId(BackendUserAuthentication $backendUser): int

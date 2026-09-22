@@ -146,6 +146,29 @@ class WorkspaceRecordService
     }
 
     /**
+     * @param list<array<string, mixed>> $rows
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function foldVersionsOntoLive(array $rows): array
+    {
+        if (!$this->isActive()) {
+            return $rows;
+        }
+
+        return array_map(static function (array $row): array {
+            $liveUid = (int) ($row['t3ver_oid'] ?? 0);
+            if ($liveUid <= 0) {
+                return $row;
+            }
+            $row['uid'] = $liveUid;
+            $row['t3ver_oid'] = 0;
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
      * @param array<string, mixed> $row
      */
     public function isDeletePlaceholder(array $row): bool

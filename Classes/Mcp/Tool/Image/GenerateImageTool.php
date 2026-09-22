@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Image;
 
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
-use AutoDudes\AiSuite\Service\FileNameSanitizerService;
+use AutoDudes\AiSuite\Service\AiImageStoreService;
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
@@ -16,11 +16,9 @@ use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
-use Symfony\Component\Filesystem\Filesystem;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\Folder;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class GenerateImageTool extends AbstractAiTool
@@ -34,7 +32,7 @@ class GenerateImageTool extends AbstractAiTool
         private readonly GlobalInstructionService $globalInstructionService,
         private readonly LibraryService $libraryService,
         private readonly UuidService $uuidService,
-        private readonly Filesystem $filesystem,
+        private readonly AiImageStoreService $aiImageStore,
         private readonly FilePreviewService $filePreviewService,
     ) {
         parent::__construct($mcpToolContext);
@@ -151,7 +149,7 @@ class GenerateImageTool extends AbstractAiTool
         $imageTitle = (string) ($imageTitles[0] ?? '');
 
         try {
-            $newFile = $this->storeImageInFolder($imageUrl, $imageTitle, $targetFolder);
+            $newFile = $this->storeImageInFolder($imageUrl, $imageTitle, $targetFolder, $model);
         } catch (\Throwable $e) {
             $this->logger->error('Failed to persist generated image to FAL', [
                 'imageUrl' => $imageUrl,
@@ -192,62 +190,9 @@ class GenerateImageTool extends AbstractAiTool
         );
     }
 
-    private function storeImageInFolder(string $imageUrl, string $imageTitle, string $targetFolder): File
+    private function storeImageInFolder(string $imageUrl, string $imageTitle, string $targetFolder, string $model): File
     {
-        $folder = $this->resolveTargetFolder($targetFolder);
-
-        $urlExtension = pathinfo($imageUrl, PATHINFO_EXTENSION);
-        $urlExtension = '' !== $urlExtension ? strtolower($urlExtension) : 'png';
-
-        $baseName = '' !== trim($imageTitle) ? $imageTitle : 'ai-generated-image-'.time();
-        $baseName = FileNameSanitizerService::sanitize($baseName);
-
-        $tempBase = GeneralUtility::tempnam('ai_image_');
-        $this->filesystem->copy($imageUrl, $tempBase);
-
-        if (!file_exists($tempBase) || 0 === filesize($tempBase)) {
-            @unlink($tempBase);
-
-            throw new \RuntimeException(sprintf('Failed to download image from %s', $imageUrl));
-        }
-
-        $detectedMime = mime_content_type($tempBase);
-        $realExtension = match ($detectedMime) {
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            default => $urlExtension,
-        };
-
-        $tempFile = $tempBase.'.'.$realExtension;
-        rename($tempBase, $tempFile);
-
-        $targetFileName = $baseName.'.'.$realExtension;
-        if ($folder->hasFile($targetFileName)) {
-            $targetFileName = $baseName.'-'.time().'.'.$realExtension;
-        }
-
-        try {
-            $newFile = $folder->getStorage()->addFile($tempFile, $folder, $targetFileName);
-        } finally {
-            if (file_exists($tempFile)) {
-                @unlink($tempFile);
-            }
-        }
-
-        if (!$newFile instanceof File) {
-            throw new \RuntimeException('Storing image returned an unexpected file type.');
-        }
-
-        if ('' !== trim($imageTitle)) {
-            $metaData = $newFile->getMetaData();
-            $metaData->offsetSet('title', $imageTitle);
-            $metaData->offsetSet('alternative', $imageTitle);
-            $metaData->save();
-        }
-
-        return $newFile;
+        return $this->aiImageStore->store($imageUrl, $imageTitle, $this->resolveTargetFolder($targetFolder), $model);
     }
 
     private function resolveTargetFolder(string $targetFolder): Folder

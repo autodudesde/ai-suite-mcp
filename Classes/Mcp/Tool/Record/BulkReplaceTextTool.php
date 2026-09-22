@@ -104,7 +104,7 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
         );
 
         if (!$this->dryRun) {
-            return $result;
+            return $this->appendEditLayer($result);
         }
 
         return $this->prefixDryRun($result);
@@ -146,7 +146,12 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
         }
 
         if (0 === $total) {
-            throw new SkippedItemException(sprintf('%s:%d — search text not present, left unchanged', $childTable, $childUid));
+            throw new SkippedItemException(sprintf(
+                '%s:%d — search text not present (read from %s), left unchanged',
+                $childTable,
+                $childUid,
+                $this->editLayer(),
+            ));
         }
 
         $this->persist($childTable, $childUid, [$field => $value]);
@@ -162,7 +167,7 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
             ),
             'uid' => $childUid,
             'table' => $childTable,
-            'action' => 'update',
+            'action' => $this->dryRun ? 'preview' : 'update',
         ];
     }
 
@@ -350,13 +355,27 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
         );
     }
 
+    private function appendEditLayer(CallToolResult $result): CallToolResult
+    {
+        $first = $result->content[0] ?? null;
+        if (!$first instanceof TextContent) {
+            return $result;
+        }
+
+        return new CallToolResult(
+            [new TextContent($first->text."\nWritten to ".$this->editLayer().'.')],
+            isError: $result->isError,
+            structuredContent: $result->structuredContent,
+        );
+    }
+
     private function prefixDryRun(CallToolResult $result): CallToolResult
     {
         $first = $result->content[0] ?? null;
         $text = $first instanceof TextContent ? $first->text : '';
 
         return new CallToolResult(
-            [new TextContent("## DRY RUN — nothing was written\n\n".$text)],
+            [new TextContent(sprintf("## DRY RUN — nothing was written (values read from %s)\n\n", $this->editLayer()).$text)],
             isError: $result->isError,
             structuredContent: $result->structuredContent,
         );

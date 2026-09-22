@@ -102,8 +102,10 @@ class WorkspaceComparisonService
         $removed = [];
         $truncated = false;
 
+        $childPagesOfPid = 'pages' === $table && null !== $pid && $pid > 0;
+
         $workspaceService = GeneralUtility::makeInstance(WorkspaceService::class);
-        $result = $workspaceService->selectVersionsInWorkspace($currentWs, -99, $pid ?? -1, 0, 'tables_select', null);
+        $result = $workspaceService->selectVersionsInWorkspace($currentWs, -99, $pid ?? -1, $childPagesOfPid ? 1 : 0, 'tables_select', null);
         $entries = $result[$table] ?? [];
 
         foreach ($entries as $entry) {
@@ -119,6 +121,9 @@ class WorkspaceComparisonService
             }
 
             $rowPid = (int) ($entry['livepid'] ?? $offlineRow['pid'] ?? 0);
+            if ($childPagesOfPid && $rowPid !== $pid) {
+                continue;
+            }
             if (null !== $allowedPids && !in_array($rowPid, $allowedPids, true)) {
                 continue;
             }

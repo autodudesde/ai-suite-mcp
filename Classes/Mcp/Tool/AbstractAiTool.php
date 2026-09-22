@@ -48,6 +48,10 @@ abstract class AbstractAiTool extends AbstractTool
      */
     protected function sendAiRequest(string $endpoint, array $data, array $models = [], string $langIsoCode = '', string $prompt = ''): array
     {
+        if ($this->creditTracker->isInitialized() && $this->creditTracker->isExhausted()) {
+            throw new InsufficientPermissionException($this->creditTracker->exhaustedMessage());
+        }
+
         try {
             $clientAnswer = $this->sendRequestService->sendDataRequest(
                 $endpoint,
@@ -86,6 +90,59 @@ abstract class AbstractAiTool extends AbstractTool
         }
 
         return $body;
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    protected function resolveAuditUrl(array $params): CallToolResult|string
+    {
+        $pageId = (int) ($params['pageId'] ?? 0);
+        if ($pageId > 0) {
+            $page = $this->validatePageForAi($pageId);
+            if ($page instanceof CallToolResult) {
+                return $page;
+            }
+
+            $url = $this->mcpToolContext->auditResultRecorder->urlForPage($pageId, isset($params['languageUid']) ? (int) $params['languageUid'] : null);
+            if (null === $url) {
+                return $this->textError(sprintf(
+                    'Page %d has no publicly reachable URL — it may belong to no site or be a page type that does not render. Pass `url` if you know it.',
+                    $pageId,
+                ));
+            }
+
+            return $url;
+        }
+
+        $url = trim((string) ($params['url'] ?? ''));
+        if ('' === $url) {
+            return $this->textError('Name the page to audit: `pageId` for a page in this installation, or `url` for one outside it.');
+        }
+
+        if (!filter_var($url, FILTER_VALIDATE_URL)
+            || !in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)
+        ) {
+            return $this->textError('url must be an absolute http(s) URL (e.g. https://example.com/page). A TYPO3-internal link like t3://page?uid=12 cannot be audited — pass its uid as `pageId` instead and the public URL is resolved for you.');
+        }
+
+        return $url;
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    protected function auditResult(string $auditType, string $url, string $keyword, string $summary, array $body): CallToolResult
+    {
+        $stored = $this->mcpToolContext->auditResultRecorder->record($auditType, $url, $keyword, $body);
+        if (null === $stored) {
+            return $this->structuredResult($summary, $body);
+        }
+
+        return $this->structuredResult(
+            $summary."\n\n".sprintf('Stored in the AI Suite audit module for page %d.', $stored['pageId']),
+            $body + ['auditStored' => $stored],
+        );
     }
 
     /**
@@ -149,6 +206,22 @@ abstract class AbstractAiTool extends AbstractTool
         }
 
         return $result;
+    }
+
+    protected function completeResult(CallToolResult $result): CallToolResult
+    {
+        if (!$this->creditTracker->isInitialized() || !$this->creditTracker->isExhausted()) {
+            return $result;
+        }
+
+        $content = $result->content;
+        if ([] === $content || !$content[0] instanceof TextContent) {
+            return $result;
+        }
+
+        $content[0] = new TextContent($content[0]->text."\n\n".$this->creditTracker->exhaustedMessage());
+
+        return new CallToolResult($content, $result->isError, structuredContent: $result->structuredContent);
     }
 
     protected function appendBranding(string $text): string

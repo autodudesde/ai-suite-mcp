@@ -21,6 +21,11 @@ class OutputFormatterService
         return mb_substr($clean, 0, $maxLength).sprintf('… (truncated, %d chars total)', mb_strlen($clean));
     }
 
+    public function countOf(int $count, string $singular, ?string $plural = null): string
+    {
+        return sprintf('%d %s', $count, 1 === $count ? $singular : ($plural ?? $singular.'s'));
+    }
+
     public function truncate(string $value, int $maxLength): string
     {
         return mb_substr($value, 0, $maxLength);

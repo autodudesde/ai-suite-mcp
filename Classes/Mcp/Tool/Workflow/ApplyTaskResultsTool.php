@@ -72,7 +72,12 @@ class ApplyTaskResultsTool extends AbstractTool
         }
 
         if ($pending > 0) {
-            return $this->textError(sprintf('Batch is still running (%d tasks pending).', $pending));
+            return $this->textError(sprintf(
+                'Batch is still running (%s pending). Call readTaskStatus(taskId: "%s") — it collects the '
+                .'finished results — and call this again once it reports every task as finished.',
+                $this->outputFormatter->countOf($pending, 'task'),
+                $taskId,
+            ));
         }
 
         if (!$isTranslationBatch) {

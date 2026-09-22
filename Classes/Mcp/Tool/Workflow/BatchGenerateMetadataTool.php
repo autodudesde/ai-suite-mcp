@@ -14,18 +14,16 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ContentFetchService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\PageSubtreeSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
-use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateMetadataTool extends AbstractAiTool
 {
-    private const MAX_SUBTREE_PAGES = 50;
-
-    private const DIRECT_CHILDREN_DEPTH = 1;
+    use PageSubtreeSelectionTrait;
 
     protected ?string $requiredScope = 'mcp:workflow';
 
@@ -58,22 +56,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
     {
         return [
             'type' => 'object',
-            'properties' => [
-                'pageIds' => [
-                    'type' => 'array',
-                    'items' => ['type' => 'integer'],
-                    'description' => 'Array of page UIDs to generate metadata for. Alternative to rootPageId; give exactly one of the two.',
-                ],
-                'rootPageId' => [
-                    'type' => 'integer',
-                    'description' => 'A whole page subtree instead of a UID list: this page and everything below it, resolved server-side. '
-                        .'Capped at '.self::MAX_SUBTREE_PAGES.' pages. Alternative to pageIds; give exactly one of the two.',
-                ],
-                'recursive' => [
-                    'type' => 'boolean',
-                    'default' => true,
-                    'description' => 'Only meaningful with rootPageId: true walks the entire subtree, false stops at the direct children.',
-                ],
+            'properties' => self::pageSelectionSchemaProperties('generate metadata for') + [
                 'fields' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
@@ -108,7 +91,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
 
         if ('' === $model) {
             $pageCount = count($pageIds);
-            $text = sprintf("## Generate metadata for %d pages\n\n", $pageCount);
+            $text = sprintf("## Generate metadata for %s\n\n", $this->outputFormatter->countOf($pageCount, 'page'));
 
             $text .= "**Option 1 — Async (recommended for many pages):**\n";
             $text .= "  An external AI model processes all pages simultaneously in the background.\n";
@@ -239,58 +222,14 @@ class BatchGenerateMetadataTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped pages: %s (not found or excluded from AI)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
-
-        return $this->textResult($text);
-    }
-
-    /**
-     * @param array<string, mixed> $params
-     *
-     * @return CallToolResult|list<int>
-     */
-    private function resolveTargetPages(array $params): array|CallToolResult
-    {
-        $pageIds = $params['pageIds'] ?? [];
-        $rootPageId = $params['rootPageId'] ?? null;
-
-        if (!empty($pageIds) && null !== $rootPageId) {
-            return $this->textError('Give either pageIds or rootPageId, not both — they are two ways to name the same thing, and which one wins would be a guess.');
-        }
-
-        if (null === $rootPageId) {
-            if (empty($pageIds)) {
-                return $this->textError('No pages targeted: pass pageIds (a UID list) or rootPageId (a subtree).');
-            }
-
-            return array_values(array_map('intval', $pageIds));
-        }
-
-        $rootPageId = (int) $rootPageId;
-        $this->recordAccess->assertPagePerm($rootPageId, Permission::PAGE_SHOW);
-
-        $recursive = (bool) ($params['recursive'] ?? true);
-        $resolved = $this->pagesRepository->getSubtreePageIds(
-            $rootPageId,
-            $recursive ? 20 : self::DIRECT_CHILDREN_DEPTH,
+        $text .= sprintf(
+            "\nProcessing happens in the background, and nothing is written yet. Poll "
+            .'**readTaskStatus(taskId: "%s")**; once it reports finished, read the suggestions with '
+            .'**readTaskResults(taskId: "%s")** and persist the ones you keep with **writeRecords**.',
+            $parentUuid,
+            $parentUuid,
         );
 
-        if (count($resolved) > self::MAX_SUBTREE_PAGES) {
-            $this->logger->warning('BatchGenerateMetadata: subtree exceeds the page cap', [
-                'rootPageId' => $rootPageId,
-                'resolved' => count($resolved),
-                'cap' => self::MAX_SUBTREE_PAGES,
-            ]);
-
-            return $this->textError(sprintf(
-                'rootPageId %d expands to %d pages, above the cap of %d. This tool bills per page. '
-                .'Pick a deeper root, set recursive to false, or pass an explicit pageIds list.',
-                $rootPageId,
-                count($resolved),
-                self::MAX_SUBTREE_PAGES,
-            ));
-        }
-
-        return array_values(array_map('intval', $resolved));
+        return $this->textResult($text);
     }
 }

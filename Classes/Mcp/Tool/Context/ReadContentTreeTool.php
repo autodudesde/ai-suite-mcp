@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\ElementLabelService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
@@ -26,6 +27,7 @@ class ReadContentTreeTool extends AbstractTool
         ToolContext $mcpToolContext,
         private readonly ContentRepository $contentRepository,
         private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly ElementLabelService $elementLabels,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -113,16 +115,18 @@ class ReadContentTreeTool extends AbstractTool
                 continue;
             }
 
+            $labels = $this->elementLabels->resolveForRows('tt_content', $rows);
             foreach ($rows as $row) {
-                $header = trim((string) ($row['header'] ?? ''));
+                $uid = (int) $row['uid'];
                 $hidden = !empty($row['hidden']) ? ' [hidden]' : '';
+                $label = $labels[$uid] ?? '';
                 $body = $this->outputFormatter->displayValue($row['bodytext'] ?? '', $maxLength);
                 $text .= sprintf(
                     "- %d [%s]%s %s: %s\n",
-                    (int) $row['uid'],
+                    $uid,
                     (string) $row['CType'],
                     $hidden,
-                    '' !== $header ? '"'.$header.'"' : '(no header)',
+                    '' !== $label ? '"'.$label.'"' : '(unnamed)',
                     $body,
                 );
             }

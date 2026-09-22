@@ -3,9 +3,401 @@
     <file source-language="en" target-language="de" datatype="plaintext" original="messages" date="2026-04-04T12:00:00Z" product-name="ai_suite_mcp">
         <header/>
         <body>
+            <trans-unit id="aiSuite.module.dashboard.card.mcpSection.description">
+                <source>Connect AI Suite with external tools using the Model Context Protocol.</source>
+                <target>Verbinde die AI Suite über das Model Context Protocol mit externen Werkzeugen.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.dashboard.card.mcpSection.linklabel">
+                <source>Open MCP</source>
+                <target>MCP öffnen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.dashboard.card.mcpSection.title">
+                <source>MCP</source>
+                <target>MCP</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.copied">
+                <source>Copied!</source>
+                <target>Kopiert!</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.createToken">
+                <source>Create Token</source>
+                <target>Token erstellen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenLimitReached">
+                <source>Token limit reached</source>
+                <target>Token-Limit erreicht</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenLimitRevoked">
+                <source>The oldest token ("%s") was revoked to make room. Any MCP client using it has lost access.</source>
+                <target>Der älteste Token („%s“) wurde widerrufen, um Platz zu schaffen. MCP-Clients, die ihn nutzen, haben keinen Zugriff mehr.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.revoke">
+                <source>Revoke</source>
+                <target>Widerrufen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.revokeConfirm">
+                <source>Are you sure you want to revoke this token? Any MCP client using it will lose access immediately.</source>
+                <target>Willst du diesen Token wirklich widerrufen? MCP-Clients, die ihn nutzen, verlieren sofort den Zugriff.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.revoked">
+                <source>Revoked</source>
+                <target>Widerrufen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenCreationError">
+                <source>An error occurred. Please check your connection and try again.</source>
+                <target>Es ist ein Fehler aufgetreten. Bitte prüfe deine Verbindung und versuche es erneut.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenCreationFailed">
+                <source>Token creation failed. Please try again.</source>
+                <target>Der Token konnte nicht erstellt werden. Bitte versuche es erneut.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenRevocationError">
+                <source>An error occurred while revoking the token.</source>
+                <target>Beim Widerrufen des Tokens ist ein Fehler aufgetreten.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.checking">
+                <source>Checking...</source>
+                <target>Wird geprüft...</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.healthCheckError">
+                <source>Could not reach MCP endpoint. Check your webserver configuration.</source>
+                <target>Der MCP-Endpunkt ist nicht erreichbar. Prüfe die Konfiguration deines Webservers.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.serverNeedsConfig">
+                <source>MCP Server needs configuration.</source>
+                <target>Der MCP Server muss noch konfiguriert werden.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.serverReady">
+                <source>MCP Server is ready!</source>
+                <target>Der MCP Server ist bereit!</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.activeTokens">
+                <source>Active Tokens</source>
+                <target>Aktive Tokens</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.availableScopes">
+                <source>Available Scopes</source>
+                <target>Verfügbare Scopes</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.client">
+                <source>Client</source>
+                <target>Client</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.clientName">
+                <source>Client Name</source>
+                <target>Client-Name</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeCode">
+                <source>Claude Code (.mcp.json)</source>
+                <target>Claude Code (.mcp.json)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeCodeLocationHint">
+                <source>in the project root (shared with the team), or ~/.claude.json for a user-wide server</source>
+                <target>im Projekt-Root (mit dem Team geteilt) oder in ~/.claude.json für einen Server, der für deinen Benutzer überall gilt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeDesktop">
+                <source>Claude Desktop (claude_desktop_config.json)</source>
+                <target>Claude Desktop (claude_desktop_config.json)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configClaudeDesktopBridgeHint">
+                <source>Claude Desktop only launches local commands, so the connection runs through the mcp-remote bridge (requires Node.js). With a self-signed certificate (DDEV/mkcert) add "env": {"NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem"} to the entry, because Node.js does not use the operating system trust store. Alternatively add the server URL under Settings, Connectors, Add custom connector and authenticate via OAuth.</source>
+                <target>Claude Desktop startet nur lokale Befehle, deshalb läuft die Verbindung über die Bridge mcp-remote (benötigt Node.js). Bei einem selbstsignierten Zertifikat (DDEV/mkcert) ergänze im Eintrag "env": {"NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem"}, weil Node.js den Zertifikatsspeicher des Betriebssystems nicht verwendet. Alternativ trägst du die Server-URL unter Einstellungen, Konnektoren, Benutzerdefinierten Konnektor hinzufügen ein und meldest dich per OAuth an.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.configFileLocation">
+                <source>Config file location:</source>
+                <target>Speicherort der Konfigurationsdatei:</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.allowedOrigins">
+                <source>MCP Allowed Origins</source>
+                <target>MCP Allowed Origins</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.allowedRedirectUris">
+                <source>MCP Allowed Redirect URIs</source>
+                <target>MCP Allowed Redirect URIs</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.authentication">
+                <source>Authentication</source>
+                <target>Authentifizierung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.authenticationValue">
+                <source>Bearer Token (from MCP tab)</source>
+                <target>Bearer-Token (aus dem MCP-Tab)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.authorization">
+                <source>Authorization</source>
+                <target>Autorisierung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.configuredValue">
+                <source>Configured</source>
+                <target>Konfiguriert</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.connectorConfigRequired">
+                <source>Required Extension Settings for external connectors:</source>
+                <target>Benötigte Extension-Einstellungen für externe Connectoren:</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.connectorUrl">
+                <source>Connector URL</source>
+                <target>Connector-URL</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.discovery">
+                <source>Discovery</source>
+                <target>Discovery</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.externalConnectorHint">
+                <source>Add the callback URL of your connector to the Allowed Redirect URIs, and its domain to the Allowed Origins.</source>
+                <target>Trage die Callback-URL deines Connectors unter Allowed Redirect URIs ein und seine Domain unter Allowed Origins.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.externalConnectorWarning">
+                <source>External connectors will not work in production without configuring Allowed Origins and Allowed Redirect URIs. Configure these in Extension Settings → AI Suite → MCP.</source>
+                <target>Externe Connectoren funktionieren im Produktivbetrieb nur, wenn Allowed Origins und Allowed Redirect URIs konfiguriert sind. Das stellst du unter Extension-Einstellungen → AI Suite → MCP ein.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.externalConnectors">
+                <source>External Connectors (claude.ai, ChatGPT, etc.)</source>
+                <target>Externe Connectoren (claude.ai, ChatGPT usw.)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.externalConnectorsDescription">
+                <source>External connectors use the full OAuth 2.1 flow with PKCE. Add the MCP Server URL as a connector:</source>
+                <target>Externe Connectoren nutzen den vollständigen OAuth-2.1-Flow mit PKCE. Füge die URL des MCP Servers als Connector hinzu:</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.mcpEndpoint">
+                <source>MCP Endpoint</source>
+                <target>MCP-Endpunkt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.notConfigured">
+                <source>Not configured</source>
+                <target>Nicht konfiguriert</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.oauthDescription">
+                <source>For automated setups or multi-client environments, use the full OAuth 2.1 flow:</source>
+                <target>Für automatisierte Setups oder Umgebungen mit mehreren Clients nutzt du den vollständigen OAuth-2.1-Flow:</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.oauthTitle">
+                <source>OAuth Flow (Advanced)</source>
+                <target>OAuth-Flow (fortgeschritten)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.otherClients">
+                <source>Other MCP Clients (Custom Agents)</source>
+                <target>Andere MCP-Clients (eigene Agents)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.quickConnect">
+                <source>Quick Connect — Claude Desktop</source>
+                <target>Schnell verbinden: Claude Desktop</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.step1">
+                <source>Click &quot;Create Token&quot; on the MCP tab</source>
+                <target>Klicke im MCP-Tab auf &quot;Token erstellen&quot;</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.step2">
+                <source>Copy the generated JSON configuration</source>
+                <target>Kopiere die erzeugte JSON-Konfiguration</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.step3">
+                <source>Open your Claude Desktop config file:</source>
+                <target>Öffne die Konfigurationsdatei von Claude Desktop:</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.step4">
+                <source>Paste the configuration and restart Claude Desktop</source>
+                <target>Füge die Konfiguration ein und starte Claude Desktop neu</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.title">
+                <source>Connect MCP Client</source>
+                <target>MCP-Client verbinden</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.token">
+                <source>Token</source>
+                <target>Token</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.transport">
+                <source>Transport</source>
+                <target>Transport</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.transportValue">
+                <source>HTTP (Streamable)</source>
+                <target>HTTP (Streamable)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connect.useSettings">
+                <source>Use these settings:</source>
+                <target>Verwende diese Einstellungen:</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connectClaudeDesktop">
+                <source>Connect Claude Desktop</source>
+                <target>Claude Desktop verbinden</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.connectDescription">
+                <source>Generate a personal access token and connect your MCP client in seconds.</source>
+                <target>Erzeuge einen persönlichen Zugriffstoken und verbinde deinen MCP-Client in Sekunden.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.copyToClipboard">
+                <source>Copy to clipboard</source>
+                <target>In die Zwischenablage kopieren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.created">
+                <source>Created</source>
+                <target>Erstellt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.endpoint">
+                <source>Endpoint</source>
+                <target>Endpunkt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.expires">
+                <source>Expires</source>
+                <target>Läuft ab</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.ip">
+                <source>IP</source>
+                <target>IP</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.lastUsed">
+                <source>Last Used</source>
+                <target>Zuletzt verwendet</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.never">
+                <source>Never</source>
+                <target>Nie</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.noActiveTokens">
+                <source>No active tokens. Create one above to get started.</source>
+                <target>Keine aktiven Tokens. Erstelle oben einen, um loszulegen.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.notEnabled">
+                <source>MCP is not enabled</source>
+                <target>MCP ist nicht aktiviert</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.notEnabledClients">
+                <source>Once enabled, you can connect Claude Desktop, Claude.ai, ChatGPT, and other MCP clients to your TYPO3 installation.</source>
+                <target>Sobald er aktiviert ist, kannst du Claude Desktop, Claude.ai, ChatGPT und andere MCP-Clients mit deiner TYPO3-Installation verbinden.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.notEnabledDescription">
+                <source>Enable the MCP Server in Extension Settings → AI Suite → MCP → Enable MCP Server.</source>
+                <target>Aktiviere den MCP Server unter Extension-Einstellungen → AI Suite → MCP → Enable MCP Server.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.serverEnabled">
+                <source>MCP Server enabled</source>
+                <target>MCP Server aktiviert</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.sessionCredits">
+                <source>Credits used</source>
+                <target>Verbrauchte Credits</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.status">
+                <source>MCP Status</source>
+                <target>MCP-Status</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenCreated">
+                <source>Token created!</source>
+                <target>Token erstellt!</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenCreatedDescription">
+                <source>Copy the configuration below into your Claude Desktop config file.</source>
+                <target>Kopiere die folgende Konfiguration in die Konfigurationsdatei von Claude Desktop.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenShownOnce">
+                <source>The token is shown only once. Save it now.</source>
+                <target>Der Token wird nur einmal angezeigt. Speichere ihn jetzt.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.ddevDetected">
+                <source>DDEV environment detected. Webserver configuration may need adjustment. See Documentation/DDEV/ for config snippets.</source>
+                <target>DDEV-Umgebung erkannt. Die Webserver-Konfiguration muss eventuell angepasst werden. Konfigurationsbeispiele findest du unter Documentation/DDEV/.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.runHealthCheck">
+                <source>Run Health Check</source>
+                <target>Health-Check starten</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step1.description">
+                <source>The MCP Server allows AI clients like Claude Desktop to interact with your TYPO3 installation.</source>
+                <target>Über den MCP Server können KI-Clients wie Claude Desktop mit deiner TYPO3-Installation arbeiten.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step1.disabled">
+                <source>MCP Server is currently disabled.</source>
+                <target>Der MCP Server ist derzeit deaktiviert.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step1.enabled">
+                <source>MCP Server is already enabled.</source>
+                <target>Der MCP Server ist bereits aktiviert.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step1.openSettings">
+                <source>Open Extension Settings → AI Suite → MCP</source>
+                <target>Extension-Einstellungen → AI Suite → MCP öffnen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step1.title">
+                <source>Step 1: Enable MCP Server</source>
+                <target>Schritt 1: MCP Server aktivieren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step2.description">
+                <source>Select which backend user groups should have MCP access.</source>
+                <target>Wähle aus, welche Backend-Benutzergruppen MCP-Zugriff erhalten.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step2.permissionNote">
+                <source>Configure this in Backend Users → Groups → Custom Module Options → AI Suite Features.</source>
+                <target>Das stellst du unter Backend-Benutzer → Gruppen → Benutzerdefinierte Moduloptionen → AI Suite Features ein.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step2.title">
+                <source>Step 2: Configure User Groups</source>
+                <target>Schritt 2: Benutzergruppen konfigurieren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step3.title">
+                <source>Step 3: Test Connection</source>
+                <target>Schritt 3: Verbindung testen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step4.description">
+                <source>Go to the MCP Tab to create a token and connect Claude Desktop.</source>
+                <target>Wechsle in den MCP-Tab, um einen Token zu erstellen und Claude Desktop zu verbinden.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.step4.title">
+                <source>Step 4: Connect Your Client</source>
+                <target>Schritt 4: Client verbinden</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.wizard.title">
+                <source>MCP Setup Wizard</source>
+                <target>MCP-Einrichtungsassistent</target>
+            </trans-unit>
             <trans-unit id="aiSuite.module.mcp.module.header">
                 <source>MCP Server</source>
                 <target>MCP Server</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.actionmenu.mcp">
+                <source>MCP</source>
+                <target>MCP</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.category.mcp">
+                <source>MCP (Model Context Protocol)</source>
+                <target>MCP (Model Context Protocol)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.enableMcp">
+                <source>Enable MCP Server</source>
+                <target>MCP Server aktivieren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpTokenLifetimeDays">
+                <source>MCP Token Lifetime (days)</source>
+                <target>Gültigkeitsdauer der MCP-Tokens (Tage)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpAllowedOrigins">
+                <source>MCP Allowed Origins</source>
+                <target>MCP Allowed Origins</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpAllowedClientIds">
+                <source>MCP Allowed Client IDs</source>
+                <target>Erlaubte MCP-Client-IDs</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpAllowHttp">
+                <source>Allow HTTP (development only!)</source>
+                <target>HTTP erlauben (nur für die Entwicklung!)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpWriteMode">
+                <source>MCP Write Mode</source>
+                <target>MCP-Write-Mode</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpSessionTimeoutSeconds">
+                <source>MCP Session Timeout (seconds)</source>
+                <target>MCP-Sitzungs-Timeout (Sekunden)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpAllowedRedirectUris">
+                <source>MCP Allowed Redirect URIs</source>
+                <target>MCP Allowed Redirect URIs</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.settings.field.mcpExcludedTables">
+                <source>MCP Excluded Tables</source>
+                <target>Für MCP ausgeschlossene Tabellen</target>
             </trans-unit>
         </body>
     </file>

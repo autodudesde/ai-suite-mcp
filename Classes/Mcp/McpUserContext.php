@@ -27,6 +27,8 @@ class McpUserContext
 
     private bool $inlineBackendLinks = true;
 
+    private bool $reportFoundRecords = false;
+
     /**
      * @param list<string> $scopes
      *
@@ -104,6 +106,16 @@ class McpUserContext
     public function wantsInlineBackendLinks(): bool
     {
         return $this->inlineBackendLinks;
+    }
+
+    public function setReportFoundRecords(bool $enabled): void
+    {
+        $this->reportFoundRecords = $enabled;
+    }
+
+    public function wantsFoundRecords(): bool
+    {
+        return $this->reportFoundRecords;
     }
 
     public function setSessionKey(string $sessionKey): void

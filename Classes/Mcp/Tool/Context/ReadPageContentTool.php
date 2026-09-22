@@ -6,6 +6,8 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Service\ElementLabelService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PageRecordsService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
@@ -19,11 +21,6 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadPageContentTool extends AbstractTool
 {
-    /** Handled elsewhere in this tool (tt_content) or not page-stored editorial records (pages). */
-    private const RECORD_OVERVIEW_SKIP = ['pages', 'tt_content'];
-
-    /** System / relation / cache tables that are noise in a "what records live here" overview. */
-    private const RECORD_OVERVIEW_SKIP_PREFIXES = ['sys_', 'be_', 'fe_', 'cache_', 'cf_', 'index_', 'tx_extensionmanager', 'tx_scheduler'];
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
     protected bool $idempotentHint = true;
@@ -34,6 +31,8 @@ class ReadPageContentTool extends AbstractTool
         private readonly RecordRepository $recordRepository,
         private readonly BackendLayoutView $backendLayoutView,
         private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly ElementLabelService $elementLabels,
+        private readonly PageRecordsService $pageRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -46,8 +45,8 @@ class ReadPageContentTool extends AbstractTool
     public function getDescription(): string
     {
         return 'Get all content elements of a TYPO3 page, grouped by column position. '
-            .'Returns full content including text fields and textarea fields as well as image counts and the '
-            .'referenced image file UIDs (use them directly with generateFileMetadata). '
+            .'Returns full content including text fields and textarea fields as well as image counts '
+            .'and the referenced file UIDs with the field they hang on, which the media tools take. '
             .'Requires read permission on the page.';
     }
 
@@ -111,13 +110,16 @@ class ReadPageContentTool extends AbstractTool
             $this->contentRepository->findByPage($pageId, $languageUid, $includeHidden, $limit, $offset),
         );
 
+        $labels = $this->elementLabels->resolveForRows('tt_content', $rows);
         $grouped = [];
         foreach ($rows as $row) {
             $colPos = (int) $row['colPos'];
             if (!isset($grouped[$colPos])) {
                 $grouped[$colPos] = [];
             }
-            $grouped[$colPos][] = $this->formatElement($row, $languageUid);
+            $element = $this->formatElement($row, $languageUid);
+            $element['label'] = $labels[(int) $row['uid']] ?? '';
+            $grouped[$colPos][] = $element;
         }
 
         $text = sprintf("## Page %d: %s\n\n", $pageId, $page['title']);
@@ -138,25 +140,27 @@ class ReadPageContentTool extends AbstractTool
                         $metaParts[] = $el['child_summary'];
                     }
                     if (($el['image_count'] ?? 0) > 0) {
-                        $fileUids = $el['file_uids'] ?? [];
-                        $metaParts[] = [] !== $fileUids
-                            ? sprintf('%d image(s) (fileUid: %s)', $el['image_count'], implode(', ', $fileUids))
+                        $byField = $el['files_by_field'] ?? [];
+                        $perField = [];
+                        foreach ($byField as $field => $uids) {
+                            $perField[] = sprintf('%s: fileUid %s', (string) $field, implode(', ', $uids));
+                        }
+                        $metaParts[] = [] !== $perField
+                            ? implode(' · ', $perField)
                             : sprintf('%d image(s)', $el['image_count']);
                     }
                     $meta = implode(' · ', $metaParts);
 
-                    if ('' !== $preview) {
-                        $line = $preview;
-                    } elseif ('' !== $meta) {
-                        $line = $meta;
-                    } else {
+                    if ('' === $preview && '' === $meta) {
                         $line = '_(empty)_';
+                    } else {
+                        $line = implode("\n   ", array_filter([$preview, $meta], static fn (string $part): bool => '' !== $part));
                     }
 
                     $text .= sprintf(
                         "%d. **%s** (UID: %d, CType: %s)%s\n   %s\n\n",
                         $pos,
-                        $el['header'] ?: '_(no header)_',
+                        '' !== $el['label'] ? $el['label'] : '_(unnamed)_',
                         $el['uid'],
                         $this->tcaLabel->resolveCTypeLabel($el['CType']),
                         $hiddenMark,
@@ -173,53 +177,46 @@ class ReadPageContentTool extends AbstractTool
         }
 
         $text .= sprintf("\n_Showing %d of %d elements (offset: %d)._", count($rows), $total, $offset);
+        $text .= $this->describePageRecords($pageId);
 
-        if (0 === $total || 254 === (int) ($page['doktype'] ?? 0)) {
-            $text .= $this->buildOtherRecordsSummary($pageId);
-        }
-
-        return $this->textResult($text);
+        return $this->withFoundRecords($this->textResult($text), [['table' => 'pages', 'uid' => (int) $pageId]]);
     }
 
-    private function buildOtherRecordsSummary(int $pageId): string
+    private function describePageRecords(int $pageId): string
     {
-        $found = [];
-        foreach ($this->tcaCompatibilityService->getAllTableNames() as $table) {
-            if (in_array($table, self::RECORD_OVERVIEW_SKIP, true)) {
-                continue;
-            }
-            foreach (self::RECORD_OVERVIEW_SKIP_PREFIXES as $prefix) {
-                if (str_starts_with($table, $prefix)) {
-                    continue 2;
-                }
-            }
-            if (!$this->recordAccess->hasTableReadAccess($table)) {
-                continue;
-            }
-            $count = $this->recordRepository->countRecordsOnPage($table, $pageId);
-            if ($count > 0) {
-                $found[$table] = $count;
-            }
-        }
-
+        $found = $this->pageRecords->findOnPage($pageId);
         if ([] === $found) {
             return '';
         }
 
-        arsort($found);
-        $lines = '';
-        foreach ($found as $table => $count) {
-            $lines .= sprintf("- `%s` — %s — %d record(s)\n", $table, $this->tcaLabel->getTableLabel($table), $count);
+        $text = sprintf(
+            "\n\n### Other records stored on this page\n\n"
+            .'This page also holds domain records that are NOT content elements. To add one (e.g. a news '
+            .'article), writeRecords into its table with pid %d — do not create a tt_content element or a '
+            ."subpage for it.\n\n",
+            $pageId,
+        );
+
+        foreach ($found as $table => $entry) {
+            $text .= sprintf(
+                "- `%s` — %s — %d record(s)\n",
+                $table,
+                $this->tcaLabel->getTableLabel($table),
+                $entry['total'],
+            );
+            foreach ($entry['records'] as $record) {
+                $text .= sprintf(
+                    "  - UID %d: %s\n",
+                    $record['uid'],
+                    '' !== $record['label'] ? $record['label'] : '_(unnamed)_',
+                );
+            }
+            if ($entry['total'] > count($entry['records'])) {
+                $text .= sprintf("  - _… %d more, read them with readRecords._\n", $entry['total'] - count($entry['records']));
+            }
         }
 
-        return "\n\n### Other records stored on this page\n\n"
-            .sprintf(
-                'This page also holds domain records that are NOT content elements. To add one (e.g. a news '
-                .'article), writeRecords into its table with pid %d — do not create a tt_content element or a '
-                ."subpage for it.\n\n",
-                $pageId,
-            )
-            .$lines;
+        return $text;
     }
 
     /**
@@ -230,7 +227,8 @@ class ReadPageContentTool extends AbstractTool
     private function formatElement(array $row, int $languageUid): array
     {
         $bodytext = strip_tags((string) ($row['bodytext'] ?? ''));
-        $fileUids = $this->contentRepository->getReferencedFileUids((int) $row['uid']);
+        $filesByField = $this->contentRepository->getReferencedFilesByField((int) $row['uid']);
+        $fileUids = array_values(array_unique(array_merge(...array_values($filesByField) ?: [[]])));
 
         return [
             'uid' => (int) $row['uid'],
@@ -243,6 +241,7 @@ class ReadPageContentTool extends AbstractTool
             'has_images' => [] !== $fileUids,
             'image_count' => count($fileUids),
             'file_uids' => $fileUids,
+            'files_by_field' => $filesByField,
             'child_summary' => $this->describeChildren($row, $languageUid),
         ];
     }

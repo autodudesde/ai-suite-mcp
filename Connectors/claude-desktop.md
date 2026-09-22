@@ -206,7 +206,7 @@ reachable.
 
 If TYPO3 runs on the **same machine** as Claude Desktop, you can skip the entire HTTP/token setup above and let Claude Desktop launch the `ai-suite-mcp:server` console command directly. It exposes the same tools over JSON-RPC on stdin/stdout instead of HTTP.
 
-**Security model.** stdio runs the tools as the given backend user with the scope + BE-group double gate fully enforced (identical to HTTP). But because the transport is a local pipe, it **bypasses OAuth, the HTTPS gate, per-token rate limiting and the request-body cap** — those are HTTP-surface protections. Run it **only** as a locally launched process, never wired to a network socket. Anyone who can run the command can act as the chosen `--user`. For remote / multi-user access, use the HTTP flow above instead.
+**Security model.** stdio runs the tools as the given backend user; the per-tool scope and feature-flag checks apply as over HTTP, but the `enable_mcp_access` master flag is not checked. And because the transport is a local pipe, it **bypasses OAuth, the HTTPS gate, per-token rate limiting and the request-body cap** — those are HTTP-surface protections. Run it **only** as a locally launched process, never wired to a network socket. Anyone who can run the command can act as the chosen `--user`. For remote / multi-user access, use the HTTP flow above instead.
 
 No wrapper script is needed — `command` + `args` in the config do everything inline.
 
@@ -229,6 +229,26 @@ The MCP client launches the `typo3` binary from the Composer bin dir. Use **abso
 ```
 
 `<project-root>` is the directory that contains `composer.json` / `vendor/`. The bin dir defaults to `vendor/bin/` but can be relocated via `config.bin-dir` in `composer.json` (e.g. `.Build/bin/`) — adjust the path accordingly.
+
+### Classic mode installation (no Composer)
+
+Without Composer the `typo3` binary ships with the core. Run it from the TYPO3 root, the directory that contains `index.php` and `typo3/`, and call PHP explicitly, since an uploaded file may have lost its executable bit:
+
+```json
+{
+  "mcpServers": {
+    "typo3-ai-suite": {
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "cd '<typo3-root>' && exec '<php-path>' typo3/sysext/core/bin/typo3 ai-suite-mcp:server --user=1"
+      ]
+    }
+  }
+}
+```
+
+`<php-path>` is the absolute path of the PHP CLI binary (`which php`), for the same minimal-`PATH` reason as above.
 
 ### DDEV installation
 

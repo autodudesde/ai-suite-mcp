@@ -87,9 +87,33 @@ class ReadPageTreeTool extends AbstractTool
             $tree = $this->buildTree($rootPageId, $depth, $languageUid);
         }
 
-        return new CallToolResult([
+        return $this->withFoundRecords(new CallToolResult([
             new TextContent((string) json_encode($tree, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)),
-        ]);
+        ]), $this->foundPagesOf(array_is_list($tree) ? $tree : [$tree]));
+    }
+
+    /**
+     * @param list<mixed> $nodes
+     *
+     * @return list<array{table: string, uid: int}>
+     */
+    private function foundPagesOf(array $nodes): array
+    {
+        $found = [];
+        foreach ($nodes as $node) {
+            if (!\is_array($node)) {
+                continue;
+            }
+            $uid = (int) ($node['uid'] ?? 0);
+            if ($uid > 0) {
+                $found[] = ['table' => 'pages', 'uid' => $uid];
+            }
+            if (\is_array($node['children'] ?? null)) {
+                $found = [...$found, ...$this->foundPagesOf(array_values($node['children']))];
+            }
+        }
+
+        return $found;
     }
 
     /**

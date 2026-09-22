@@ -11,10 +11,13 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
+use Psr\Http\Message\ServerRequestInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Form\FormDataCompiler;
 use TYPO3\CMS\Backend\Form\FormDataGroup\TcaDatabaseRecord;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
+use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
+use TYPO3\CMS\Core\Http\ServerRequest;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -257,7 +260,10 @@ class ReadRecordTool extends AbstractDataTool
             );
         }
 
-        return $this->textResult($text);
+        return $this->withFoundRecords(
+            $this->textResult($text),
+            array_values(array_map(static fn (int|string $uid): array => ['table' => $table, 'uid' => (int) $uid], $uids)),
+        );
     }
 
     /**
@@ -319,7 +325,7 @@ class ReadRecordTool extends AbstractDataTool
             $formDataCompiler = GeneralUtility::makeInstance(FormDataCompiler::class);
             $formData = $formDataCompiler->compile(
                 [
-                    'request' => $this->userContext->getServerRequest(),
+                    'request' => $this->formDataRequest(),
                     'tableName' => $table,
                     'vanillaUid' => $this->workspaceRecords->resolveWriteTarget($table, $uid),
                     'command' => 'edit',
@@ -391,9 +397,13 @@ class ReadRecordTool extends AbstractDataTool
             }
             if (\is_array($value)) {
                 $value = implode(', ', array_map(
-                    static fn ($item) => \is_array($item) ? ($item['title'] ?? $item['label'] ?? json_encode($item)) : (string) $item,
+                    static fn ($item) => \is_array($item) ? self::relationItemLabel($item) : (string) $item,
                     $value,
                 ));
+            }
+
+            if (!$listMode) {
+                $value = $this->relationResolver->resolveFileField($table, (string) $field, $rawRecord) ?? $value;
             }
 
             $display = $this->outputFormatter->displayValue($value, $maxLength);
@@ -407,6 +417,30 @@ class ReadRecordTool extends AbstractDataTool
         }
 
         return $text;
+    }
+
+    private function formDataRequest(): ServerRequestInterface
+    {
+        $request = $this->userContext->getServerRequest() ?? ($GLOBALS['TYPO3_REQUEST'] ?? null);
+
+        return $request instanceof ServerRequestInterface
+            ? $request
+            : (new ServerRequest())->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_BE);
+    }
+
+    /**
+     * @param array<array-key, mixed> $item
+     */
+    private static function relationItemLabel(array $item): string
+    {
+        $title = $item['title'] ?? $item['label'] ?? null;
+        if (null === $title) {
+            return (string) json_encode($item);
+        }
+
+        return is_numeric($item['uid'] ?? null)
+            ? sprintf('%s (%d)', (string) $title, (int) $item['uid'])
+            : (string) $title;
     }
 
     /**

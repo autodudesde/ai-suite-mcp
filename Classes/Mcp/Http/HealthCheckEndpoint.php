@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Http;
 
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpWriteModeResolver;
 use Mcp\Server\Server;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -15,6 +16,7 @@ class HealthCheckEndpoint
 {
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly McpWriteModeResolver $writeModeResolver,
     ) {}
 
     public function __invoke(ServerRequestInterface $request): ResponseInterface
@@ -26,7 +28,7 @@ class HealthCheckEndpoint
             'php_version' => PHP_VERSION,
             'sdk_installed' => class_exists(Server::class),
             'workspace_available' => ExtensionManagementUtility::isLoaded('workspaces'),
-            'write_mode' => (string) ($extConf['mcpWriteMode'] ?? 'workspace'),
+            'write_mode' => $this->writeModeResolver->getWriteMode(),
         ];
 
         $status = $checks['mcp_enabled'] && $checks['sdk_installed'] ? 'ready' : 'not_configured';

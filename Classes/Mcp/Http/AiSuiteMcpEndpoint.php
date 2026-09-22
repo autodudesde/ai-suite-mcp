@@ -13,6 +13,7 @@ use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidTokenException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ServerInstructionsService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
 use Mcp\Server\HttpServerRunner;
@@ -32,9 +33,23 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 class AiSuiteMcpEndpoint
 {
     /**
-     * Spec: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#protocol-version-header.
+     * Spec: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#protocol-version-header.
      */
-    private const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
+    private const SUPPORTED_PROTOCOL_VERSIONS = ['2026-07-28', '2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+
+    private const LEGACY_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+
+    private const LATEST_LEGACY_PROTOCOL_VERSION = '2025-11-25';
+
+    private const METHOD_INITIALIZE = 'initialize';
+
+    private const METHOD_DISCOVER = 'server/discover';
+
+    private const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
+
+    private const META_PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion';
+
+    private const MODERN_PROTOCOL_VERSIONS = ['2026-07-28'];
 
     private ?FileSessionStore $sessionStore = null;
 
@@ -53,14 +68,14 @@ class AiSuiteMcpEndpoint
 
     public function __invoke(ServerRequestInterface $request): ResponseInterface
     {
-        $versionResponse = $this->validateProtocolVersionHeader($request);
-        if (null !== $versionResponse) {
-            return $versionResponse;
-        }
-
         try {
             $rawToken = $this->extractBearerToken($request);
             $tokenData = $this->oauthService->validateToken($rawToken);
+
+            $versionResponse = $this->validateProtocolVersionHeader($request);
+            if (null !== $versionResponse) {
+                return $versionResponse;
+            }
 
             $this->validateBackendUserStatus($tokenData, $rawToken);
 
@@ -79,15 +94,15 @@ class AiSuiteMcpEndpoint
 
             $this->creditTracker->initializeFromToken($tokenData->tokenId, $this->maxCreditsPerSession());
 
-            $mcpSessionId = trim($request->getHeaderLine('Mcp-Session-Id'));
-            if ('' !== $mcpSessionId) {
-                $this->userContext->setSessionKey('mcp:'.$mcpSessionId);
-            }
-
             $rawBody = (string) $request->getBody();
             $payload = json_decode($rawBody);
             $payload = $payload instanceof \stdClass ? $payload : null;
-            $rawBody = $this->stripInitializeMeta($rawBody, $payload);
+
+            $isModern = $this->isModernRequest($request, $payload);
+            $mcpSessionId = $isModern ? '' : trim($request->getHeaderLine('Mcp-Session-Id'));
+            if ('' !== $mcpSessionId) {
+                $this->userContext->setSessionKey('mcp:'.$mcpSessionId);
+            }
 
             $httpMessage = new HttpMessage($rawBody);
             $httpMessage->setMethod($request->getMethod());
@@ -97,13 +112,15 @@ class AiSuiteMcpEndpoint
                 $httpMessage->setHeader($name, implode(', ', $values));
             }
 
-            $this->mintSessionForStatelessClient($httpMessage, $request, $mcpSessionId, $payload);
+            if (!$isModern) {
+                $this->mintSessionForStatelessClient($httpMessage, $request, $mcpSessionId, $payload);
+            }
 
             $sdkResponse = $this->createRunner()->handleRequest($httpMessage);
 
             $body = $sdkResponse->getBody();
             if (null !== $body) {
-                $body = $this->injectServerIcon($body, $request);
+                $body = $this->enrichServerIdentity($body, $this->rpcMethod($payload));
             }
 
             $this->logger->info('MCP endpoint response', [
@@ -131,13 +148,11 @@ class AiSuiteMcpEndpoint
                 'has_auth_header' => $hasAuthHeader,
             ]);
 
-            $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
-
             return new JsonResponse([
                 'error' => 'unauthorized',
                 'error_description' => 'Bearer token required. Use the OAuth 2.1 flow to obtain a token.',
             ], 401, [
-                'WWW-Authenticate' => 'Bearer resource_metadata="'.$baseUrl.'/.well-known/oauth-protected-resource"',
+                'WWW-Authenticate' => $this->bearerChallenge(),
             ]);
         } catch (InsufficientPermissionException $e) {
             $this->logger->warning('MCP endpoint denied request: insufficient permission', [
@@ -146,7 +161,9 @@ class AiSuiteMcpEndpoint
                 'client_id' => $tokenData->clientId,
             ]);
 
-            return new JsonResponse(['error' => 'access_denied', 'error_description' => $e->getMessage()], 403);
+            return new JsonResponse(['error' => 'access_denied', 'error_description' => $e->getMessage()], 403, [
+                'WWW-Authenticate' => $this->bearerChallenge('insufficient_scope'),
+            ]);
         } catch (\Throwable $e) {
             $this->logger->critical('MCP endpoint error', [
                 'exception' => $e->getMessage(),
@@ -244,8 +261,8 @@ class AiSuiteMcpEndpoint
     private function establishSessionId(ServerRequestInterface $request): ?string
     {
         $protocolVersion = trim($request->getHeaderLine('MCP-Protocol-Version'));
-        if (!in_array($protocolVersion, self::SUPPORTED_PROTOCOL_VERSIONS, true)) {
-            $protocolVersion = self::SUPPORTED_PROTOCOL_VERSIONS[0];
+        if (!in_array($protocolVersion, self::LEGACY_PROTOCOL_VERSIONS, true)) {
+            $protocolVersion = self::LATEST_LEGACY_PROTOCOL_VERSION;
         }
 
         $initMessage = new HttpMessage((string) json_encode([
@@ -268,28 +285,40 @@ class AiSuiteMcpEndpoint
         return \is_string($sessionId) && '' !== $sessionId ? $sessionId : null;
     }
 
-    private function stripInitializeMeta(string $rawBody, ?\stdClass $payload): string
-    {
-        if (null === $payload || 'initialize' !== $this->rpcMethod($payload)) {
-            return $rawBody;
-        }
-
-        $params = $payload->params ?? null;
-        if (!$params instanceof \stdClass || !property_exists($params, '_meta')) {
-            return $rawBody;
-        }
-
-        unset($params->_meta);
-        $sanitized = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-        return false === $sanitized ? $rawBody : $sanitized;
-    }
-
     private function rpcMethod(?\stdClass $payload): string
     {
         $method = $payload->method ?? null;
 
         return \is_string($method) ? $method : '';
+    }
+
+    private function bearerChallenge(?string $error = null): string
+    {
+        $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
+
+        $parameters = [];
+        if (null !== $error) {
+            $parameters[] = 'error="'.$error.'"';
+        }
+        $parameters[] = 'scope="'.implode(' ', PermissionService::supportedScopes()).'"';
+        $parameters[] = 'resource_metadata="'.$baseUrl.'/.well-known/oauth-protected-resource"';
+
+        return 'Bearer '.implode(', ', $parameters);
+    }
+
+    private function isModernRequest(ServerRequestInterface $request, ?\stdClass $payload): bool
+    {
+        if (in_array(trim($request->getHeaderLine('MCP-Protocol-Version')), self::MODERN_PROTOCOL_VERSIONS, true)) {
+            return true;
+        }
+
+        if (self::METHOD_DISCOVER === $this->rpcMethod($payload)) {
+            return true;
+        }
+
+        $metaVersion = $payload->params->_meta->{self::META_PROTOCOL_VERSION} ?? null;
+
+        return \is_string($metaVersion) && in_array($metaVersion, self::MODERN_PROTOCOL_VERSIONS, true);
     }
 
     /**
@@ -321,8 +350,12 @@ class AiSuiteMcpEndpoint
         return $described;
     }
 
-    private function injectServerIcon(string $body, ServerRequestInterface $request): string
+    private function enrichServerIdentity(string $body, string $rpcMethod): string
     {
+        if (!in_array($rpcMethod, [self::METHOD_INITIALIZE, self::METHOD_DISCOVER], true)) {
+            return $body;
+        }
+
         $json = json_decode($body);
         if (!$json instanceof \stdClass) {
             return $body;
@@ -333,24 +366,37 @@ class AiSuiteMcpEndpoint
             return $body;
         }
 
-        $serverInfo = $result->serverInfo ?? null;
-        if (!$serverInfo instanceof \stdClass) {
-            return $body;
-        }
+        $serverInfo = $this->resolveServerInfo($result);
+        if ($serverInfo instanceof \stdClass) {
+            $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
+            $iconPath = $this->iconService->getPublicIconUrl('tx-aisuite-extension');
 
-        $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
-        // Through the icon registry, so a white-label package re-registering the identifier wins.
-        $iconPath = $this->iconService->getPublicIconUrl('tx-aisuite-extension');
-
-        if ('' !== $iconPath) {
-            $serverInfo->icons = [
-                (object) ['src' => $baseUrl.$iconPath, 'mimeType' => $this->iconMimeType($iconPath)],
-            ];
+            if ('' !== $iconPath) {
+                $serverInfo->icons = [
+                    (object) ['src' => $baseUrl.$iconPath, 'mimeType' => $this->iconMimeType($iconPath)],
+                ];
+            }
         }
 
         $result->instructions = $this->serverInstructions->build();
 
         return (string) json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    private function resolveServerInfo(\stdClass $result): ?\stdClass
+    {
+        if (($result->serverInfo ?? null) instanceof \stdClass) {
+            return $result->serverInfo;
+        }
+
+        $meta = $result->_meta ?? null;
+        if (!$meta instanceof \stdClass) {
+            return null;
+        }
+
+        $serverInfo = $meta->{self::META_SERVER_INFO} ?? null;
+
+        return $serverInfo instanceof \stdClass ? $serverInfo : null;
     }
 
     private function iconMimeType(string $iconPath): string

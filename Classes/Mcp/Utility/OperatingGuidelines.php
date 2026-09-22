@@ -77,7 +77,7 @@ class OperatingGuidelines
             readRecordSchema reports each field's content kind (rte = HTML honoured; html = code editor field, raw markup stored verbatim; text/plaintext = markup stripped on write; lines = line-based, see below; json; relation), its read-only status and its relation kind — check it before writing.
             Some fields are line-based: one newline separates one entry. The bullets CType renders one list item per line of bodytext, the table CType one row per line. Send those as plain text with real newlines, one entry per line — no <ul>/<li>, no bullet glyphs, no <br>. readRecordSchema and listContentTypes print a Format note on every field that works this way.
             Before you write or translate content for a page, call readEditorialGuidelines(pageId) with the page the content will live on — not the page you looked at before it: it returns the tone, target audience and style the editors configured for that subtree, both the general rules and the ones for the scope you ask about. Honour them. They are the only channel for those rules; nothing else feeds them to you.
-            When EDITING an existing rich-text (RTE) field or a code editor field (kind html, e.g. the bodytext of an "html" element), first read it with readRecords(raw: true) and edit that raw source. A normal read strips tags to a plain-text preview; writing that flattened text back would destroy the stored markup. For a small change prefer patchText/replaceText, which edit the stored value in place and never make you resend the whole field.
+            When EDITING an existing rich-text (RTE) field or a code editor field (kind html, e.g. the bodytext of an "html" element), first read it with readRecords(raw: true) and edit that raw source. A normal read strips tags to a plain-text preview; writing that flattened text back would destroy the stored markup. For a small change prefer patchText, which edits the stored value in place and never makes you resend the whole field.
             readRenderedPage(pageId) returns the page as a visitor sees it, including plugin output; readPageContent returns the stored tt_content rows and cannot show that.
             SECTION;
     }
@@ -96,12 +96,14 @@ class OperatingGuidelines
     {
         return <<<'SECTION'
             ## Tools that cost credits
-            generateFileMetadata, generateImage, the translate* tools and the batch* tools call the AI Suite Server and consume credits. Reach for them for what only they can do:
+            generateFileMetadata, generateImage, translateFileMetadata, the batch* tools and the audit tools (auditSeo, auditAccessibility, auditContent) call the AI Suite Server and consume credits; translatePage and translateRecord do so only when you pass a model. Reach for them for what only they can do:
             - generateImage — creates an image. It writes to FAL directly; no preview exists.
             - generateFileMetadata — inspects the file itself (AI vision), which is what makes alt text useful.
-            - translatePage, translateRecord, translateFileMetadata — DeepL plus the site's glossary, for consistent terminology. They write the translation directly; do not call writeRecords afterwards. localizeRecord only creates an empty translation shell and costs nothing.
+            - translateFileMetadata — DeepL plus the site's glossary, for consistent terminology. It writes the translation directly; do not call writeRecords afterwards.
+            - translatePage, translateRecord — call them without `model`: they create the translation records, hand you the source fields with the glossary, and you translate and write the result back with writeRecords. That is free and it is the default. Pass `model` only when the request named one; the server then translates and writes directly, and you do not call writeRecords afterwards. localizeRecord only creates an empty translation shell and costs nothing.
+            - auditSeo, auditAccessibility, auditContent — they measure the live page from outside, which nothing here can do. The subject is always a rendered page, never a single record or file; those are answered by a read. Run one when the request asks for an audit; readAuditResults reads what earlier runs already stored and is free.
             Anything else you compose yourself and persist with writeRecords — that costs no credits.
-            An AI tool called without the `model` parameter does not run yet: it answers with the models available to this user. Call it again with one of those models to run it.
+            Every other AI tool called without the `model` parameter does not run yet: it answers with the models available to this user. Call it again with one of those models to run it.
             SECTION;
     }
 
@@ -110,8 +112,7 @@ class OperatingGuidelines
         return <<<'SECTION'
             ## Small edits on existing records — do NOT resend whole fields
             For small corrections (a typo, an em-dash, a single word) on an existing record, prefer the safe-edit tools over rewriting the whole field with writeRecords:
-            - replaceText(table, uid, field, search, replace) — replace a literal fragment (unique by default; pass all:true for every occurrence). Returns an old/new snippet.
-            - patchText(table, uid, field, replacements) — several ordered replacements in one write; if any fails, nothing is written.
+            - patchText(table, uid, field, replacements) — one or several ordered literal replacements in one write; each is unique by default, pass all:true for every occurrence. If any fails, nothing is written. Returns an old/new snippet.
             - bulkReplaceText(parentUid, childTable, relationField, field, search, replace) — apply the same fix to every child (e.g. each card in a card group).
             These keep the payload tiny, preserve surrounding HTML, and are far less likely to be blocked by a client's safety filters than resending a full bodytext.
             To list the actual child records (container or IRRE) of an element before editing, call readChildren(uid).
@@ -134,7 +135,7 @@ class OperatingGuidelines
             - 1 file → generateFileMetadata (it looks at the image itself; you only ever see a thumbnail).
             - 1 page to translate → translatePage.
             - 2+ specific files by UID → use batchGenerateFileMetadata or batchTranslateFileMetadata.
-            - All files in a folder → use batchGenerateFolderMetadata or batchTranslateFolderMetadata.
+            - All files in a folder → pass folderIdentifiers to batchGenerateFileMetadata or batchTranslateFileMetadata.
             - 2+ pages → use batchGenerateMetadata or batchTranslatePage.
             Batch tools run asynchronously and return a task ID:
             1. Call batch tool → returns task ID.

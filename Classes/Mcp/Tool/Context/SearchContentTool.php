@@ -18,6 +18,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class SearchContentTool extends AbstractTool
 {
+    private const OWN_HANDLERS = ['pages', 'tt_content'];
+
     private const PREVIEW_LENGTH = 200;
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
@@ -125,7 +127,8 @@ class SearchContentTool extends AbstractTool
             $results = array_merge($results, $this->searchContentElements($query, $includeFullContent, $allowedPageIds, $contentFields, $matchHtml));
             $searchedTables[] = 'tt_content';
 
-            foreach ($this->searchableTables->getAdditionalTables() as $table) {
+            // pages and tt_content have their own handlers above, with a richer result shape.
+            foreach ($this->searchableTables->getSearchableTables(self::OWN_HANDLERS) as $table) {
                 try {
                     $this->recordAccess->validateTableReadAccess($table);
                 } catch (\Throwable) {
@@ -168,7 +171,7 @@ class SearchContentTool extends AbstractTool
                 implode(', ', $searchedTables),
             );
         }
-        if ([] === $this->searchableTables->getAdditionalTables()) {
+        if ([] === $this->searchableTables->getSearchableTables(self::OWN_HANDLERS)) {
             $notes[] = 'Only pages and content elements are searchable here. Child-record tables (accordion items, '
                 .'card group cards) are detected from the TCA automatically, but none were found here — either this '
                 .'installation has none, or they are listed in the ai_suite_mcp settings "Exclude Auto-Detected Tables '
@@ -179,10 +182,29 @@ class SearchContentTool extends AbstractTool
             $payload['note'] = implode(' ', $notes);
         }
 
-        return new CallToolResult([new TextContent((string) json_encode(
+        return $this->withFoundRecords(new CallToolResult([new TextContent((string) json_encode(
             $payload,
             JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE,
-        ))]);
+        ))]), $this->foundRecordsOf($results));
+    }
+
+    /**
+     * @param list<array<string, mixed>> $results
+     *
+     * @return list<array{table: string, uid: int}>
+     */
+    private function foundRecordsOf(array $results): array
+    {
+        $found = [];
+        foreach ($results as $result) {
+            $table = (string) ($result['matchIn'] ?? '');
+            $uid = (int) ($result['uid'] ?? 0);
+            if ('' !== $table && $uid > 0) {
+                $found[] = ['table' => $table, 'uid' => $uid];
+            }
+        }
+
+        return $found;
     }
 
     /**
@@ -195,7 +217,7 @@ class SearchContentTool extends AbstractTool
         $fields = $this->tcaCompatibilityService->getSearchableTextFields('pages');
         $rows = $this->workspaceRecords->overlayRows(
             'pages',
-            $this->pagesRepository->searchByText($query, 100, $allowedPageIds, $fields),
+            $this->workspaceRecords->foldVersionsOntoLive($this->pagesRepository->searchByText($query, 100, $allowedPageIds, $fields)),
         );
 
         $results = [];
@@ -232,7 +254,7 @@ class SearchContentTool extends AbstractTool
 
         $rows = $this->workspaceRecords->overlayRows(
             $table,
-            $this->recordRepository->searchByText(
+            $this->workspaceRecords->foldVersionsOntoLive($this->recordRepository->searchByText(
                 $table,
                 $query,
                 $fields,
@@ -240,7 +262,7 @@ class SearchContentTool extends AbstractTool
                 100,
                 $this->tcaCompatibilityService->isWorkspaceAware($table),
                 $this->languageFieldName($table),
-            ),
+            )),
         );
 
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
@@ -328,7 +350,7 @@ class SearchContentTool extends AbstractTool
     {
         $rows = $this->workspaceRecords->overlayRows(
             'tt_content',
-            $this->contentRepository->searchByText($query, 100, $allowedPageIds, $searchFields),
+            $this->workspaceRecords->foldVersionsOntoLive($this->contentRepository->searchByText($query, 100, $allowedPageIds, $searchFields)),
         );
 
         $results = [];

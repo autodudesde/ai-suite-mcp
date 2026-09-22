@@ -10,6 +10,7 @@ use AutoDudes\AiSuite\Service\GlossarService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
@@ -27,9 +28,10 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
         TranslationService $translationService,
         GlossarService $glossarService,
         GlobalInstructionService $globalInstructionService,
+        TranslatedPageSlugService $translatedPageSlugs,
         private readonly SysFileMetadataRepository $sysFileMetadataRepository,
     ) {
-        parent::__construct($mcpToolContext, $libraryService, $uuidService, $translationService, $glossarService, $globalInstructionService);
+        parent::__construct($mcpToolContext, $libraryService, $uuidService, $translationService, $glossarService, $globalInstructionService, $translatedPageSlugs);
     }
 
     public function getName(): string
@@ -101,10 +103,16 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
         );
     }
 
+    // Deliberately not the tree collector: file metadata has no inline children to translate.
     /**
-     * @param array<string, mixed> $record
+     * @param array<string, mixed>  $record
+     * @param array<string, string> $skipped
+     *
+     * @param-out array<string, string> $skipped
+     *
+     * @return array<string, array<int, array<string, mixed>>>
      */
-    protected function collectTranslatableFields(string $table, int $uid, array $record): array
+    protected function collectTranslatableTree(string $table, int $uid, int $targetLanguageUid, int $translatedUid, array $record, array &$skipped): array
     {
         $fields = [];
         foreach (['title', 'alternative', 'description'] as $field) {
@@ -114,6 +122,6 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
             }
         }
 
-        return $fields;
+        return [] === $fields ? [] : [$table => [$translatedUid => $fields]];
     }
 }

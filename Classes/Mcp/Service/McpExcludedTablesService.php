@@ -11,6 +11,20 @@ use TYPO3\CMS\Core\SingletonInterface;
 
 class McpExcludedTablesService implements SingletonInterface
 {
+    /**
+     * @var list<string>
+     */
+    public const SHIPPED_DEFAULTS = [
+        // Personal data.
+        'fe_users', 'fe_groups', 'be_users', 'be_groups',
+        // Editors' chat history.
+        'tx_cheddi_session',
+        // Configuration, not content.
+        'sys_template', 'backend_layout', 'form_definition', 'index_config',
+        // System administration.
+        'tx_scheduler_task', 'tx_scheduler_task_group', 'tx_impexp_presets', 'be_dashboards',
+    ];
+
     /** @var null|list<string> */
     private ?array $configured = null;
 
@@ -33,13 +47,10 @@ class McpExcludedTablesService implements SingletonInterface
     public function getExcluded(): array
     {
         $additional = $this->surfaceOverrides->getAdditionalExcludedTables();
-        if ([] === $additional) {
-            return $this->getConfigured();
-        }
-
         $signature = implode(',', $additional);
 
         return $this->merged[$signature] ??= array_values(array_unique([
+            ...self::SHIPPED_DEFAULTS,
             ...$this->getConfigured(),
             ...$additional,
         ]));

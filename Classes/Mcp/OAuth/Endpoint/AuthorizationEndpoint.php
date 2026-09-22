@@ -572,7 +572,7 @@ class AuthorizationEndpoint
         if ('deny' === $consentAction) {
             $separator = str_contains($redirectUri, '?') ? '&' : '?';
 
-            return new RedirectResponse($redirectUri.$separator.'error=access_denied&state='.urlencode($state));
+            return new RedirectResponse($redirectUri.$separator.'error=access_denied&state='.urlencode($state).'&iss='.urlencode($this->issuer()));
         }
 
         $backendUser = $this->tokenAuthenticatedBackendUser->createForUid($beUserUid);
@@ -582,7 +582,6 @@ class AuthorizationEndpoint
         if ('all' === $consentAction) {
             $grantedScopes = $availableScopes;
         } else {
-            // Only ever grant scopes the user is actually permitted to hold.
             $grantedScopes = array_values(array_intersect((array) ($body['scopes'] ?? []), $availableScopes));
         }
 
@@ -612,8 +611,13 @@ class AuthorizationEndpoint
         $separator = str_contains($redirectUri, '?') ? '&' : '?';
 
         return new RedirectResponse(
-            $redirectUri.$separator.'code='.urlencode($rawCode).'&state='.urlencode($state),
+            $redirectUri.$separator.'code='.urlencode($rawCode).'&state='.urlencode($state).'&iss='.urlencode($this->issuer()),
         );
+    }
+
+    private function issuer(): string
+    {
+        return rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
     }
 
     /**
@@ -668,7 +672,6 @@ class AuthorizationEndpoint
             ], 400);
         }
 
-        // resource required and bound to this MCP server (RFC 8707, MCP 2025-11-25 spec)
         $resource = (string) ($params['resource'] ?? '');
         if ('' === $resource) {
             return new JsonResponse([
@@ -743,7 +746,6 @@ class AuthorizationEndpoint
         }
 
         try {
-            // mirroring TYPO3's own login pre-check.
             $backendUser = GeneralUtility::makeInstance(BackendUserAuthentication::class);
             $backendUser->setBeUserByName($username);
             $user = $backendUser->user;
@@ -864,7 +866,6 @@ class AuthorizationEndpoint
             'hasCustomLogo' => '' !== $logoUrl,
             'faviconUrl' => $faviconUrl,
             'footerNote' => $this->authStyleInfo->getFooterNote(),
-            // Through the icon registry, so a white-label package re-registering the identifier wins.
             'aiSuiteIconUrl' => $this->iconService->getPublicIconUrl('tx-aisuite-extension', $request),
             'siteName' => (string) ($GLOBALS['TYPO3_CONF_VARS']['SYS']['sitename'] ?? 'TYPO3 AI Suite'),
         ];

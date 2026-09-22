@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
+use AutoDudes\AiSuite\Domain\Repository\PagesRepository;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\UuidService;
@@ -12,6 +13,7 @@ use AutoDudes\AiSuite\Service\WorkflowProcessingService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\PageSubtreeSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -21,6 +23,8 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslatePageTool extends AbstractAiTool
 {
+    use PageSubtreeSelectionTrait;
+
     protected ?string $requiredScope = 'mcp:workflow';
 
     public function __construct(
@@ -29,6 +33,7 @@ class BatchTranslatePageTool extends AbstractAiTool
         private readonly UuidService $uuidService,
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly WorkflowProcessingService $workflowProcessingService,
+        private readonly PagesRepository $pagesRepository,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -41,6 +46,7 @@ class BatchTranslatePageTool extends AbstractAiTool
     public function getDescription(): string
     {
         return 'Translate multiple pages with an external AI model (costs credits). '
+            .'Takes either a UID list or a whole page subtree via rootPageId. '
             .DescriptionSnippets::BATCH_ASYNC;
     }
 
@@ -48,12 +54,7 @@ class BatchTranslatePageTool extends AbstractAiTool
     {
         return [
             'type' => 'object',
-            'properties' => [
-                'pageIds' => [
-                    'type' => 'array',
-                    'items' => ['type' => 'integer'],
-                    'description' => 'Array of page UIDs to translate.',
-                ],
+            'properties' => self::pageSelectionSchemaProperties('translate') + [
                 'targetLanguage' => $this->siteLanguages->withLanguageEnum([
                     'type' => 'string',
                     'description' => 'ISO target language code (de, en, fr, es, ...).',
@@ -70,7 +71,7 @@ class BatchTranslatePageTool extends AbstractAiTool
                 ],
                 'model' => ['type' => 'string', 'description' => 'Translation model identifier (e.g. DeepL). Omit to list available models.'],
             ],
-            'required' => ['pageIds', 'targetLanguage'],
+            'required' => ['targetLanguage'],
         ];
     }
 
@@ -82,18 +83,17 @@ class BatchTranslatePageTool extends AbstractAiTool
 
     protected function doExecute(array $params): CallToolResult
     {
-        $pageIds = $params['pageIds'] ?? [];
+        $pageIds = $this->resolveTargetPages($params);
+        if ($pageIds instanceof CallToolResult) {
+            return $pageIds;
+        }
         $model = (string) ($params['model'] ?? '');
         $targetLanguage = (string) $params['targetLanguage'];
         $translationScope = (string) ($params['translationScope'] ?? 'all');
 
-        if (empty($pageIds)) {
-            return $this->textError('pageIds must be a non-empty array.');
-        }
-
         if ('' === $model) {
             $pageCount = count($pageIds);
-            $text = sprintf("## Translate %d pages to %s\n\n", $pageCount, $targetLanguage);
+            $text = sprintf("## Translate %s to %s\n\n", $this->outputFormatter->countOf($pageCount, 'page'), $targetLanguage);
 
             $text .= "**Option 1 — Async (recommended for many pages):**\n";
             $text .= "  An external AI model translates all pages simultaneously in the background.\n";
@@ -229,7 +229,13 @@ class BatchTranslatePageTool extends AbstractAiTool
             $text .= sprintf("\n⚠️ Skipped pages: %s (not found, excluded from AI, or no translatable content)\n", implode(', ', $allSkipped));
         }
 
-        $text .= sprintf("\nProcessing happens in the background. Use **readTaskStatus(taskId: \"%s\")** to check progress.", $parentUuid);
+        $text .= sprintf(
+            "\nProcessing happens in the background, and nothing is written yet. Poll "
+            .'**readTaskStatus(taskId: "%s")**; once it reports finished, **applyTaskResults(taskId: "%s")** '
+            .'writes the translations.',
+            $parentUuid,
+            $parentUuid,
+        );
 
         return $this->textResult($text);
     }

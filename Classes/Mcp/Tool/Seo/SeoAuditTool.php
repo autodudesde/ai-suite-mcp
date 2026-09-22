@@ -22,10 +22,10 @@ class SeoAuditTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Run a full SEO audit for one public page URL: technical on-page checks, '
-            .'Lighthouse scores with real-user Core Web Vitals, and GEO/AI-visibility signals. '
-            .'Pass a focus keyword to add SERP position, top-10 competitors and search volume. '
-            .'Issues return prioritized with fixability levels.';
+        return 'Full SEO audit for one page, named by pageId — the answer to "check page 12 '
+            .'for SEO problems". On-page checks, Lighthouse scores with real-user Core Web Vitals, '
+            .'GEO/AI-visibility signals. A focus keyword adds SERP position, top-10 competitors and '
+            .'search volume. Issues come back prioritized. Costs 3 credits.';
     }
 
     public function getSchema(): array
@@ -33,27 +33,27 @@ class SeoAuditTool extends AbstractAiTool
         return [
             'type' => 'object',
             'properties' => [
+                'pageId' => [
+                    'type' => 'integer',
+                    'description' => 'UID of the page to audit. Its public URL is resolved from the site configuration.',
+                ],
                 'url' => [
                     'type' => 'string',
-                    'description' => 'Absolute, publicly reachable URL of the page to audit.',
+                    'description' => 'Absolute, publicly reachable URL — for a page outside this installation. Use pageId for one inside it.',
                 ],
                 'keyword' => [
                     'type' => 'string',
                     'description' => 'Optional focus keyword — adds SERP position, top-10 competition and search volume.',
                 ],
             ],
-            'required' => ['url'],
         ];
     }
 
     protected function doExecute(array $params): CallToolResult
     {
-        $url = trim((string) ($params['url'] ?? ''));
-        // FILTER_VALIDATE_URL accepts any scheme; TYPO3-internal links (t3://...) cannot be audited
-        if (!filter_var($url, FILTER_VALIDATE_URL)
-            || !in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)
-        ) {
-            return $this->textError('url must be an absolute http(s) URL (e.g. https://example.com/page). TYPO3-internal links like t3://page?uid=1 cannot be audited - resolve the public URL of the page first.');
+        $url = $this->resolveAuditUrl($params);
+        if ($url instanceof CallToolResult) {
+            return $url;
         }
         $keyword = trim((string) ($params['keyword'] ?? ''));
         if (mb_strlen($keyword) > 200) {
@@ -64,9 +64,9 @@ class SeoAuditTool extends AbstractAiTool
         if ('' !== $keyword) {
             $data['keyword'] = $keyword;
         }
-        $body = $this->sendAiRequest('/seoAudit', $data);
+        $body = $this->sendAiRequest('seoAudit', $data);
 
-        return $this->structuredResult($this->summarize($body, $keyword), $body);
+        return $this->auditResult('seo', $url, $keyword, $this->summarize($body, $keyword), $body);
     }
 
     /**

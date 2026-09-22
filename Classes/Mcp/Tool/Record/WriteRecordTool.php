@@ -15,6 +15,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\ContainerBatchValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NestedChildExpanderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordTypeAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationExpanderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
@@ -30,6 +31,8 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class WriteRecordTool extends AbstractDataTool
 {
+    private const LANGUAGE_NEUTRAL_FIELD_TYPES = ['select', 'check', 'radio', 'number', 'datetime', 'color'];
+
     protected ?string $requiredScope = 'mcp:write';
 
     public function __construct(
@@ -44,6 +47,7 @@ class WriteRecordTool extends AbstractDataTool
         private readonly TranslationExpanderService $translationExpander,
         private readonly RecordRepository $recordRepository,
         private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly TranslatedPageSlugService $translatedPageSlugs,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -57,7 +61,7 @@ class WriteRecordTool extends AbstractDataTool
     {
         return 'Create or update one or more records (writes). '
             .'Pass a records array, one entry per record, even for a single record. '
-            .'For a small correction inside an existing field prefer replaceText or patchText.';
+            .'For a small correction inside an existing field prefer patchText.';
     }
 
     public function getSchema(): array
@@ -75,6 +79,7 @@ class WriteRecordTool extends AbstractDataTool
                         .'Never write the parent\'s inline field as a list of child UIDs — that list is read as the complete set and renumbers the children. '
                         .'Images: nest {uid_local:<sysFile UID>} objects in the image/assets field, or add explicit sys_file_reference records {uid_local, uid_foreign:"$ref:N", tablenames, fieldname, pid} — never a bare sys_file UID there. '
                         .'`sorting` is not writable; reorder with moveRecords. '
+                        .'New pages are created hidden, as TYPO3 does it; send `hidden: 0` for a visible page. '
                         .'FlexForm fields (pi_flexform, …) take a nested object {"data": {"<sheet>": {"lDEF": {"<field>": {"vDEF": <value>}}}}} — '
                         .'call readFlexFormSchema first for the sheets and fields, never invent them and never pass XML. '
                         .'TCA-required fields are enforced on create (readRecordSchema lists them). '
@@ -244,7 +249,14 @@ class WriteRecordTool extends AbstractDataTool
                 $field,
                 null !== $uid
                     ? sprintf('Write each child of `%s` as its own record with `%s`: %d and its own `pid`.', $childTable, $parentField, $uid)
-                    : sprintf('Nest the children as objects inside `%s`; they are expanded into their own `%s` records.', $field, $childTable),
+                    : sprintf(
+                        'Nest the children as objects inside `%1$s`; they are expanded into their own `%2$s` records, one level deep. '
+                            .'If this record is itself a nested child, nesting does not reach its children: create this record first, '
+                            .'then write each `%2$s` record on its own with `%3$s` set to the UID it got.',
+                        $field,
+                        $childTable,
+                        $parentField,
+                    ),
             )))->withErrorContext(['table' => $table, 'field' => $field, 'uid' => $uid]);
         }
     }
@@ -344,9 +356,10 @@ class WriteRecordTool extends AbstractDataTool
 
             return [
                 'message' => sprintf(
-                    '%s created (UID: %d)%s%s%s',
+                    '%s created (UID: %d)%s%s%s%s',
                     $this->tcaLabel->getTableLabel($table),
                     $result->uid,
+                    $this->hiddenHint($table, $result->uid),
                     $this->strippedHint($result),
                     $this->remapHint($remapped),
                     $this->translationAliasNormalizer->describeRenames($aliased['renamed']),
@@ -361,19 +374,24 @@ class WriteRecordTool extends AbstractDataTool
         $before = [];
         if ($captureBefore) {
             $existing = BackendUtility::getRecordWSOL($table, $uid);
-            foreach (array_keys($fields) as $fieldName) {
+            foreach ($this->beforeImageFields($table, $fields) as $fieldName) {
                 $before[(string) $fieldName] = is_array($existing) ? ($existing[$fieldName] ?? null) : null;
             }
         }
 
         $result = $this->recordWrite->update($table, $uid, $fields);
         $createdUids[$zeroBased] = $uid;
+        $slugHint = 'pages' === $table && $this->translatedPageSlugs->refreshInheritedSlug($uid, $fields)
+            ? ', slug rebuilt for this language'
+            : '';
 
         return [
             'message' => sprintf(
-                '%s updated (UID: %d)%s%s%s',
+                '%s updated (UID: %d)%s%s%s%s%s',
                 $this->tcaLabel->getTableLabel($table),
                 $uid,
+                $slugHint,
+                $this->divergenceHint($table, $uid, $fields),
                 $this->strippedHint($result),
                 $this->remapHint($remapped),
                 $this->translationAliasNormalizer->describeRenames($aliased['renamed']),
@@ -411,7 +429,8 @@ class WriteRecordTool extends AbstractDataTool
 
         $this->recordAccess->assertRecordEditAccess($table, $originUid);
 
-        $pageId = 'pages' === $table ? $originUid : (int) (BackendUtility::getRecordWSOL($table, $originUid)['pid'] ?? 0);
+        $originRow = BackendUtility::getRecordWSOL($table, $originUid) ?? [];
+        $pageId = 'pages' === $table ? $originUid : (int) ($originRow['pid'] ?? 0);
         $languageUid = $this->recordAccess->resolveLanguageUid($language, $pageId);
         if (0 === $languageUid) {
             throw new InvalidParameterException(sprintf(
@@ -427,6 +446,20 @@ class WriteRecordTool extends AbstractDataTool
             throw new InvalidParameterException(sprintf('Table "%s" does not support translations.', $table));
         }
 
+        // Reachable by accident: the self-translation hand-over names the UIDs of the localizations.
+        $parentUid = (int) ($originRow[$pointerField] ?? 0);
+        if ($parentUid > 0) {
+            throw new InvalidParameterException(sprintf(
+                '%s:%d is itself a translation, so `translations` would translate a translation. Write the values into it directly: {"table": "%s", "uid": %d, "fields": {…}}. `translations` belongs on the default-language record (%s:%d).',
+                $table,
+                $originUid,
+                $table,
+                $originUid,
+                $table,
+                $parentUid,
+            ));
+        }
+
         $existingUid = $this->recordRepository->findTranslationUid($table, $originUid, $languageUid, $pointerField, $languageField);
         $created = null === $existingUid;
         $translationUid = $existingUid ?? $this->localize($table, $originUid, $languageUid);
@@ -434,13 +467,15 @@ class WriteRecordTool extends AbstractDataTool
         $before = [];
         if ($captureBefore && !$created) {
             $existing = BackendUtility::getRecordWSOL($table, $translationUid);
-            foreach (array_keys($fields) as $fieldName) {
+            foreach ($this->beforeImageFields($table, $fields) as $fieldName) {
                 $before[(string) $fieldName] = is_array($existing) ? ($existing[$fieldName] ?? null) : null;
             }
         }
 
         $strippedHint = '';
         $aliasHint = '';
+        $slugHint = '';
+        $divergenceHint = '';
         if ([] !== $fields) {
             $aliased = $this->translationAliasNormalizer->normalizeFields($table, $fields);
             $aliasHint = $this->translationAliasNormalizer->describeRenames($aliased['renamed']);
@@ -448,17 +483,23 @@ class WriteRecordTool extends AbstractDataTool
             $writeFields = $this->resolveReferences($writeFields, $createdUids);
             $result = $this->recordWrite->update($table, $translationUid, $writeFields);
             $strippedHint = $this->strippedHint($result);
+            $divergenceHint = $this->divergenceHint($table, $translationUid, $writeFields);
+            if ('pages' === $table && $this->translatedPageSlugs->refreshInheritedSlug($translationUid, $writeFields)) {
+                $slugHint = ', slug rebuilt for this language';
+            }
         }
 
         $createdUids[$zeroBased] = $translationUid;
 
         return [
             'message' => sprintf(
-                '%s translated to %s (UID: %d, %s)%s%s',
+                '%s translated to %s (UID: %d, %s)%s%s%s%s',
                 $this->tcaLabel->getTableLabel($table),
                 $language,
                 $translationUid,
                 $created ? 'created, hidden as TYPO3 does it' : 'updated existing translation',
+                $slugHint,
+                $divergenceHint,
                 $strippedHint,
                 $aliasHint,
             ),
@@ -467,6 +508,77 @@ class WriteRecordTool extends AbstractDataTool
                 ? ['op' => 'create', 'table' => $table, 'uid' => $translationUid]
                 : ['op' => 'update', 'table' => $table, 'uid' => $translationUid, 'before' => $before],
         ];
+    }
+
+    /**
+     * @param array<array-key, mixed> $fields
+     *
+     * @return list<string>
+     */
+    private function beforeImageFields(string $table, array $fields): array
+    {
+        $names = array_map('strval', array_keys($fields));
+        if ('pages' === $table && !in_array('slug', $names, true)) {
+            $names[] = 'slug';
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param array<array-key, mixed> $fields
+     */
+    private function divergenceHint(string $table, int $uid, array $fields): string
+    {
+        $languageField = $this->tcaCompatibilityService->getLanguageFieldName($table);
+        $pointerField = $this->tcaCompatibilityService->getTranslationOriginPointerFieldName($table);
+        if (null === $languageField || null === $pointerField) {
+            return '';
+        }
+
+        $translation = BackendUtility::getRecordWSOL($table, $uid);
+        if (!is_array($translation) || (int) ($translation[$languageField] ?? 0) <= 0) {
+            return '';
+        }
+
+        $origin = BackendUtility::getRecordWSOL($table, (int) ($translation[$pointerField] ?? 0));
+        if (!is_array($origin)) {
+            return '';
+        }
+
+        $enableColumns = $this->tcaCompatibilityService->getRawConfiguration($table)['enablecolumns'] ?? [];
+        $skipped = [$languageField, $pointerField, ...array_values(is_array($enableColumns) ? $enableColumns : [])];
+
+        $diverging = [];
+        foreach ($fields as $field => $value) {
+            $field = (string) $field;
+            $type = (string) ($this->tcaCompatibilityService->getFieldConfiguration($table, $field)['type'] ?? '');
+            if (is_array($value) || in_array($field, $skipped, true) || !in_array($type, self::LANGUAGE_NEUTRAL_FIELD_TYPES, true) || !array_key_exists($field, $origin)) {
+                continue;
+            }
+
+            $written = is_bool($value) ? (string) (int) $value : (string) $value;
+            if ($written !== (string) $origin[$field]) {
+                $diverging[] = sprintf('%s (%s)', $field, (string) $origin[$field]);
+            }
+        }
+
+        return [] === $diverging ? '' : ', differs from the original: '.implode(', ', $diverging);
+    }
+
+    private function hiddenHint(string $table, int $uid): string
+    {
+        $hiddenField = $this->tcaCompatibilityService->getDisabledFieldName($table);
+        if (null === $hiddenField) {
+            return '';
+        }
+
+        $row = BackendUtility::getRecordWSOL($table, $uid);
+        if (!is_array($row) || !(bool) ($row[$hiddenField] ?? false)) {
+            return '';
+        }
+
+        return sprintf(', hidden: send `%s: 0` to make it visible', $hiddenField);
     }
 
     private function localize(string $table, int $originUid, int $languageUid): int

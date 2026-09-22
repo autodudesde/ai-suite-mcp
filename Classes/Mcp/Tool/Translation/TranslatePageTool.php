@@ -14,7 +14,7 @@ use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
-class TranslatePageTool extends AbstractTranslateTool
+class TranslatePageTool extends AbstractTranslateTool implements SelfTranslatingToolInterface
 {
     protected ?string $requiredScope = 'mcp:translate';
 
@@ -25,10 +25,9 @@ class TranslatePageTool extends AbstractTranslateTool
 
     public function getDescription(): string
     {
-        return 'Translate a whole page — metadata and every content element — using the site glossary. '
+        return 'Translate a whole page — metadata, content elements and their inline children — using the site glossary. '
             .'Without a model you translate the handed-back fields yourself, for free; with one the server translates '
-            .DescriptionSnippets::COSTS_CREDITS.'. '
-            .'Creates the translation records either way; localizeRecord only creates empty shells.';
+            .DescriptionSnippets::COSTS_CREDITS.'. Creates the translation records either way.';
     }
 
     public function getSchema(): array
@@ -41,7 +40,7 @@ class TranslatePageTool extends AbstractTranslateTool
                     'type' => 'string',
                     'description' => 'ISO target language code.',
                 ]),
-                'model' => ['type' => 'string', 'description' => 'Optional translation model identifier. Omit to translate with the first model this user is permitted to use; the answer names it and lists the alternatives.'],
+                'model' => ['type' => 'string', 'description' => 'Optional. Omit to translate the fields yourself — the tool then prepares the translation records and hands you their fields, glossary and editorial instructions, and nothing is sent to the AI Suite Server. Name a model to have the server translate instead, which costs credits.'],
                 'sourceLanguage' => $this->siteLanguages->withLanguageEnum([
                     'type' => 'string',
                     'description' => 'ISO source language. Default: site default language.',
@@ -52,6 +51,7 @@ class TranslatePageTool extends AbstractTranslateTool
                     'default' => 'all',
                     'description' => 'What to translate: "all" (metadata + content), "metadata" (SEO fields only), "content" (content elements only).',
                 ],
+                'hidden' => ['type' => 'boolean', 'default' => true, 'description' => 'Keep the translation hidden, as TYPO3 creates it (default). Pass false to make it visible right away.'],
             ],
             'required' => ['pageId', 'targetLanguage'],
         ];
@@ -63,6 +63,7 @@ class TranslatePageTool extends AbstractTranslateTool
         $targetLanguage = (string) $params['targetLanguage'];
         $translationScope = (string) ($params['translationScope'] ?? 'all');
         $model = (string) ($params['model'] ?? '');
+        $hidden = (bool) ($params['hidden'] ?? true);
 
         $page = $this->validatePageForAi($pageId, Permission::CONTENT_EDIT);
         if ($page instanceof CallToolResult) {
@@ -89,6 +90,8 @@ class TranslatePageTool extends AbstractTranslateTool
 
         $request = $this->userContext->getServerRequest();
 
+        $skipped = [];
+
         try {
             $translateFields = $this->translationService->collectTranslatableFieldsWithMapping(
                 $pageId,
@@ -96,6 +99,7 @@ class TranslatePageTool extends AbstractTranslateTool
                 $destLangUid,
                 $translationScope,
                 $request,
+                $skipped,
             );
         } catch (\RuntimeException $e) {
             $this->logger->error('TranslatePage: collecting translatable fields failed, aborting translation', [
@@ -109,6 +113,12 @@ class TranslatePageTool extends AbstractTranslateTool
         }
 
         $elementsCount = $this->countElements($translateFields);
+
+        if (!$hidden) {
+            foreach ($translateFields as $table => $records) {
+                $this->revealTranslations((string) $table, array_map('intval', array_keys($records)));
+            }
+        }
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
         $site = $this->siteFinder->getSiteByPageId($pageId);
@@ -119,19 +129,27 @@ class TranslatePageTool extends AbstractTranslateTool
         $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('pages', 'translation', $pageId);
 
         if ('' === $model) {
+            $pageTranslationUid = 'content' !== $translationScope
+                ? $this->translationService->findOrCreateLocalization('pages', $pageId, $destLangUid)
+                : null;
+
             return $this->structuredResult(
                 sprintf("## Translate page %d → %s yourself\n\n", $pageId, $targetLanguage)
                     .sprintf("**Scope:** %s | **Elements:** %d\n\n", $translationScope, $elementsCount)
+                    .(null !== $pageTranslationUid ? sprintf("**Page translation:** `pages:%d`\n\n", $pageTranslationUid) : '')
                     .$this->describeSelfTranslation($targetLanguage, $sourceLanguage, $glossarEntries, $globalInstructions)
-                    .$this->describeHandedOverRecords($translateFields),
+                    .$this->describeHandedOverRecords($translateFields)
+                    .$this->describeSkippedRecords($skipped),
                 ['translation' => [
                     'mode' => 'self',
                     'pageId' => $pageId,
+                    'pageTranslationUid' => $pageTranslationUid,
                     'targetLanguage' => $targetLanguage,
                     'sourceLanguage' => $sourceLanguage,
                     'scope' => $translationScope,
                     'elements' => $elementsCount,
                     'records' => $translateFields,
+                    'skipped' => $skipped,
                 ]],
             );
         }
@@ -160,17 +178,7 @@ class TranslatePageTool extends AbstractTranslateTool
             return $this->textError('No translation results returned by the server.');
         }
 
-        $cleanedResults = [];
-        foreach ($translationResults as $table => $records) {
-            if (!\is_array($records)) {
-                continue;
-            }
-            foreach ($records as $uid => $fields) {
-                if (\is_array($fields)) {
-                    $cleanedResults[$table][$uid] = $fields;
-                }
-            }
-        }
+        $cleanedResults = $this->restrictToSentFields($translationResults, $translateFields);
 
         if (empty($cleanedResults)) {
             return $this->textError('Translation results could not be processed (invalid format).');
@@ -187,6 +195,8 @@ class TranslatePageTool extends AbstractTranslateTool
             );
         }
 
+        $this->refreshTranslatedPageSlugs($cleanedResults);
+
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: Page %d → %s\n\n", $pageId, $targetLanguage);
         $text .= sprintf("**Scope:** %s | **Elements:** %d\n\n", $translationScope, $elementsCount);
@@ -195,6 +205,9 @@ class TranslatePageTool extends AbstractTranslateTool
             foreach ($records as $uid => $fields) {
                 $text .= sprintf("### %s:%s\n", $table, $uid);
                 foreach ($fields as $field => $value) {
+                    if (\is_array($value)) {
+                        continue;
+                    }
                     $displayValue = strip_tags((string) $value);
                     if (mb_strlen($displayValue) > 120) {
                         $displayValue = mb_substr($displayValue, 0, 120).'...';
@@ -205,8 +218,11 @@ class TranslatePageTool extends AbstractTranslateTool
             }
         }
 
-        $text .= "**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
+        if ($hidden) {
+            $text .= "**Note:** Translated records are hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to verify.\n";
+        }
         $text .= $this->describeUntranslated($result);
+        $text .= $this->describeSkippedRecords($skipped);
 
         $untranslated = \is_array($result['untranslated'] ?? null) ? array_map('strval', $result['untranslated']) : [];
 
@@ -218,27 +234,10 @@ class TranslatePageTool extends AbstractTranslateTool
                 'elements' => $elementsCount,
                 'model' => $model,
                 'untranslated' => array_values($untranslated),
+                'skipped' => $skipped,
             ]]),
             $result,
         );
-    }
-
-    /**
-     * @param array<string, mixed> $translateFields
-     */
-    private function describeHandedOverRecords(array $translateFields): string
-    {
-        $text = "**Write the translated values to these records:**\n";
-        foreach ($translateFields as $table => $records) {
-            if (!\is_array($records)) {
-                continue;
-            }
-            foreach (array_keys($records) as $uid) {
-                $text .= sprintf("- `%s:%s`\n", $table, $uid);
-            }
-        }
-
-        return $text."\nThe field values themselves are in this answer's structured content, under `translation.records`.\n";
     }
 
     /**

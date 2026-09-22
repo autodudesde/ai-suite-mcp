@@ -9,6 +9,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Enum\LinkStyle;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Routing\Router;
 use TYPO3\CMS\Backend\Routing\UriBuilder;
+use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\SingletonInterface;
 
 class BackendNavigationResolver implements SingletonInterface
@@ -18,6 +19,7 @@ class BackendNavigationResolver implements SingletonInterface
         private readonly Router $router,
         private readonly BackendRouteService $backendRouteService,
         private readonly BackendBaseUrlResolver $baseUrlResolver,
+        private readonly BackendLinkBounceService $linkBounce,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -32,6 +34,8 @@ class BackendNavigationResolver implements SingletonInterface
                 'openPage' => $this->openPage($params, $style),
                 'listRecords' => $this->listRecords($params, $style),
                 'openModule' => $this->openModule($params, $style),
+                'openAuditResult' => $this->auditRoute('ai_suite_audit_cached', $params, $style),
+                'exportAudit' => $this->auditRoute('ai_suite_audit_export', $params, $style),
                 default => null,
             };
         } catch (\Throwable $e) {
@@ -47,8 +51,9 @@ class BackendNavigationResolver implements SingletonInterface
             return $url;
         }
 
-        // UriBuilder takes host and scheme from the request context, which stdio does not have.
-        return $this->baseUrlResolver->makeAbsolute($url);
+        $absolute = $this->baseUrlResolver->makeAbsolute($url);
+
+        return null === $absolute ? null : $this->linkBounce->wrap($absolute);
     }
 
     public function buildModuleBaseUrl(string $identifier, LinkStyle $style = LinkStyle::Session): ?string
@@ -80,7 +85,33 @@ class BackendNavigationResolver implements SingletonInterface
             return null;
         }
 
-        return $this->build('web_layout', ['id' => $pageId], $style);
+        [$pageId, $languageUid] = $this->pageModuleScope($pageId);
+
+        return $this->build(
+            'web_layout',
+            ['id' => $pageId] + $this->backendRouteService->getPageModuleLanguageParams($languageUid),
+            $style,
+        );
+    }
+
+    /**
+     * @return array{int, int}
+     */
+    private function pageModuleScope(int $pageId): array
+    {
+        try {
+            $row = BackendUtility::getRecordWSOL('pages', $pageId);
+        } catch (\Throwable) {
+            return [$pageId, 0];
+        }
+        if (!\is_array($row)) {
+            return [$pageId, 0];
+        }
+
+        $languageUid = (int) ($row['sys_language_uid'] ?? 0);
+        $parent = (int) ($row['l10n_parent'] ?? 0);
+
+        return $languageUid > 0 && $parent > 0 ? [$parent, $languageUid] : [$pageId, 0];
     }
 
     /**
@@ -113,6 +144,24 @@ class BackendNavigationResolver implements SingletonInterface
         }
 
         return $this->build($module, $routeParams, $style);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function auditRoute(string $identifier, array $params, LinkStyle $style): ?string
+    {
+        $pageId = (int) ($params['pageId'] ?? 0);
+        $auditType = trim((string) ($params['auditType'] ?? ''));
+        if ($pageId <= 0 || '' === $auditType || !$this->routeExists($identifier)) {
+            return null;
+        }
+
+        return $this->build($identifier, [
+            'pageId' => $pageId,
+            'auditType' => $auditType,
+            'languageUid' => max(0, (int) ($params['languageUid'] ?? 0)),
+        ], $style);
     }
 
     /**

@@ -208,7 +208,7 @@
                 <source>MCP Server enabled</source>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.sessionCredits">
-                <source>Session Credits</source>
+                <source>Credits used</source>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.status">
                 <source>MCP Status</source>

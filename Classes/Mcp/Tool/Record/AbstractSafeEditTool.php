@@ -50,6 +50,17 @@ abstract class AbstractSafeEditTool extends AbstractDataTool
         $this->recordWrite->update($table, $uid, $fields);
     }
 
+    /**
+     * Reads and writes both follow the workspace overlay, so an answer that does not name the layer
+     * cannot be told apart from one about live. That ambiguity once read as "the dry run wrote".
+     */
+    protected function editLayer(): string
+    {
+        $workspace = $this->mcpToolContext->workspaceContextService->getWorkspaceId();
+
+        return 0 === $workspace ? 'live' : sprintf('workspace %d', $workspace);
+    }
+
     protected function assertFieldWritable(string $table, string $field): void
     {
         $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);

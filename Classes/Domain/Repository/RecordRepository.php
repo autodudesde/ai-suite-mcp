@@ -76,6 +76,120 @@ class RecordRepository extends AbstractRepository
     }
 
     /**
+     * @return list<int>
+     */
+    /**
+     * @param list<int> $uids
+     *
+     * @return array<int, string>
+     */
+    public function findLabelsByUids(string $table, string $labelField, array $uids): array
+    {
+        if ([] === $uids || '' === $labelField) {
+            return [];
+        }
+
+        try {
+            $qb = $this->connectionPool->getQueryBuilderForTable($table);
+            $this->withoutFrontendRestrictions($qb);
+            $qb->getRestrictions()->add(
+                GeneralUtility::makeInstance(WorkspaceRestriction::class, $this->workspaceContextService->getWorkspaceId(), true),
+            );
+
+            $rows = $qb
+                ->select('uid', $labelField)
+                ->from($table)
+                ->where($qb->expr()->in('uid', $qb->createNamedParameter($uids, Connection::PARAM_INT_ARRAY)))
+                ->executeQuery()
+                ->fetchAllAssociative()
+            ;
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $labels = [];
+        foreach ($rows as $row) {
+            $labels[(int) $row['uid']] = trim((string) ($row[$labelField] ?? ''));
+        }
+
+        return $labels;
+    }
+
+    /**
+     * @param list<int> $parentUids
+     *
+     * @return array<int, array{label: string, total: int}>
+     */
+    public function findFirstChildLabelPerParent(
+        string $childTable,
+        string $parentField,
+        string $labelField,
+        array $parentUids,
+        string $sortField = 'sorting',
+    ): array {
+        if ([] === $parentUids) {
+            return [];
+        }
+
+        $qb = $this->connectionPool->getQueryBuilderForTable($childTable);
+        $this->withoutFrontendRestrictions($qb);
+        $qb->getRestrictions()->add(
+            GeneralUtility::makeInstance(WorkspaceRestriction::class, $this->workspaceContextService->getWorkspaceId(), true),
+        );
+
+        $qb
+            ->select($parentField, $labelField)
+            ->from($childTable)
+            ->where($qb->expr()->in($parentField, $qb->createNamedParameter($parentUids, Connection::PARAM_INT_ARRAY)))
+        ;
+        if ('' !== $sortField) {
+            $qb->orderBy($sortField, 'ASC');
+        }
+
+        $collected = [];
+        foreach ($qb->executeQuery()->fetchAllAssociative() as $row) {
+            $parent = (int) $row[$parentField];
+            if (!isset($collected[$parent])) {
+                $collected[$parent] = ['label' => '', 'total' => 0];
+            }
+            ++$collected[$parent]['total'];
+            if ('' === $collected[$parent]['label']) {
+                $collected[$parent]['label'] = trim((string) ($row[$labelField] ?? ''));
+            }
+        }
+
+        return $collected;
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function findReferencedFileUids(string $table, int $uid, string $field): array
+    {
+        if ($uid <= 0 || '' === $table || '' === $field) {
+            return [];
+        }
+
+        $qb = $this->connectionPool->getQueryBuilderForTable('sys_file_reference');
+        $this->withoutFrontendRestrictions($qb);
+
+        $uids = $qb
+            ->select('uid_local')
+            ->from('sys_file_reference')
+            ->where(
+                $qb->expr()->eq('uid_foreign', $qb->createNamedParameter($uid, Connection::PARAM_INT)),
+                $qb->expr()->eq('tablenames', $qb->createNamedParameter($table)),
+                $qb->expr()->eq('fieldname', $qb->createNamedParameter($field)),
+            )
+            ->orderBy('sorting_foreign', 'ASC')
+            ->executeQuery()
+            ->fetchFirstColumn()
+        ;
+
+        return array_values(array_unique(array_map('intval', $uids)));
+    }
+
+    /**
      * @param list<int> $values
      *
      * @return list<int>
@@ -122,6 +236,34 @@ class RecordRepository extends AbstractRepository
             ->executeQuery()
             ->fetchOne()
         ;
+    }
+
+    /**
+     * @param list<string> $columns
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function findRecordsOnPage(string $table, int $pid, array $columns, int $limit): array
+    {
+        try {
+            $qb = $this->connectionPool->getQueryBuilderForTable($table);
+            $this->withoutFrontendRestrictions($qb);
+            $this->addWorkspaceRestriction($qb);
+
+            $rows = $qb
+                ->select('uid', ...$columns)
+                ->from($table)
+                ->where($qb->expr()->eq('pid', $qb->createNamedParameter($pid, Connection::PARAM_INT)))
+                ->orderBy('uid', 'ASC')
+                ->setMaxResults($limit)
+                ->executeQuery()
+                ->fetchAllAssociative()
+            ;
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return array_values($rows);
     }
 
     public function countRecordsOnPage(string $table, int $pid): int
@@ -229,7 +371,7 @@ class RecordRepository extends AbstractRepository
 
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
         $this->withoutFrontendRestrictions($qb);
-        $this->addWorkspaceRestriction($qb);
+        $this->addWorkspaceRestriction($qb, true);
         $term = '%'.$qb->escapeLikeWildcards($query).'%';
 
         $likes = array_map(

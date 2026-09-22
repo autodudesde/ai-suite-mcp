@@ -44,6 +44,7 @@ class LocalizeRecordTool extends AbstractDataTool
                     'default' => 'localize',
                     'description' => '"localize" = connected translation (linked to parent), "copyToLanguage" = independent copy. Default: localize.',
                 ],
+                'hidden' => ['type' => 'boolean', 'default' => true, 'description' => 'Keep the translation hidden, as TYPO3 creates it (default). Pass false to make it visible right away.'],
             ],
             'required' => ['table', 'uid', 'targetLanguage'],
         ];
@@ -55,6 +56,7 @@ class LocalizeRecordTool extends AbstractDataTool
         $uid = (int) $params['uid'];
         $targetLanguage = (string) $params['targetLanguage'];
         $mode = (string) ($params['mode'] ?? 'localize');
+        $hidden = (bool) ($params['hidden'] ?? true);
 
         $this->recordAccess->validateTableWriteAccess($table);
 
@@ -88,6 +90,16 @@ class LocalizeRecordTool extends AbstractDataTool
         }
 
         $newUid = $dh->copyMappingArray[$table][$uid] ?? null;
+        $hiddenField = $this->tcaCompatibilityService->getDisabledFieldName($table);
+        if (!$hidden && null !== $newUid && null !== $hiddenField) {
+            $visibility = GeneralUtility::makeInstance(DataHandler::class);
+            $visibility->start([$table => [(int) $newUid => [$hiddenField => 0]]], []);
+            $visibility->process_datamap();
+
+            if ([] !== $visibility->errorLog) {
+                throw $this->dataHandlerError->toException('update', $table, (int) $newUid, $visibility->errorLog);
+            }
+        }
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $recordLabel = $record[$labelField] ?? $uid;
 
@@ -103,7 +115,9 @@ class LocalizeRecordTool extends AbstractDataTool
         if (null !== $newUid) {
             $text .= sprintf("\n\nTranslation created: UID %d (table: %s, language: %s)", $newUid, $table, $targetLanguage);
             $text .= sprintf("\nUse writeRecords with uid: %d to edit the translation.", $newUid);
-            $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to see it.");
+            if ($hidden) {
+                $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to see it.");
+            }
         }
 
         return $this->structuredResult($text, [

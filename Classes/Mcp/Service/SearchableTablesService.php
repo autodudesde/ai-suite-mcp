@@ -5,88 +5,80 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
-use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationExtensionNotConfiguredException;
-use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationPathDoesNotExistException;
-use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
+use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\SingletonInterface;
 
 class SearchableTablesService implements SingletonInterface
 {
     /** @var array<string, list<string>> */
-    private array $additional = [];
+    private array $tables = [];
 
     public function __construct(
-        private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly McpExcludedTablesService $excludedTables,
         private readonly TcaCompatibilityService $tcaCompatibilityService,
-        private readonly ChildTableRegistryService $childTableRegistry,
-        private readonly SurfaceSettingOverrides $surfaceOverrides,
+        private readonly LoggerInterface $logger,
     ) {}
 
     /**
+     * @param list<string> $except
+     *
      * @return list<string>
      */
-    public function getAdditionalTables(): array
+    public function getSearchableTables(array $except = []): array
     {
-        $signature = $this->surfaceOverrides->getSignature();
-        if (isset($this->additional[$signature])) {
-            return $this->additional[$signature];
-        }
+        $signature = implode(',', $this->excludedTables->getExcluded());
+        $this->tables[$signature] ??= $this->detect();
 
-        $extConf = [];
-
-        try {
-            $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
-        } catch (ExtensionConfigurationExtensionNotConfiguredException|ExtensionConfigurationPathDoesNotExistException) {
-            // An unconfigured extension still gets the auto-detected child tables.
-        }
-
-        $excludedFromAuto = array_merge(
-            $this->parseList($extConf['mcpExcludeAdditionalTablesFromSearch'] ?? ''),
-            $this->surfaceOverrides->getSearchTablesExcludedFromAuto(),
-        );
-        $configured = array_merge(
-            $this->parseList($extConf['mcpSearchAdditionalTables'] ?? ''),
-            $this->surfaceOverrides->getAdditionalSearchTables(),
-        );
-
-        $candidates = array_merge(
-            array_diff($this->childTableRegistry->getChildTables(), $excludedFromAuto),
-            $configured,
-        );
-
-        $tables = [];
-        foreach ($candidates as $table) {
-            if (in_array($table, ['pages', 'tt_content'], true) || $this->excludedTables->isExcluded($table)) {
-                continue;
-            }
-            if (!$this->tcaCompatibilityService->hasTable($table)) {
-                continue;
-            }
-
-            try {
-                $searchFields = $this->tcaCompatibilityService->getSearchableTextFields($table);
-            } catch (\Throwable) {
-                continue;
-            }
-            if ([] === $searchFields) {
-                continue;
-            }
-
-            $tables[] = $table;
-        }
-
-        $tables = array_values(array_unique($tables));
-        sort($tables);
-
-        return $this->additional[$signature] = $tables;
+        return [] === $except
+            ? $this->tables[$signature]
+            : array_values(array_diff($this->tables[$signature], $except));
     }
 
     /**
      * @return list<string>
      */
-    private function parseList(mixed $value): array
+    private function detect(): array
     {
-        return array_values(array_filter(array_map('trim', explode(',', (string) $value))));
+        try {
+            $candidates = $this->tcaCompatibilityService->getAllTableNames();
+        } catch (\Throwable $e) {
+            $this->logger->warning('Searchable table scan failed', ['error' => $e->getMessage()]);
+
+            return [];
+        }
+
+        $tables = [];
+        foreach ($candidates as $table) {
+            if ($this->isSearchable($table)) {
+                $tables[] = $table;
+            }
+        }
+
+        sort($tables);
+
+        return $tables;
+    }
+
+    private function isSearchable(string $table): bool
+    {
+        if ($this->excludedTables->isExcluded($table)) {
+            return false;
+        }
+
+        try {
+            if (!$this->tcaCompatibilityService->hasTable($table)) {
+                return false;
+            }
+            if (!$this->tcaCompatibilityService->canExistOnPages($table)) {
+                return false;
+            }
+            if ($this->tcaCompatibilityService->ignoresWebMountRestriction($table)) {
+                return false;
+            }
+
+            return [] !== $this->tcaCompatibilityService->getSearchableTextFields($table);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }

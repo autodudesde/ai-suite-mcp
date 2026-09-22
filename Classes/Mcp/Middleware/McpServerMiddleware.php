@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Middleware;
 
 use AutoDudes\AiSuiteMcp\Mcp\Http\AiSuiteMcpEndpoint;
+use AutoDudes\AiSuiteMcp\Mcp\Http\BackendLinkEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\Http\HealthCheckEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint\AuthorizationEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint\MetadataEndpoint;
@@ -46,6 +47,7 @@ class McpServerMiddleware implements MiddlewareInterface
         private readonly AuthorizationEndpoint $authorizationEndpoint,
         private readonly ProtectedResourceMetadataEndpoint $protectedResourceMetadataEndpoint,
         private readonly RegistrationEndpoint $registrationEndpoint,
+        private readonly BackendLinkEndpoint $backendLinkEndpoint,
         private readonly RateLimiterService $rateLimiter,
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly ClientIpService $clientIpService,
@@ -58,6 +60,10 @@ class McpServerMiddleware implements MiddlewareInterface
 
         if ('/favicon.ico' === $path) {
             return $this->serveFavicon();
+        }
+
+        if (BackendLinkEndpoint::PATH === $path || BackendLinkEndpoint::SCRIPT_PATH === $path) {
+            return ($this->backendLinkEndpoint)($request);
         }
 
         if (!str_starts_with($path, self::MCP_PATH) && !$this->isWellKnownPath($path)) {
@@ -97,7 +103,6 @@ class McpServerMiddleware implements MiddlewareInterface
             return $sizeCheck;
         }
 
-        // Rate limiting for MCP endpoint, not for health/OAuth
         if (self::MCP_PATH === $path || $path === self::MCP_PATH.'/') {
             $rateCheck = $this->enforceRateLimit($request);
             if (null !== $rateCheck) {
@@ -269,9 +274,10 @@ class McpServerMiddleware implements MiddlewareInterface
 
     private function enforceBodySizeLimit(ServerRequestInterface $request): ?ResponseInterface
     {
-        $contentLength = (int) $request->getHeaderLine('Content-Length');
+        $declared = (int) $request->getHeaderLine('Content-Length');
+        $actual = $this->bodySize($request);
 
-        if ($contentLength > self::MAX_REQUEST_BODY_SIZE) {
+        if (max($declared, $actual) > self::MAX_REQUEST_BODY_SIZE) {
             return new JsonResponse([
                 'error' => 'request_too_large',
                 'error_description' => 'Request body exceeds maximum size of 1 MB.',
@@ -279,6 +285,15 @@ class McpServerMiddleware implements MiddlewareInterface
         }
 
         return null;
+    }
+
+    private function bodySize(ServerRequestInterface $request): int
+    {
+        try {
+            return @$request->getBody()->getSize() ?? 0;
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 
     private function enforceOAuthRateLimit(ServerRequestInterface $request): ?ResponseInterface
@@ -358,8 +373,9 @@ class McpServerMiddleware implements MiddlewareInterface
 
         return $response
             ->withHeader('Access-Control-Allow-Origin', $effectiveOrigin)
-            ->withHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-            ->withHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+            ->withHeader('Access-Control-Allow-Methods', 'POST, DELETE, OPTIONS')
+            ->withHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Session-Id, Mcp-Method, Mcp-Name')
+            ->withHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id')
             ->withHeader('Access-Control-Max-Age', '86400')
         ;
     }

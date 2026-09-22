@@ -7,7 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use Psr\Log\LoggerInterface;
-use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
 
 class SessionOrientationService
@@ -22,10 +21,10 @@ class SessionOrientationService
     public function __construct(
         private readonly SiteFinder $siteFinder,
         private readonly BackendUserService $backendUserService,
-        private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly RecordAccessService $recordAccess,
         private readonly TcaLabelService $tcaLabel,
         private readonly TcaCompatibilityService $tcaCompatibilityService,
+        private readonly McpWriteModeResolver $writeModeResolver,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -68,7 +67,7 @@ class SessionOrientationService
             $lines = array_merge($lines, $siteLines);
         }
 
-        $writeMode = (string) ($this->extensionConfiguration->get('ai_suite_mcp')['mcpWriteMode'] ?? 'workspace');
+        $writeMode = $this->writeModeResolver->getWriteMode();
         $workspaceId = (int) ($beUser->workspace ?? 0);
         $target = $workspaceId > 0 ? sprintf('draft workspace #%d (not live)', $workspaceId) : 'the live site';
         $lines[] = sprintf('Write mode: %s — approved writes go to %s.', $writeMode, $target);

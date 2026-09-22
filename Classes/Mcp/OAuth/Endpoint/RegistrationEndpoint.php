@@ -21,12 +21,15 @@ class RegistrationEndpoint
         $clientName = (string) ($body['client_name'] ?? 'MCP Client');
         $redirectUris = (array) ($body['redirect_uris'] ?? []);
 
+        $applicationType = 'native' === ($body['application_type'] ?? '') ? 'native' : 'web';
+
         $clientId = 'mcp-'.bin2hex(random_bytes(16));
 
         $response = [
             'client_id' => $clientId,
             'client_name' => $clientName,
             'redirect_uris' => $redirectUris,
+            'application_type' => $applicationType,
             'token_endpoint_auth_method' => 'none',
             'grant_types' => ['authorization_code'],
             'response_types' => ['code'],

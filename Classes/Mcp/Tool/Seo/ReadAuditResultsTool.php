@@ -99,8 +99,9 @@ class ReadAuditResultsTool extends AbstractTool
             ];
         }
         if ([] === $structured['audits']) {
-            $lines[] = 'No stored audits for this page and language yet. Run one with auditSeo, '
-                .'auditAccessibility, auditQuestions, auditContentGap, auditTopicCluster or auditCompetitors.';
+            $lines[] = 'No audit has been stored for this page and language yet. Starting one is a '
+                .'separate request and costs credits: auditSeo and auditAccessibility 3 each, '
+                .'auditContent 2 to 3.';
         } else {
             $lines[] = '';
             $lines[] = 'Pass auditType to read the full stored details of one audit (free).';
@@ -114,7 +115,7 @@ class ReadAuditResultsTool extends AbstractTool
         $stored = $this->auditResults->findLatest($pageId, $auditType, $languageUid);
         if (null === $stored) {
             return $this->textError(sprintf(
-                'No stored "%s" audit for page %d in this language. Run one with the matching audit* tool.',
+                'No "%s" audit has been stored for page %d in this language. Starting one costs credits (3, auditContent 2 to 3).',
                 $auditType,
                 $pageId,
             ));
@@ -171,7 +172,7 @@ class ReadAuditResultsTool extends AbstractTool
         }
 
         return sprintf(
-            '- [%s] %s: %d open, %d partial, %d answered (of %d)%s%s (run %s)',
+            '- [%s] %s: %d open, %d partial, %d covered (of %d)%s%s (run %s)',
             $type,
             $label,
             (int) ($summary['open'] ?? 0),
@@ -191,7 +192,6 @@ class ReadAuditResultsTool extends AbstractTool
      */
     private function summaryOf(array $stored): array
     {
-        // seo/a11y nest the counts under audit.summary, the analysis types store a flat one
         $summary = $stored['result']['audit']['summary'] ?? $stored['result']['summary'] ?? [];
 
         return is_array($summary) ? $summary : [];

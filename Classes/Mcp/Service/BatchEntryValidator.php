@@ -35,7 +35,7 @@ class BatchEntryValidator
                 }
             }
             if ([] !== $missing) {
-                $problems[] = sprintf('#%d: missing %s', $position, implode(', ', $missing));
+                $problems[] = $this->describeMissing($position, $missing, $entry);
 
                 continue;
             }
@@ -68,6 +68,28 @@ class BatchEntryValidator
             $argumentName,
             implode("\n- ", $problems),
         ));
+    }
+
+    /**
+     * "missing `fields`" names what is absent and not what to do about it, and a model that has the
+     * values in `translations` reads it as "put something in fields" — measured 18.09.2026: after two
+     * such refusals the cheapest model filled `fields` with the source text and overwrote the very
+     * translation it had just written. Where the two keys meet, the message names both valid shapes.
+     *
+     * @param list<string>         $missing
+     * @param array<string, mixed> $entry
+     */
+    private function describeMissing(int $position, array $missing, array $entry): string
+    {
+        $problem = sprintf('#%d: missing %s', $position, implode(', ', $missing));
+
+        if (in_array('`fields`', $missing, true) && !$this->isBlank($entry['translations'] ?? null)) {
+            $problem .= '. `translations` does not replace it: to write into a record that already is a'
+                .' translation, address that record by its own uid with `fields`; to have one created,'
+                .' put `translations` on the default-language record and its own values in `fields`';
+        }
+
+        return $problem;
     }
 
     /**

@@ -24,9 +24,10 @@ class AccessibilityAuditTool extends AbstractAiTool
 
     public function getDescription(): string
     {
-        return 'Run a WCAG 2.1 AA accessibility audit for one public page URL (axe-core + '
-            .'HTML_CodeSniffer via pa11y). Returns error/warning/notice counts, top issue groups '
-            .'with impact and sample selectors, and prioritized issues with fixability levels.';
+        return 'Run a WCAG 2.1 AA accessibility audit for one page, named by pageId — the answer to '
+            .'"is page 12 accessible?" (axe-core + HTML_CodeSniffer via pa11y). Returns '
+            .'error/warning/notice counts, top issue groups with impact and sample selectors, and '
+            .'prioritized issues with fixability levels. Costs 3 credits.';
     }
 
     public function getSchema(): array
@@ -34,23 +35,23 @@ class AccessibilityAuditTool extends AbstractAiTool
         return [
             'type' => 'object',
             'properties' => [
+                'pageId' => [
+                    'type' => 'integer',
+                    'description' => 'UID of the page to audit. Its public URL is resolved from the site configuration.',
+                ],
                 'url' => [
                     'type' => 'string',
-                    'description' => 'Absolute, publicly reachable URL of the page to audit.',
+                    'description' => 'Absolute, publicly reachable URL — for a page outside this installation. Use pageId for one inside it.',
                 ],
             ],
-            'required' => ['url'],
         ];
     }
 
     protected function doExecute(array $params): CallToolResult
     {
-        $url = trim((string) ($params['url'] ?? ''));
-        // FILTER_VALIDATE_URL accepts any scheme; TYPO3-internal links (t3://...) cannot be audited
-        if (!filter_var($url, FILTER_VALIDATE_URL)
-            || !in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)
-        ) {
-            return $this->textError('url must be an absolute http(s) URL (e.g. https://example.com/page). TYPO3-internal links like t3://page?uid=1 cannot be audited - resolve the public URL of the page first.');
+        $url = $this->resolveAuditUrl($params);
+        if ($url instanceof CallToolResult) {
+            return $url;
         }
 
         $data = ['url' => $url];
@@ -58,12 +59,11 @@ class AccessibilityAuditTool extends AbstractAiTool
         if ('' !== $standard) {
             $data['standard'] = $standard;
         }
-        $body = $this->sendAiRequest('/accessibilityAudit', $data);
+        $body = $this->sendAiRequest('accessibilityAudit', $data);
 
-        return $this->structuredResult($this->summarize($body), $body);
+        return $this->auditResult('a11y', $url, '', $this->summarize($body), $body);
     }
 
-    // best effort: unit tests and early boot have no extension configuration
     private function configuredWcagStandard(): string
     {
         try {
@@ -84,7 +84,7 @@ class AccessibilityAuditTool extends AbstractAiTool
         $lines = ['## Accessibility audit: '.(string) ($audit['url'] ?? '')];
 
         if (false === ($audit['reachable'] ?? true)) {
-            $lines[] = 'Page is NOT publicly reachable — audit could not run (see issues).';
+            $lines[] = 'Page is not publicly reachable — audit could not run (see issues).';
         }
 
         $summary = $audit['a11y']['summary'] ?? [];

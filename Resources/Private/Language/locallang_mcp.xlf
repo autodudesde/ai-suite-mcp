@@ -88,6 +88,28 @@
             <trans-unit id="aiSuite.mcp.success.instruction_created">
                 <source>Content guidelines for page %d successfully created. They will automatically apply to all AI operations on this page.</source>
             </trans-unit>
+
+            <!-- Backend link bounce page -->
+            <trans-unit id="aiSuite.mcp.backendLink.title">
+                <source>Opening TYPO3</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.backendLink.continue">
+                <source>Continue to TYPO3</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.backendLink.invalid">
+                <source>This link was not issued by this TYPO3 installation or is no longer valid.</source>
+            </trans-unit>
+
+            <!-- Navigation: stored audits -->
+            <trans-unit id="aiSuite.mcp.navigation.audit.group">
+                <source>Audit</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.navigation.audit.open">
+                <source>Open audit result</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.navigation.audit.export">
+                <source>Download CSV</source>
+            </trans-unit>
         </body>
     </file>
 </xliff>

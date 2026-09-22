@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use Psr\Log\LoggerInterface;
@@ -75,6 +76,7 @@ class RecordAccessService
         private readonly SiteFinder $siteFinder,
         private readonly ResourceFactory $resourceFactory,
         private readonly McpExcludedTablesService $excludedTablesService,
+        private readonly WorkspaceContextService $workspaceContextService,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -567,12 +569,13 @@ class RecordAccessService
      */
     public function getReadablePageIds(int $rootId = 0, int $depth = 99): array
     {
-        $cacheKey = $rootId.':'.$depth;
+        $workspaceId = $this->workspaceContextService->getWorkspaceId();
+        $cacheKey = $rootId.':'.$depth.':'.$workspaceId;
         if (isset($this->readablePageIdsCache[$cacheKey])) {
             return $this->readablePageIdsCache[$cacheKey];
         }
 
-        $pageIds = $this->backendUserService->getSearchableWebmounts($rootId, $depth);
+        $pageIds = $this->backendUserService->getSearchableWebmounts($rootId, $depth, $workspaceId);
 
         if (count($pageIds) > self::MAX_FILTERABLE_PAGES) {
             throw new InsufficientPermissionException(sprintf(

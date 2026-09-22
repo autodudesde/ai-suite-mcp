@@ -6,10 +6,12 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\LocalizationService;
+use AutoDudes\AiSuite\Service\ProvenanceCaptureService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
+use AutoDudes\AiSuiteMcp\Mcp\Service\AuditResultRecorder;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
@@ -51,5 +53,7 @@ class ToolContext implements SingletonInterface
         public readonly ParameterValidatorService $parameterValidator,
         public readonly SiteLanguageService $siteLanguages,
         public readonly NavigationTargetCollector $navigationTargets,
+        public readonly ProvenanceCaptureService $provenanceCapture,
+        public readonly AuditResultRecorder $auditResultRecorder,
     ) {}
 }
