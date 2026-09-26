@@ -525,7 +525,14 @@ table genuinely has is never rewritten.
 
 `uploadMedia` takes a `media` array; each item carries exactly one source (`url` **or** `content`) plus optional `fileName`, `targetFolder` and metadata (`title`, `alternative`, `description`). Items are processed independently; one failing item does not abort the batch.
 
-**Security.** Remote URL fetching is the sensitive part and is SSRF-guarded by `RemoteMediaService`: only `http`/`https`, every resolved IP must be public (private, loopback, link-local incl. the `169.254.169.254` cloud-metadata endpoint, and reserved ranges are rejected, IPv4 + IPv6), redirects are followed manually and re-validated per hop, and the download is streamed with a hard size cap. Blocked targets are logged at WARNING. Beyond the OAuth scope + `enable_mcp_media_upload` flag, FAL filemount permissions on the target folder still apply. Tunables (`ext_conf`): `mcpMediaDefaultFolder` (default `1:/user_upload/`), `mcpMediaMaxSizeMb` (`50`), `mcpMediaAllowedExtensions` (`jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg`; SVG excluded by default, XSS risk), `mcpMediaAllowUrlFetch` (`1`, kill-switch for URL downloads), `mcpMediaHostDenylist` (empty). Large videos should be supplied via `url` or an online-media link rather than base64.
+Two switches, per item or as the batch default:
+
+- `onConflict` decides what happens when the file name already exists in the target folder. `rename` (default) stores the upload under a suffixed name. `replace` overwrites the existing file's content in place through `ResourceStorage::replaceFile()`: the uid stays, so every content element, page property and reference shows the new file at once. Given metadata overwrites the stored one; empty fields leave it untouched.
+- `createFolder: true` creates a missing target folder, parents included. Write permission is checked on the deepest folder that already exists. Without it, a missing folder fails that item and names the switch.
+
+Each result line says whether the file was `created`, `renamed` or `replaced`. `listFiles` with `includeFolders: true` returns the subfolders next to the files (every level below with `recursive`), which is how a client picks or checks an upload target.
+
+**Security.** Remote URL fetching is the sensitive part and is SSRF-guarded by `RemoteMediaService`: only `http`/`https`, every resolved IP must be public (private, loopback, link-local incl. the `169.254.169.254` cloud-metadata endpoint, and reserved ranges are rejected, IPv4 + IPv6), redirects are followed manually and re-validated per hop, and the download is streamed with a hard size cap. Blocked targets are logged at WARNING. Beyond the OAuth scope + `enable_mcp_media_upload` flag, FAL filemount permissions on the target folder still apply. Tunables (`ext_conf`): `mcpMediaDefaultFolder` (default `1:/user_upload/`), `mcpMediaMaxSizeMb` (`50`), `mcpMediaAllowedExtensions` (`jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg`; SVG excluded by default, XSS risk), `mcpMediaAllowUrlFetch` (`1`, kill-switch for URL downloads), `mcpMediaHostDenylist` (empty). Large videos should be supplied via `url` or an online-media link rather than base64; a base64 upload has to fit into one request, see `mcpMaxRequestBodyMb`.
 
 ### Workflow (`mcp:workflow`; polling `mcp:read`, applying `mcp:write`)
 Batch tools run asynchronously and return a task ID. Poll via `readTaskStatus`, retrieve results via `readTaskResults`.
@@ -742,7 +749,7 @@ logged to `var/log/aisuite_mcp.log` as usual.
 Enforced by `McpServerMiddleware` and the OAuth endpoints:
 
 - **HTTPS required** in production (localhost + `*.ddev.site` exempted; override with `mcpAllowHttp=1`: **not** for production).
-- **Request-body cap** of 1 MB per MCP request.
+- **Request-body cap** of 1 MB per MCP request, adjustable with `mcpMaxRequestBodyMb`. Base64 uploads through `uploadMedia` are the only calls that need more: base64 adds a third, so a 3 MB video needs 4 MB.
 - **Rate limiting**: 100 requests / minute per Bearer token (responds `429` with `Retry-After: 60`).
 - **OAuth rate limiting**: `/aisuite-mcp/oauth/token` and `/aisuite-mcp/oauth/register` are limited per client IP with the same limiter (`429 rate_limit_exceeded`).
 - **OAuth 2.1 with PKCE**, no implicit / password grants.
@@ -785,7 +792,7 @@ location ~ \.php$ {
 }
 ```
 
-Also raise `client_max_body_size` to at least the MCP body cap (1 MB) plus margin for batch payloads; `8m` is a safe default.
+Also raise `client_max_body_size` to at least the MCP body cap (`mcpMaxRequestBodyMb`, default 1 MB) plus margin for batch payloads; `8m` is a safe default. PHP's `post_max_size` has to allow the same size.
 
 ### Systems behind HTTP Basic Auth
 

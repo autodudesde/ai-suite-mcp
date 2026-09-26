@@ -65,11 +65,11 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.serverNeedsConfig">
                 <source>MCP Server needs configuration.</source>
-                <target>Der MCP Server muss noch konfiguriert werden.</target>
+                <target>Der MCP-Server muss noch konfiguriert werden.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.serverReady">
                 <source>MCP Server is ready!</source>
-                <target>Der MCP Server ist bereit!</target>
+                <target>Der MCP-Server ist bereit!</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.activeTokens">
                 <source>Active Tokens</source>
@@ -157,7 +157,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.connect.externalConnectorsDescription">
                 <source>External connectors use the full OAuth 2.1 flow with PKCE. Add the MCP Server URL as a connector:</source>
-                <target>Externe Connectoren nutzen den vollständigen OAuth-2.1-Flow mit PKCE. Füge die URL des MCP Servers als Connector hinzu:</target>
+                <target>Externe Connectoren nutzen den vollständigen OAuth-2.1-Flow mit PKCE. Füge die URL des MCP-Servers als Connector hinzu:</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.connect.mcpEndpoint">
                 <source>MCP Endpoint</source>
@@ -265,15 +265,15 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.notEnabledClients">
                 <source>Once enabled, you can connect Claude Desktop, Claude.ai, ChatGPT, and other MCP clients to your TYPO3 installation.</source>
-                <target>Sobald er aktiviert ist, kannst du Claude Desktop, Claude.ai, ChatGPT und andere MCP-Clients mit deiner TYPO3-Installation verbinden.</target>
+                <target>Sobald der MCP-Server aktiviert ist, kannst du Claude Desktop, Claude.ai, ChatGPT und andere MCP-Clients mit deiner TYPO3-Installation verbinden.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.notEnabledDescription">
                 <source>Enable the MCP Server in Extension Settings → AI Suite → MCP → Enable MCP Server.</source>
-                <target>Aktiviere den MCP Server unter Extension-Einstellungen → AI Suite → MCP → Enable MCP Server.</target>
+                <target>Aktiviere den MCP-Server unter Extension-Einstellungen → AI Suite → MCP → Enable MCP Server.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.serverEnabled">
                 <source>MCP Server enabled</source>
-                <target>MCP Server aktiviert</target>
+                <target>MCP-Server aktiviert</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.sessionCredits">
                 <source>Credits used</source>
@@ -305,15 +305,15 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.step1.description">
                 <source>The MCP Server allows AI clients like Claude Desktop to interact with your TYPO3 installation.</source>
-                <target>Über den MCP Server können KI-Clients wie Claude Desktop mit deiner TYPO3-Installation arbeiten.</target>
+                <target>Über den MCP-Server können KI-Clients wie Claude Desktop mit deiner TYPO3-Installation arbeiten.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.step1.disabled">
                 <source>MCP Server is currently disabled.</source>
-                <target>Der MCP Server ist derzeit deaktiviert.</target>
+                <target>Der MCP-Server ist derzeit deaktiviert.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.step1.enabled">
                 <source>MCP Server is already enabled.</source>
-                <target>Der MCP Server ist bereits aktiviert.</target>
+                <target>Der MCP-Server ist bereits aktiviert.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.step1.openSettings">
                 <source>Open Extension Settings → AI Suite → MCP</source>
@@ -321,7 +321,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.step1.title">
                 <source>Step 1: Enable MCP Server</source>
-                <target>Schritt 1: MCP Server aktivieren</target>
+                <target>Schritt 1: MCP-Server aktivieren</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.wizard.step2.description">
                 <source>Select which backend user groups should have MCP access.</source>
@@ -353,7 +353,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.module.header">
                 <source>MCP Server</source>
-                <target>MCP Server</target>
+                <target>MCP-Server</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.actionmenu.mcp">
                 <source>MCP</source>
@@ -365,7 +365,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.settings.field.enableMcp">
                 <source>Enable MCP Server</source>
-                <target>MCP Server aktivieren</target>
+                <target>MCP-Server aktivieren</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.settings.field.mcpTokenLifetimeDays">
                 <source>MCP Token Lifetime (days)</source>

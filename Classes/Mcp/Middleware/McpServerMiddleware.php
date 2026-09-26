@@ -28,7 +28,7 @@ use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 class McpServerMiddleware implements MiddlewareInterface
 {
-    private const MAX_REQUEST_BODY_SIZE = 1_048_576; // 1 MB
+    private const MEGABYTE = 1_048_576;
     private const MCP_PATH = '/aisuite-mcp';
     private const WELL_KNOWN_PATH = '/.well-known/oauth-authorization-server';
 
@@ -98,7 +98,7 @@ class McpServerMiddleware implements MiddlewareInterface
             return $httpsCheck;
         }
 
-        $sizeCheck = $this->enforceBodySizeLimit($request);
+        $sizeCheck = $this->enforceBodySizeLimit($request, $extConf);
         if (null !== $sizeCheck) {
             return $sizeCheck;
         }
@@ -272,15 +272,22 @@ class McpServerMiddleware implements MiddlewareInterface
         ], 403);
     }
 
-    private function enforceBodySizeLimit(ServerRequestInterface $request): ?ResponseInterface
+    /**
+     * @param array<string, mixed> $extConf
+     */
+    private function enforceBodySizeLimit(ServerRequestInterface $request, array $extConf): ?ResponseInterface
     {
+        $limitMb = max(1, (int) ($extConf['mcpMaxRequestBodyMb'] ?? 1));
         $declared = (int) $request->getHeaderLine('Content-Length');
         $actual = $this->bodySize($request);
 
-        if (max($declared, $actual) > self::MAX_REQUEST_BODY_SIZE) {
+        if (max($declared, $actual) > $limitMb * self::MEGABYTE) {
             return new JsonResponse([
                 'error' => 'request_too_large',
-                'error_description' => 'Request body exceeds maximum size of 1 MB.',
+                'error_description' => sprintf(
+                    'Request body exceeds maximum size of %d MB. Raise ext_conf \'mcpMaxRequestBodyMb\' to accept larger uploads.',
+                    $limitMb,
+                ),
             ], 413);
         }
 

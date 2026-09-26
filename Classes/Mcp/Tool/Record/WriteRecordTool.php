@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
+use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
@@ -48,6 +49,7 @@ class WriteRecordTool extends AbstractDataTool
         private readonly RecordRepository $recordRepository,
         private readonly WorkspaceRecordService $workspaceRecords,
         private readonly TranslatedPageSlugService $translatedPageSlugs,
+        private readonly TranslationService $translationService,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -584,14 +586,14 @@ class WriteRecordTool extends AbstractDataTool
     private function localize(string $table, int $originUid, int $languageUid): int
     {
         $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
-        $dataHandler->start([], [$table => [$originUid => ['localize' => $languageUid]]]);
+        $dataHandler->start([], $this->translationService->buildLocalizationCommand($table, $originUid, $languageUid));
         $dataHandler->process_cmdmap();
 
         if ([] !== $dataHandler->errorLog) {
             throw $this->dataHandlerError->toException('localization', $table, $originUid, $dataHandler->errorLog);
         }
 
-        $newUid = (int) ($dataHandler->copyMappingArray[$table][$originUid] ?? 0);
+        $newUid = (int) ($dataHandler->copyMappingArray_merged[$table][$originUid] ?? 0);
         if ($newUid <= 0) {
             throw new InvalidParameterException(sprintf(
                 'TYPO3 created no translation of %s:%d — the record may already be a translation itself.',

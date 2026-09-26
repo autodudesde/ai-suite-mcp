@@ -6,11 +6,11 @@
             <!-- Hints: Scope / Permission / Access -->
             <trans-unit id="aiSuite.mcp.hint.scope_required">
                 <source>To use this feature, your API token needs the "%s" scope. You can request a new token with the required scope through the OAuth flow.</source>
-                <target>Um diese Funktion zu nutzen, benötigt dein API-Token den Scope „%s". Du kannst über den OAuth-Flow einen neuen Token mit dem benötigten Scope anfordern.</target>
+                <target>Um diese Funktion zu nutzen, benötigt dein API-Token den Scope „%s“. Du kannst über den OAuth-Flow einen neuen Token mit dem benötigten Scope anfordern.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.permission_required">
                 <source>Your user group needs the "%s" permission to use this tool. Please contact your administrator to enable it.</source>
-                <target>Deine Benutzergruppe benötigt die Berechtigung „%s", um dieses Tool zu nutzen. Bitte wende dich an deinen Administrator.</target>
+                <target>Deine Benutzergruppe benötigt die Berechtigung „%s“, um dieses Tool zu nutzen. Bitte wende dich an deinen Administrator.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.credits_needed">
                 <source>This action requires approximately %d credits. You currently have %d credits available. Top up your credits in the AI Suite Dashboard.</source>
@@ -18,7 +18,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.model_not_available">
                 <source>The AI model "%s" is not available for your user group. Available models: %s</source>
-                <target>Das KI-Modell „%s" ist für deine Benutzergruppe nicht verfügbar. Verfügbare Modelle: %s</target>
+                <target>Das KI-Modell „%s“ ist für deine Benutzergruppe nicht verfügbar. Verfügbare Modelle: %s</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.page_access">
                 <source>Page %d is outside your accessible page tree. You can work with pages in your assigned web mounts.</source>
@@ -28,7 +28,7 @@
             <!-- Hints: Server / System -->
             <trans-unit id="aiSuite.mcp.hint.server_temporarily_unavailable">
                 <source>The AI Suite Server is temporarily unavailable. Please try again in a few moments. Read-only tools (page tree, content, audit) continue to work.</source>
-                <target>Der AI Suite Server ist vorübergehend nicht erreichbar. Bitte versuche es in wenigen Augenblicken erneut. Lesende Tools (Seitenbaum, Content, Audit) funktionieren weiterhin.</target>
+                <target>Der AI Suite-Server ist vorübergehend nicht erreichbar. Bitte versuche es in wenigen Augenblicken erneut. Lesende Tools (Seitenbaum, Content, Audit) funktionieren weiterhin.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.save_issue">
                 <source>The changes could not be saved. This may be due to missing write permissions on the target page. Details: %s</source>
@@ -40,11 +40,11 @@
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.session_budget_reached">
                 <source>You've used %d credits in this session — great productivity! Your session budget of %d credits has been reached. Start a new session or contact your administrator for a higher budget.</source>
-                <target>Du hast in dieser Session %d Credits genutzt — großartige Produktivität! Dein Session-Budget von %d Credits ist erreicht. Starte eine neue Session oder kontaktiere deinen Administrator für ein höheres Budget.</target>
+                <target>Du hast in dieser Session %d Credits genutzt. Großartige Produktivität! Dein Session-Budget von %d Credits ist erreicht. Starte eine neue Session oder kontaktiere deinen Administrator für ein höheres Budget.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.internal_issue">
                 <source>Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.</source>
-                <target>Die Ausführung von „%s" ist unerwartet fehlgeschlagen. Ein identischer erneuter Aufruf wird wieder fehlschlagen. Prüfe die Argumente gegen das Tool-Schema; wenn sie korrekt sind, muss ein Administrator ran.</target>
+                <target>Die Ausführung von „%s“ ist unerwartet fehlgeschlagen. Ein identischer erneuter Aufruf wird wieder fehlschlagen. Prüfe die Argumente gegen das Tool-Schema; wenn sie korrekt sind, muss ein Administrator ran.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.page_excluded_from_ai">
                 <source>Page %d has been excluded from AI processing by its administrator. This page's content will not be sent to AI providers.</source>
@@ -62,15 +62,15 @@
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.no_file_access">
                 <source>You do not have permission to access file UID %d.</source>
-                <target>Du hast keine Berechtigung, auf Datei mit UID %d zuzugreifen.</target>
+                <target>Du hast keine Berechtigung, auf die Datei mit der UID %d zuzugreifen.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.no_folder_access">
                 <source>You do not have permission to access folder "%s".</source>
-                <target>Du hast keine Berechtigung, auf den Ordner „%s" zuzugreifen.</target>
+                <target>Du hast keine Berechtigung, auf den Ordner „%s“ zuzugreifen.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.no_language_access">
                 <source>You do not have permission to use language UID %d.</source>
-                <target>Du hast keine Berechtigung, Sprache mit UID %d zu verwenden.</target>
+                <target>Du hast keine Berechtigung, die Sprache mit der UID %d zu verwenden.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.no_be_user_context">
                 <source>No backend user context available.</source>
@@ -78,15 +78,15 @@
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.workspace_access_denied">
                 <source>Backend user has no access to workspace %d. Contact a TYPO3 administrator or adjust the MCP write mode.</source>
-                <target>Backend-Benutzer hat keinen Zugriff auf Workspace %d. Bitte kontaktiere einen TYPO3-Administrator oder passe den MCP-Write-Mode an.</target>
+                <target>Der Backend-Benutzer hat keinen Zugriff auf Workspace %d. Bitte kontaktiere einen TYPO3-Administrator oder passe den MCP-Write-Mode an.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.token_workspace_revoked">
                 <source>Token is bound to workspace %d, but the backend user no longer has access to it. Generate a new MCP token via the AI Suite backend module.</source>
-                <target>Der Token ist an Workspace %d gebunden, der Backend-Benutzer hat aber keinen Zugriff mehr darauf. Bitte über das AI-Suite-Backend-Modul einen neuen MCP-Token erzeugen.</target>
+                <target>Der Token ist an Workspace %d gebunden, der Backend-Benutzer hat aber keinen Zugriff mehr darauf. Erzeuge bitte über das AI Suite-Backend-Modul einen neuen MCP-Token.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.workspace_unavailable">
                 <source>Write mode "workspace" requires a draft workspace, but none could be resolved or created for this backend user. Nothing was written to the live site. Contact a TYPO3 administrator or adjust the MCP write mode.</source>
-                <target>Der Write-Mode "workspace" benötigt einen Draft-Workspace, für diesen Backend-Benutzer konnte aber keiner ermittelt oder angelegt werden. Es wurde nichts in die Live-Seite geschrieben. Bitte kontaktiere einen TYPO3-Administrator oder passe den MCP-Write-Mode an.</target>
+                <target>Der Write-Mode „workspace“ benötigt einen Draft-Workspace, für diesen Backend-Benutzer konnte aber keiner ermittelt oder angelegt werden. Es wurde nichts in die Live-Seite geschrieben. Bitte kontaktiere einen TYPO3-Administrator oder passe den MCP-Write-Mode an.</target>
             </trans-unit>
 
             <!-- Success Messages -->

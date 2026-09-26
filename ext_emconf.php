@@ -6,11 +6,11 @@ $EM_CONF['ai_suite_mcp'] = [
     'category' => 'be',
     'author' => 'AutoDudes',
     'state' => 'beta',
-    'version' => '0.9.0',
+    'version' => '0.10.0',
     'constraints' => [
         'depends' => [
             'typo3' => '12.4.11 - 14.3.99',
-            'ai_suite' => '12.24.0-14.99.99',
+            'ai_suite' => '12.24.1-14.99.99',
             'workspaces' => '12.4.11 - 14.3.99',
             'reports' => '12.4.11 - 14.3.99',
         ],

@@ -74,7 +74,7 @@ class BatchResultBuilderService
      * @param iterable<mixed>                                                                             $items
      * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, action?: ?string} $handler
      */
-    public function build(iterable $items, string $summaryNoun, callable $handler): BatchOutcome
+    public function build(iterable $items, string $summaryNoun, callable $handler, bool $workspaceContained = true): BatchOutcome
     {
         $lines = [];
         $succeeded = [];
@@ -160,7 +160,7 @@ class BatchResultBuilderService
                 : '❌ This call failed. Nothing was written.';
         }
 
-        if ([] !== $succeeded && $this->workspaceRecords->isActive()) {
+        if ($workspaceContained && [] !== $succeeded && $this->workspaceRecords->isActive()) {
             $text .= sprintf(
                 "\n\nℹ️ Written to workspace %d — not visible on the live site until the workspace is published.",
                 $this->workspaceRecords->getWorkspaceId(),

@@ -6,6 +6,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuite\Service\FileNameSanitizerService;
 use AutoDudes\AiSuiteMcp\Domain\Model\Dto\FetchedMedia;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\StoredMedia;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Http\RequestFactory;
@@ -117,11 +118,22 @@ final class RemoteMediaService
         return $file instanceof File ? $file : null;
     }
 
-    public function storeTempFile(Folder $folder, string $tempFilePath, string $baseName, string $extension): File
+    public function storeTempFile(Folder $folder, string $tempFilePath, string $baseName, string $extension, bool $replace = false): StoredMedia
     {
         $targetFileName = $baseName.'.'.$extension;
+        $outcome = StoredMedia::CREATED;
         if ($folder->hasFile($targetFileName)) {
+            if ($replace) {
+                $existing = $folder->getFile($targetFileName);
+                if (!$existing instanceof File) {
+                    throw new \RuntimeException(sprintf('"%s" exists but is not a regular file and cannot be replaced.', $targetFileName));
+                }
+                $folder->getStorage()->replaceFile($existing, $tempFilePath);
+
+                return new StoredMedia($existing, StoredMedia::REPLACED);
+            }
             $targetFileName = $baseName.'-'.bin2hex(random_bytes(4)).'.'.$extension;
+            $outcome = StoredMedia::RENAMED;
         }
 
         $file = $folder->getStorage()->addFile($tempFilePath, $folder, $targetFileName);
@@ -129,7 +141,7 @@ final class RemoteMediaService
             throw new \RuntimeException('Storing the file returned an unexpected type.');
         }
 
-        return $file;
+        return new StoredMedia($file, $outcome);
     }
 
     /**

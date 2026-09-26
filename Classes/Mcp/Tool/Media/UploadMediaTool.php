@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Media;
 
 use AutoDudes\AiSuiteMcp\Domain\Model\Dto\FetchedMedia;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\StoredMedia;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FilePreviewService;
@@ -17,6 +18,7 @@ use Mcp\Types\TextContent;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\Folder;
+use TYPO3\CMS\Core\Resource\ResourceStorage;
 
 #[AutoconfigureTag('aisuite.mcp.tool')]
 class UploadMediaTool extends AbstractTool
@@ -56,12 +58,23 @@ class UploadMediaTool extends AbstractTool
             'properties' => [
                 'media' => [
                     'type' => 'array',
-                    'description' => 'The media items to bring into FAL. Each: {url?, content?, fileName?, targetFolder?, title?, alternative?, description?}. Exactly one source per item: `url` for a remote http(s) file (downloaded), `content` for base64 / a data-URI (direct upload, needs fileName), or a YouTube/Vimeo link in `url` (stored as an online-media reference, not downloaded). Never give both url and content. Prefer url or an online-media link for videos — base64 is impractical for large files.',
+                    'description' => 'The media items to bring into FAL. Each: {url?, content?, fileName?, targetFolder?, onConflict?, createFolder?, title?, alternative?, description?}. Exactly one source per item: `url` for a remote http(s) file (downloaded), `content` for base64 / a data-URI (direct upload, needs fileName), or a YouTube/Vimeo link in `url` (stored as an online-media reference, not downloaded). Never give both url and content. Prefer url or an online-media link for videos — base64 is impractical for large files.',
                     'items' => ['type' => 'object'],
                 ],
                 'targetFolder' => [
                     'type' => 'string',
                     'description' => 'Default FAL folder (combined identifier, e.g. "1:/user_upload/") for all items without their own targetFolder.',
+                ],
+                'onConflict' => [
+                    'type' => 'string',
+                    'enum' => ['rename', 'replace'],
+                    'default' => 'rename',
+                    'description' => 'When the file name already exists in the target folder: "rename" stores it under a suffixed name, "replace" overwrites the existing file\'s content in place (same uid, every reference shows the new file). Default for all items without their own onConflict.',
+                ],
+                'createFolder' => [
+                    'type' => 'boolean',
+                    'default' => false,
+                    'description' => 'Create a missing target folder (and missing parents) instead of failing. Default for all items without their own createFolder.',
                 ],
             ],
             'required' => ['media'],
@@ -79,16 +92,21 @@ class UploadMediaTool extends AbstractTool
         $batchFolder = '' !== (string) ($params['targetFolder'] ?? '')
             ? (string) $params['targetFolder']
             : $config['defaultFolder'];
+        $batchDefaults = [
+            'onConflict' => $this->resolveConflictMode($params['onConflict'] ?? 'rename'),
+            'createFolder' => (bool) ($params['createFolder'] ?? false),
+        ];
 
         /** @var list<Content> $previews */
         $previews = [];
 
-        $outcome = $this->batchResultBuilder->build($media, 'media item(s)', function (mixed $item) use (&$previews, $batchFolder, $config): array {
+        $outcome = $this->batchResultBuilder->build($media, 'media item(s)', function (mixed $item) use (&$previews, $batchFolder, $batchDefaults, $config): array {
             if (!is_array($item)) {
                 throw new InvalidParameterException('Skipped (not an object).');
             }
 
-            $file = $this->processItem($item, $batchFolder, $config);
+            $stored = $this->processItem($item, $batchFolder, $batchDefaults, $config);
+            $file = $stored->file;
 
             if (count($previews) < self::PREVIEW_LIMIT && str_starts_with((string) $file->getMimeType(), 'image/')) {
                 $preview = $this->filePreviewService->generate($file, 256, 256);
@@ -98,10 +116,10 @@ class UploadMediaTool extends AbstractTool
             }
 
             return [
-                'message' => sprintf('%s stored (UID: %d) in %s', $file->getName(), $file->getUid(), $file->getParentFolder()->getCombinedIdentifier()),
+                'message' => sprintf('%s %s (UID: %d) in %s', $file->getName(), $stored->outcome, $file->getUid(), $file->getParentFolder()->getCombinedIdentifier()),
                 'uid' => $file->getUid(),
             ];
-        });
+        }, workspaceContained: false);
 
         return new CallToolResult(
             [new TextContent($outcome->text), ...$previews],
@@ -112,17 +130,24 @@ class UploadMediaTool extends AbstractTool
 
     /**
      * @param array<string, mixed>                                                                                                          $item
+     * @param array{onConflict: string, createFolder: bool}                                                                                 $batchDefaults
      * @param array{defaultFolder: string, maxBytes: int, allowedExtensions: list<string>, allowUrlFetch: bool, hostDenylist: list<string>} $config
      */
-    private function processItem(array $item, string $batchFolder, array $config): File
+    private function processItem(array $item, string $batchFolder, array $batchDefaults, array $config): StoredMedia
     {
         $targetFolder = '' !== (string) ($item['targetFolder'] ?? '')
             ? (string) $item['targetFolder']
             : $batchFolder;
+        $replace = 'replace' === (isset($item['onConflict']) ? $this->resolveConflictMode($item['onConflict']) : $batchDefaults['onConflict']);
+        $createFolder = isset($item['createFolder']) ? (bool) $item['createFolder'] : $batchDefaults['createFolder'];
 
-        $folder = $this->recordAccess->assertFolderWriteAccess(
-            $this->remoteMediaService->normalizeFolderIdentifier($targetFolder),
-        );
+        $identifier = $this->remoteMediaService->normalizeFolderIdentifier($targetFolder);
+        if (!$createFolder && !$this->folderExists($identifier)) {
+            throw new \RuntimeException(sprintf('Target folder %s does not exist. Set createFolder: true to create it.', $identifier));
+        }
+        $folder = $createFolder
+            ? $this->resolveOrCreateFolder($identifier)
+            : $this->recordAccess->assertFolderWriteAccess($identifier);
 
         $url = trim((string) ($item['url'] ?? ''));
         $content = (string) ($item['content'] ?? '');
@@ -133,45 +158,90 @@ class UploadMediaTool extends AbstractTool
 
         if ('' !== $url) {
             // Online media (YouTube/Vimeo/…) is stored as a reference, not downloaded.
-            $file = $this->remoteMediaService->transformOnlineMediaUrl($url, $folder);
-            if (!$file instanceof File) {
+            $onlineMedia = $this->remoteMediaService->transformOnlineMediaUrl($url, $folder);
+            $stored = $onlineMedia instanceof File ? new StoredMedia($onlineMedia, StoredMedia::CREATED) : null;
+            if (!$stored instanceof StoredMedia) {
                 if (!$config['allowUrlFetch']) {
                     throw new \RuntimeException('Downloading media from remote URLs is disabled by configuration (only base64 upload and online-media links are allowed).');
                 }
-                $file = $this->storeFetched(
+                $stored = $this->storeFetched(
                     $this->remoteMediaService->fetch($url, $config['maxBytes'], $config['hostDenylist']),
                     $folder,
                     $url,
                     $item,
+                    $replace,
                     $config,
                 );
             }
         } elseif ('' !== $content) {
-            $file = $this->storeFetched(
+            $stored = $this->storeFetched(
                 $this->remoteMediaService->decodeBase64ToTempFile($content, $config['maxBytes']),
                 $folder,
                 '',
                 $item,
+                $replace,
                 $config,
             );
         } else {
             throw new \RuntimeException('Provide a url or base64 content.');
         }
 
-        $this->remoteMediaService->applyMetadata($file, [
+        $this->remoteMediaService->applyMetadata($stored->file, [
             'title' => trim((string) ($item['title'] ?? '')),
             'alternative' => trim((string) ($item['alternative'] ?? '')),
             'description' => trim((string) ($item['description'] ?? '')),
         ]);
 
-        return $file;
+        return $stored;
+    }
+
+    private function resolveConflictMode(mixed $value): string
+    {
+        $mode = strtolower(trim((string) $value));
+        if (!in_array($mode, ['rename', 'replace'], true)) {
+            throw new InvalidParameterException(sprintf('onConflict must be "rename" or "replace", got "%s".', $mode));
+        }
+
+        return $mode;
+    }
+
+    private function folderExists(string $combinedIdentifier): bool
+    {
+        [$storageUid, $path] = explode(':', $combinedIdentifier, 2);
+
+        return $this->storageOf($storageUid)->hasFolder($path);
+    }
+
+    private function storageOf(string $storageUid): ResourceStorage
+    {
+        return $this->mcpToolContext->resourceFactory->getFolderObjectFromCombinedIdentifier($storageUid.':/')->getStorage();
+    }
+
+    private function resolveOrCreateFolder(string $combinedIdentifier): Folder
+    {
+        [$storageUid, $path] = explode(':', $combinedIdentifier, 2);
+        $storage = $this->storageOf($storageUid);
+        $existing = array_values(array_filter(explode('/', $path), static fn (string $segment): bool => '' !== $segment));
+        $missing = [];
+        while ([] !== $existing && !$storage->hasFolder('/'.implode('/', $existing).'/')) {
+            array_unshift($missing, (string) array_pop($existing));
+        }
+
+        $folder = $this->recordAccess->assertFolderWriteAccess(
+            $storageUid.':/'.([] === $existing ? '' : implode('/', $existing).'/'),
+        );
+        foreach ($missing as $name) {
+            $folder = $folder->createFolder($name);
+        }
+
+        return $folder;
     }
 
     /**
      * @param array<string, mixed>                                                                                                          $item
      * @param array{defaultFolder: string, maxBytes: int, allowedExtensions: list<string>, allowUrlFetch: bool, hostDenylist: list<string>} $config
      */
-    private function storeFetched(FetchedMedia $fetched, Folder $folder, string $url, array $item, array $config): File
+    private function storeFetched(FetchedMedia $fetched, Folder $folder, string $url, array $item, bool $replace, array $config): StoredMedia
     {
         try {
             $extension = $this->remoteMediaService->resolveExtension($fetched->mimeType, $url, (string) ($item['fileName'] ?? ''));
@@ -182,7 +252,7 @@ class UploadMediaTool extends AbstractTool
                 (string) ($item['title'] ?? ''),
             );
 
-            return $this->remoteMediaService->storeTempFile($folder, $fetched->tempFilePath, $baseName, $extension);
+            return $this->remoteMediaService->storeTempFile($folder, $fetched->tempFilePath, $baseName, $extension, $replace);
         } finally {
             if (is_file($fetched->tempFilePath)) {
                 @unlink($fetched->tempFilePath);

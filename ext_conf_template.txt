@@ -54,6 +54,9 @@ mcpAllowRawHtmlWrite = 0
 # cat=mcptables/tablesaccess; type=string; label=Excluded tables:Comma-separated list of tables that MCP tools must NOT read or write. Entries here are ADDED to a shipped default list that already blocks personal data (fe_users, fe_groups, be_users, be_groups), the editors' chat history, and configuration/system tables; nothing here can unblock a default. This matters because searchContent sweeps every page-bound table that carries text, so a table not named anywhere IS searched. TYPO3 backend permissions still apply additionally. ChEddi inherits this list and can extend it with its own chatExcludedTables (cheddi).
 mcpExcludedTables =
 
+# cat=mcpmedia/mediaupload; type=int+; label=Maximum request size (MB):Upper limit for one MCP request body. The default of 1 MB fits every tool except base64 uploads of larger media: base64 adds a third, so a 3 MB video needs 4 MB here. Raise it only as far as your uploads need, and raise nginx client_max_body_size and PHP post_max_size along with it. Values below 1 count as 1.
+mcpMaxRequestBodyMb = 1
+
 # cat=mcpmedia/mediaupload; type=string; label=Default upload folder:FAL combined identifier for the uploadMedia tool when no targetFolder is given (e.g. 1:/user_upload/).
 mcpMediaDefaultFolder = 1:/user_upload/
 

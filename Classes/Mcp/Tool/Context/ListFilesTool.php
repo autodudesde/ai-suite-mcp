@@ -72,6 +72,11 @@ class ListFilesTool extends AbstractTool
                     'default' => false,
                     'description' => 'Include files from subfolders. Default: false.',
                 ],
+                'includeFolders' => [
+                    'type' => 'boolean',
+                    'default' => false,
+                    'description' => 'Also list the subfolders (with recursive: every level below), e.g. to pick an upload target. Default: false.',
+                ],
                 'limit' => ['type' => 'integer', 'default' => 10, 'minimum' => 1, 'maximum' => 200, 'description' => 'Max files to return.'],
                 'offset' => ['type' => 'integer', 'default' => 0, 'minimum' => 0, 'description' => 'Skip first N files for pagination.'],
             ],
@@ -85,6 +90,7 @@ class ListFilesTool extends AbstractTool
         $onlyMissing = (bool) ($params['onlyMissingMetadata'] ?? false);
         $includeThumbnails = (bool) ($params['includeThumbnails'] ?? false);
         $recursive = (bool) ($params['recursive'] ?? false);
+        $includeFolders = (bool) ($params['includeFolders'] ?? false);
         $limit = (int) ($params['limit'] ?? 10);
         $offset = (int) ($params['offset'] ?? 0);
 
@@ -169,12 +175,17 @@ class ListFilesTool extends AbstractTool
             ];
         }
 
-        /** @var list<Content> $content */
-        $content = [new TextContent((string) json_encode([
+        $listing = [
             'folder' => $storageUid.':'.$folderPath,
             'files' => $files,
             'pagination' => ['total' => $total, 'limit' => $limit, 'offset' => $offset, 'hasMore' => ($offset + $limit) < $total],
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))];
+        ];
+        if ($includeFolders) {
+            $listing['folders'] = $this->listFolders($storage, $folder, 0, $recursive ? 10 : 0);
+        }
+
+        /** @var list<Content> $content */
+        $content = [new TextContent((string) json_encode($listing, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE))];
 
         if ($includeThumbnails) {
             foreach ($paged as $file) {
@@ -186,6 +197,29 @@ class ListFilesTool extends AbstractTool
         }
 
         return new CallToolResult($content);
+    }
+
+    /**
+     * @return list<array{identifier: string, name: string, fileCount: int}>
+     */
+    private function listFolders(ResourceStorage $storage, Folder $folder, int $depth, int $maxDepth): array
+    {
+        $folders = [];
+        foreach ($storage->getFoldersInFolder($folder) as $subfolder) {
+            if ($storage->isProcessingFolder($subfolder)) {
+                continue;
+            }
+            $folders[] = [
+                'identifier' => $subfolder->getCombinedIdentifier(),
+                'name' => $subfolder->getName(),
+                'fileCount' => $storage->countFilesInFolder($subfolder),
+            ];
+            if ($depth < $maxDepth) {
+                array_push($folders, ...$this->listFolders($storage, $subfolder, $depth + 1, $maxDepth));
+            }
+        }
+
+        return $folders;
     }
 
     /**
