@@ -16,7 +16,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\McpException;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
-use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NavigationTargetCollector;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OutputFormatterService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ParameterValidatorService;
@@ -49,7 +48,6 @@ abstract class AbstractTool implements ToolInterface
     protected readonly LocalizationService $localizationService;
     protected readonly BackendUserService $backendUserService;
     protected readonly ResourceFactory $resourceFactory;
-    protected readonly McpExcludedTablesService $excludedTablesService;
     protected readonly RecordAccessService $recordAccess;
     protected readonly TcaLabelService $tcaLabel;
     protected readonly OutputFormatterService $outputFormatter;
@@ -69,7 +67,6 @@ abstract class AbstractTool implements ToolInterface
         $this->localizationService = $mcpToolContext->localizationService;
         $this->backendUserService = $mcpToolContext->backendUserService;
         $this->resourceFactory = $mcpToolContext->resourceFactory;
-        $this->excludedTablesService = $mcpToolContext->excludedTablesService;
         $this->recordAccess = $mcpToolContext->recordAccess;
         $this->tcaLabel = $mcpToolContext->tcaLabel;
         $this->outputFormatter = $mcpToolContext->outputFormatter;

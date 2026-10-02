@@ -6,14 +6,12 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
-use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
-use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -23,8 +21,6 @@ abstract class AbstractAiTool extends AbstractTool
     protected bool $openWorldHint = true;
     protected readonly SendRequestService $sendRequestService;
     protected readonly SessionTrackerService $creditTracker;
-    protected readonly ExtensionConfiguration $extensionConfiguration;
-    protected readonly WorkspaceContextService $workspaceContextService;
     protected readonly DataHandlerSanitizerService $dataHandlerSanitizer;
     private bool $dataFlowNotified = false;
 
@@ -33,8 +29,6 @@ abstract class AbstractAiTool extends AbstractTool
         parent::__construct($mcpToolContext);
         $this->sendRequestService = $mcpToolContext->sendRequestService;
         $this->creditTracker = $mcpToolContext->creditTracker;
-        $this->extensionConfiguration = $mcpToolContext->extensionConfiguration;
-        $this->workspaceContextService = $mcpToolContext->workspaceContextService;
         $this->dataHandlerSanitizer = $mcpToolContext->dataHandlerSanitizer;
     }
 
@@ -288,21 +282,6 @@ abstract class AbstractAiTool extends AbstractTool
 
             return 'en';
         }
-    }
-
-    protected function getWorkspaceInfo(): string
-    {
-        $workspaceId = $this->workspaceContextService->getWorkspaceId();
-
-        if ($workspaceId <= 0) {
-            return '';
-        }
-
-        return "\n\n".$this->translateOrFallback(
-            'success.written_to_workspace',
-            [$workspaceId],
-            sprintf('Changes saved to workspace %d. They must be published to become visible.', $workspaceId),
-        );
     }
 
     /**

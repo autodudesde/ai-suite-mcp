@@ -18,17 +18,6 @@ class DataHandlerSanitizerService
      * @param array<string, mixed> $data
      * @param array<string, mixed> $row
      *
-     * @return array<string, mixed>
-     */
-    public function sanitizeFields(string $table, array $data, ?string $typeKey = null, array $row = []): array
-    {
-        return $this->sanitizeFieldsWithReport($table, $data, $typeKey, $row)['data'];
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     * @param array<string, mixed> $row
-     *
      * @return array{data: array<string, mixed>, stripped: list<string>, blocked: list<string>}
      */
     public function sanitizeFieldsWithReport(string $table, array $data, ?string $typeKey = null, array $row = []): array

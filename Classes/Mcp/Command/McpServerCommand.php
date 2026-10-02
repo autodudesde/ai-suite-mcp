@@ -86,7 +86,6 @@ class McpServerCommand extends Command
             $beUserUid,
             $scopes,
             'stdio-cli',
-            '',
             ExtensionManagementUtility::getExtensionVersion('ai_suite_mcp') ?: '0.0.0',
         );
 

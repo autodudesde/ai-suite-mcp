@@ -1,9 +1,9 @@
-# customcategory=mcpserver=Server
-# customcategory=mcpaccess=Access
-# customcategory=mcpwrites=Writes
-# customcategory=mcptables=Tables
-# customcategory=mcpmedia=Media
-# customcategory=mcplogging=Logging
+# customcategory=server=Server
+# customcategory=access=Access
+# customcategory=writes=Writes
+# customcategory=tables=Tables
+# customcategory=media=Media
+# customcategory=logging=Logging
 # customsubcategory=serverendpoint=Endpoint
 # customsubcategory=accessoauth=OAuth clients
 # customsubcategory=accesscors=Browser clients
@@ -15,68 +15,68 @@
 # customsubcategory=loggingfiles=Log files
 # customsubcategory=loggingaudit=Audit trail
 
-# cat=mcpserver/serverendpoint; type=boolean; label=Enable MCP server:Enable the MCP endpoint at /aisuite-mcp for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients
+# cat=server/serverendpoint; type=boolean; label=Enable MCP server:Enable the MCP endpoint at /aisuite-mcp for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients
 enableMcp = 0
 
-# cat=mcpserver/serverendpoint; type=boolean; label=Allow HTTP (development only):Allow MCP over unencrypted HTTP. NEVER enable in production!
+# cat=server/serverendpoint; type=boolean; label=Allow HTTP (development only):Allow MCP over unencrypted HTTP. NEVER enable in production!
 mcpAllowHttp = 0
 
-# cat=mcpserver/serverendpoint; type=string; label=Backend base URL:Scheme and host that MCP tool results use for backend links (e.g. https://www.example.com). Empty = derived automatically from the current request, otherwise from the site configuration. Set this when the backend is reached under a different domain than the site base, or when the stdio transport must produce links without a request.
+# cat=server/serverendpoint; type=string; label=Backend base URL:Scheme and host that MCP tool results use for backend links (e.g. https://www.example.com). Empty = derived automatically from the current request, otherwise from the site configuration. Set this when the backend is reached under a different domain than the site base, or when the stdio transport must produce links without a request.
 mcpBackendBaseUrl =
 
-# cat=mcpserver/serverendpoint; type=boolean; label=Open backend links through a bounce page:Backend links in tool results point at /aisuite-mcp/open on the backend host, which continues to the backend from that host. Without it, a link clicked in an external chat (claude.ai, ChatGPT) reaches the backend without the editor's session cookie and ends on the login screen. Links handed out earlier keep opening either way.
+# cat=server/serverendpoint; type=boolean; label=Open backend links through a bounce page:Backend links in tool results point at /aisuite-mcp/open on the backend host, which continues to the backend from that host. Without it, a link clicked in an external chat (claude.ai, ChatGPT) reaches the backend without the editor's session cookie and ends on the login screen. Links handed out earlier keep opening either way.
 mcpBackendLinkBounce = 1
 
-# cat=mcpserver/serverendpoint; type=int+; label=Session timeout (seconds):Drop idle MCP sessions after this many seconds. Lower values free PHP workers and reduce session-store bloat. 0 = SDK default (3600s). Legacy protocol revisions only: MCP 2026-07-28 has no protocol session.
+# cat=server/serverendpoint; type=int+; label=Session timeout (seconds):Drop idle MCP sessions after this many seconds. Lower values free PHP workers and reduce session-store bloat. 0 = SDK default (3600s). Legacy protocol revisions only: MCP 2026-07-28 has no protocol session.
 mcpSessionTimeoutSeconds = 1800
 
-# cat=mcpaccess/accessoauth; type=int+; label=Token lifetime (days):How long OAuth tokens remain valid
+# cat=access/accessoauth; type=int+; label=Token lifetime (days):How long OAuth tokens remain valid
 mcpTokenLifetimeDays = 30
 
-# cat=mcpaccess/accessoauth; type=int+; label=Credit budget per token:Stop a connector once it has spent this many AI credits on one token. Counts across every request the token makes, not per conversation, and survives a restart because the total lives on the token row. 0 = no budget, which is the previous behaviour.
+# cat=access/accessoauth; type=int+; label=Credit budget per token:Stop a connector once it has spent this many AI credits on one token. Counts across every request the token makes, not per conversation, and survives a restart because the total lives on the token row. 0 = no budget, which is the previous behaviour.
 mcpMaxCreditsPerSession = 0
 
-# cat=mcpaccess/accessoauth; type=string; label=Allowed client IDs:Comma-separated list of allowed OAuth client IDs (empty = all allowed)
+# cat=access/accessoauth; type=string; label=Allowed client IDs:Comma-separated list of allowed OAuth client IDs (empty = all allowed)
 mcpAllowedClientIds =
 
-# cat=mcpaccess/accessoauth; type=string; label=Allowed redirect URIs:Comma-separated list of allowed external redirect URIs for OAuth (localhost is always allowed)
+# cat=access/accessoauth; type=string; label=Allowed redirect URIs:Comma-separated list of allowed external redirect URIs for OAuth (localhost is always allowed)
 mcpAllowedRedirectUris =
 
-# cat=mcpaccess/accesscors; type=string; label=Allowed CORS origins:Comma-separated list of allowed CORS origins (empty = Development: all allowed, Production: same-origin only)
+# cat=access/accesscors; type=string; label=Allowed CORS origins:Comma-separated list of allowed CORS origins (empty = Development: all allowed, Production: same-origin only)
 mcpAllowedOrigins =
 
-# cat=mcpwrites/writestarget; type=options[Draft workspace=workspace,Live=live]; label=Write mode:How MCP tools write data. Draft workspace (default) = always a draft; if the user has none, a per-user workspace is created automatically (requires ext:workspaces), and a write is refused rather than silently sent to live. Live = always direct to live. ChEddi inherits this by default but can override it with its own chatWriteMode (cheddi).
+# cat=writes/writestarget; type=options[Draft workspace=workspace,Live=live]; label=Write mode:How MCP tools write data. Draft workspace (default) = always a draft; if the user has none, a per-user workspace is created automatically (requires ext:workspaces), and a write is refused rather than silently sent to live. Live = always direct to live. ChEddi inherits this by default but can override it with its own chatWriteMode (cheddi).
 mcpWriteMode = workspace
 
-# cat=mcpwrites/writestarget; type=boolean; label=Allow raw HTML write:Allow MCP write tools to store raw markup verbatim in code editor fields (e.g. tt_content.bodytext of CType "html"). TYPO3 renders those fields unfiltered, so an agent - or a prompt injection - can place arbitrary HTML/JavaScript on the site. When disabled, a write that carries markup into such a field is rejected: nothing is stored and the existing value survives. ChEddi inherits this by default and can only tighten it with its own chatAllowRawHtmlWrite (cheddi).
+# cat=writes/writestarget; type=boolean; label=Allow raw HTML write:Allow MCP write tools to store raw markup verbatim in code editor fields (e.g. tt_content.bodytext of CType "html"). TYPO3 renders those fields unfiltered, so an agent - or a prompt injection - can place arbitrary HTML/JavaScript on the site. When disabled, a write that carries markup into such a field is rejected: nothing is stored and the existing value survives. ChEddi inherits this by default and can only tighten it with its own chatAllowRawHtmlWrite (cheddi).
 mcpAllowRawHtmlWrite = 0
 
-# cat=mcptables/tablesaccess; type=string; label=Excluded tables:Comma-separated list of tables that MCP tools must NOT read or write. Entries here are ADDED to a shipped default list that already blocks personal data (fe_users, fe_groups, be_users, be_groups), the editors' chat history, and configuration/system tables; nothing here can unblock a default. This matters because searchContent sweeps every page-bound table that carries text, so a table not named anywhere IS searched. TYPO3 backend permissions still apply additionally. ChEddi inherits this list and can extend it with its own chatExcludedTables (cheddi).
+# cat=tables/tablesaccess; type=string; label=Excluded tables:Comma-separated list of tables that MCP tools must NOT read or write. Entries here are ADDED to a shipped default list that already blocks personal data (fe_users, fe_groups, be_users, be_groups), the editors' chat history, and configuration/system tables; nothing here can unblock a default. This matters because searchContent sweeps every page-bound table that carries text, so a table not named anywhere IS searched. TYPO3 backend permissions still apply additionally. ChEddi inherits this list and can extend it with its own chatExcludedTables (cheddi).
 mcpExcludedTables =
 
-# cat=mcpmedia/mediaupload; type=int+; label=Maximum request size (MB):Upper limit for one MCP request body. The default of 1 MB fits every tool except base64 uploads of larger media: base64 adds a third, so a 3 MB video needs 4 MB here. Raise it only as far as your uploads need, and raise nginx client_max_body_size and PHP post_max_size along with it. Values below 1 count as 1.
+# cat=media/mediaupload; type=int+; label=Maximum request size (MB):Upper limit for one MCP request body. The default of 1 MB fits every tool except base64 uploads of larger media: base64 adds a third, so a 3 MB video needs 4 MB here. Raise it only as far as your uploads need, and raise nginx client_max_body_size and PHP post_max_size along with it. Values below 1 count as 1.
 mcpMaxRequestBodyMb = 1
 
-# cat=mcpmedia/mediaupload; type=string; label=Default upload folder:FAL combined identifier for the uploadMedia tool when no targetFolder is given (e.g. 1:/user_upload/).
+# cat=media/mediaupload; type=string; label=Default upload folder:FAL combined identifier for the uploadMedia tool when no targetFolder is given (e.g. 1:/user_upload/).
 mcpMediaDefaultFolder = 1:/user_upload/
 
-# cat=mcpmedia/mediaupload; type=int+; label=Maximum file size (MB):Maximum size for a single uploaded/downloaded media file. Applies to URL downloads and base64 uploads. 0 = no explicit limit (PHP/storage limits still apply).
+# cat=media/mediaupload; type=int+; label=Maximum file size (MB):Maximum size for a single uploaded/downloaded media file. Applies to URL downloads and base64 uploads. 0 = no explicit limit (PHP/storage limits still apply).
 mcpMediaMaxSizeMb = 50
 
-# cat=mcpmedia/mediaupload; type=string; label=Allowed file extensions:Comma-separated lowercase file extensions the uploadMedia tool may store (URL download / base64). SVG is intentionally excluded by default (XSS). Online-media links (YouTube/Vimeo) are governed by TYPO3's online media helpers, not this list.
+# cat=media/mediaupload; type=string; label=Allowed file extensions:Comma-separated lowercase file extensions the uploadMedia tool may store (URL download / base64). SVG is intentionally excluded by default (XSS). Online-media links (YouTube/Vimeo) are governed by TYPO3's online media helpers, not this list.
 mcpMediaAllowedExtensions = jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg
 
-# cat=mcpmedia/mediafetch; type=boolean; label=Allow URL fetch:Allow the uploadMedia tool to download files from remote http(s) URLs. When disabled, only base64 upload and online-media links (YouTube/Vimeo) are accepted. URL fetching is SSRF-guarded (private/loopback/link-local targets are always blocked), but you can disable it entirely here.
+# cat=media/mediafetch; type=boolean; label=Allow URL fetch:Allow the uploadMedia tool to download files from remote http(s) URLs. When disabled, only base64 upload and online-media links (YouTube/Vimeo) are accepted. URL fetching is SSRF-guarded (private/loopback/link-local targets are always blocked), but you can disable it entirely here.
 mcpMediaAllowUrlFetch = 1
 
-# cat=mcpmedia/mediafetch; type=string; label=Host denylist:Comma-separated additional hostnames or IP/CIDR ranges that uploadMedia must never fetch from (on top of the always-on private/loopback/link-local block). Example: metadata.internal,10.0.0.0/8
+# cat=media/mediafetch; type=string; label=Host denylist:Comma-separated additional hostnames or IP/CIDR ranges that uploadMedia must never fetch from (on top of the always-on private/loopback/link-local block). Example: metadata.internal,10.0.0.0/8
 mcpMediaHostDenylist =
 
-# cat=mcplogging/loggingfiles; type=boolean; label=Verbose INFO log:Write the verbose INFO trace to var/log/aisuite_mcp.log. The WARNING+ alert log (var/log/aisuite_mcp_warnings.log) stays active either way. Disable in production once monitoring is mature to reduce I/O and PII surface. ChEddi inherits this by default and can override it with its own chatLogVerbose (cheddi).
+# cat=logging/loggingfiles; type=boolean; label=Verbose INFO log:Write the verbose INFO trace to var/log/aisuite_mcp.log. The WARNING+ alert log (var/log/aisuite_mcp_warnings.log) stays active either way. Disable in production once monitoring is mature to reduce I/O and PII surface. ChEddi inherits this by default and can override it with its own chatLogVerbose (cheddi).
 mcpLogVerbose = 1
 
-# cat=mcplogging/loggingfiles; type=string; label=Log redaction patterns:Comma-separated additional regex patterns (without delimiters) whose matches are replaced with [REDACTED] in MCP log entries. Built-in defaults (Bearer tokens, 64-char hex hashes, email addresses) are always applied - these patterns are added on top. The ChEddi log applies them as well, plus its own chatLogRedactionPatterns (cheddi).
+# cat=logging/loggingfiles; type=string; label=Log redaction patterns:Comma-separated additional regex patterns (without delimiters) whose matches are replaced with [REDACTED] in MCP log entries. Built-in defaults (Bearer tokens, 64-char hex hashes, email addresses) are always applied - these patterns are added on top. The ChEddi log applies them as well, plus its own chatLogRedactionPatterns (cheddi).
 mcpLogRedactionPatterns =
 
-# cat=mcplogging/loggingaudit; type=string; label=Trusted proxies:Comma-separated list of trusted reverse-proxy IPs/CIDRs (e.g. 10.0.0.0/8,192.168.0.0/16). When set, audit-log entries resolve the real client IP from X-Forwarded-For instead of the proxy peer IP. Empty = X-Forwarded-For is ignored.
+# cat=logging/loggingaudit; type=string; label=Trusted proxies:Comma-separated list of trusted reverse-proxy IPs/CIDRs (e.g. 10.0.0.0/8,192.168.0.0/16). When set, audit-log entries resolve the real client IP from X-Forwarded-For instead of the proxy peer IP. Empty = X-Forwarded-For is ignored.
 mcpTrustedProxies =

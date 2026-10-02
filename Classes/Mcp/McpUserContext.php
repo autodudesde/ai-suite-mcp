@@ -15,15 +15,11 @@ class McpUserContext
 
     private string $clientId = '';
 
-    private string $tokenId = '';
-
     private string $issuedVersion = '';
 
     private bool $initialized = false;
 
     private ?ServerRequestInterface $serverRequest = null;
-
-    private string $sessionKey = '';
 
     private bool $inlineBackendLinks = true;
 
@@ -34,7 +30,7 @@ class McpUserContext
      *
      * @throws \LogicException
      */
-    public function initialize(int $beUserUid, array $scopes, string $clientId, string $tokenId, string $issuedVersion = ''): void
+    public function initialize(int $beUserUid, array $scopes, string $clientId, string $issuedVersion = ''): void
     {
         if ($this->initialized) {
             throw new \LogicException(
@@ -45,7 +41,6 @@ class McpUserContext
         $this->beUserUid = $beUserUid;
         $this->scopes = $scopes;
         $this->clientId = $clientId;
-        $this->tokenId = $tokenId;
         $this->issuedVersion = $issuedVersion;
         $this->initialized = true;
     }
@@ -76,11 +71,6 @@ class McpUserContext
     public function getClientId(): string
     {
         return $this->clientId;
-    }
-
-    public function getTokenId(): string
-    {
-        return $this->tokenId;
     }
 
     public function getIssuedVersion(): string
@@ -116,15 +106,5 @@ class McpUserContext
     public function wantsFoundRecords(): bool
     {
         return $this->reportFoundRecords;
-    }
-
-    public function setSessionKey(string $sessionKey): void
-    {
-        $this->sessionKey = $sessionKey;
-    }
-
-    public function getSessionKey(): string
-    {
-        return '' !== $this->sessionKey ? $this->sessionKey : $this->tokenId;
     }
 }

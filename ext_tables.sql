@@ -47,14 +47,3 @@ CREATE TABLE tx_aisuite_oauth_tokens (
     KEY revoked_cleanup (deleted, created_at),
     KEY family_id (family_id)
 );
-
-CREATE TABLE tx_aisuite_oauth_consents (
-    uid int(11) unsigned NOT NULL AUTO_INCREMENT,
-    be_user_uid int(11) unsigned NOT NULL DEFAULT '0',
-    client_id varchar(256) NOT NULL DEFAULT '',
-    scopes text,
-    granted_at int(11) unsigned NOT NULL DEFAULT '0',
-
-    PRIMARY KEY (uid),
-    KEY be_user_client (be_user_uid, client_id(191))
-);

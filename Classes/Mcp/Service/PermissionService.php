@@ -181,14 +181,6 @@ class PermissionService
     }
 
     /**
-     * @return list<string>
-     */
-    public function getRequiredPermissions(string $toolName): array
-    {
-        return self::TOOL_PERMISSION_MAP[$toolName] ?? [];
-    }
-
-    /**
      * @throws \LogicException
      */
     public function getRequiredScope(string $toolName): string

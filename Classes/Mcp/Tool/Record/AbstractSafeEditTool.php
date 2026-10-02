@@ -112,16 +112,6 @@ abstract class AbstractSafeEditTool extends AbstractDataTool
         return ['result' => $result, 'count' => count($matches)];
     }
 
-    protected function replaceFirst(string $subject, string $search, string $replace): string
-    {
-        $pos = strpos($subject, $search);
-        if (false === $pos) {
-            return $subject;
-        }
-
-        return substr_replace($subject, $replace, $pos, strlen($search));
-    }
-
     protected function snippet(string $value, string $needle): string
     {
         $pos = strpos($value, $needle);

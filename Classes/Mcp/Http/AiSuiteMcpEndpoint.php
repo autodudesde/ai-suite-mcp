@@ -87,7 +87,6 @@ class AiSuiteMcpEndpoint
                 $tokenData->beUserUid,
                 $tokenData->scopes,
                 $tokenData->clientId,
-                $tokenData->tokenId,
                 $tokenData->issuedVersion,
             );
             $this->userContext->setServerRequest($request);
@@ -100,9 +99,6 @@ class AiSuiteMcpEndpoint
 
             $isModern = $this->isModernRequest($request, $payload);
             $mcpSessionId = $isModern ? '' : trim($request->getHeaderLine('Mcp-Session-Id'));
-            if ('' !== $mcpSessionId) {
-                $this->userContext->setSessionKey('mcp:'.$mcpSessionId);
-            }
 
             $httpMessage = new HttpMessage($rawBody);
             $httpMessage->setMethod($request->getMethod());
@@ -244,7 +240,6 @@ class AiSuiteMcpEndpoint
         }
 
         $httpMessage->setHeader('Mcp-Session-Id', $sessionId);
-        $this->userContext->setSessionKey('mcp:'.$sessionId);
     }
 
     private function needsSessionRecovery(string $mcpSessionId, ?\stdClass $payload): bool

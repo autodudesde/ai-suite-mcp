@@ -14,7 +14,6 @@ use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\AuditResultRecorder;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\McpExcludedTablesService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NavigationTargetCollector;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OutputFormatterService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ParameterValidatorService;
@@ -46,7 +45,6 @@ class ToolContext implements SingletonInterface
         public readonly DataHandlerSanitizerService $dataHandlerSanitizer,
         public readonly DataHandlerErrorFormatter $dataHandlerError,
         public readonly ResourceFactory $resourceFactory,
-        public readonly McpExcludedTablesService $excludedTablesService,
         public readonly RecordAccessService $recordAccess,
         public readonly TcaLabelService $tcaLabel,
         public readonly OutputFormatterService $outputFormatter,

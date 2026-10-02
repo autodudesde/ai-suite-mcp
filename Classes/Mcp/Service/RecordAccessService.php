@@ -479,29 +479,6 @@ class RecordAccessService
 
     /**
      * @throws InsufficientPermissionException
-     * @throws \RuntimeException
-     */
-    public function assertFileWriteAccess(int $fileUid): File
-    {
-        $beUser = $this->requireBackendUser();
-
-        try {
-            $file = $this->resourceFactory->getFileObject($fileUid);
-        } catch (\Throwable $e) {
-            throw new \RuntimeException(sprintf('File UID %d not found.', $fileUid), 0, $e);
-        }
-
-        if (!$beUser->isAdmin() && !$file->checkActionPermission('write')) {
-            throw new InsufficientPermissionException(
-                $this->translateOrFallback('hint.no_file_access', [$fileUid], sprintf('No write permission on file UID %d.', $fileUid)),
-            );
-        }
-
-        return $file;
-    }
-
-    /**
-     * @throws InsufficientPermissionException
      */
     public function assertFolderReadAccess(string $combinedIdentifier): Folder
     {

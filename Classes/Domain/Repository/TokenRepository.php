@@ -11,7 +11,6 @@ class TokenRepository
 {
     private const CODE_TABLE = 'tx_aisuite_oauth_codes';
     private const TOKEN_TABLE = 'tx_aisuite_oauth_tokens';
-    private const CONSENT_TABLE = 'tx_aisuite_oauth_consents';
 
     public function __construct(
         private readonly ConnectionPool $connectionPool,
@@ -213,22 +212,6 @@ class TokenRepository
         ;
     }
 
-    public function revokeAllTokensForUserAndClient(int $beUserUid, string $clientId): int
-    {
-        $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
-
-        return $qb
-            ->update(self::TOKEN_TABLE)
-            ->set('deleted', 1)
-            ->where(
-                $qb->expr()->eq('be_user_uid', $qb->createNamedParameter($beUserUid, Connection::PARAM_INT)),
-                $qb->expr()->eq('client_id', $qb->createNamedParameter($clientId)),
-                $qb->expr()->eq('deleted', 0),
-            )
-            ->executeStatement()
-        ;
-    }
-
     /**
      * @return list<array<string, mixed>>
      */
@@ -351,49 +334,5 @@ class TokenRepository
             ->where($qb->expr()->lt('expires_at', $qb->createNamedParameter($cutoff, Connection::PARAM_INT)))
             ->executeStatement()
         ;
-    }
-
-    /**
-     * @return null|array<string, mixed>
-     */
-    public function findConsent(int $beUserUid, string $clientId): ?array
-    {
-        $qb = $this->connectionPool->getQueryBuilderForTable(self::CONSENT_TABLE);
-        $result = $qb
-            ->select('*')
-            ->from(self::CONSENT_TABLE)
-            ->where(
-                $qb->expr()->eq('be_user_uid', $qb->createNamedParameter($beUserUid, Connection::PARAM_INT)),
-                $qb->expr()->eq('client_id', $qb->createNamedParameter($clientId)),
-            )
-            ->executeQuery()
-            ->fetchAssociative()
-        ;
-
-        return $result ?: null;
-    }
-
-    /**
-     * @param list<string> $scopes
-     */
-    public function saveConsent(int $beUserUid, string $clientId, array $scopes): void
-    {
-        $existing = $this->findConsent($beUserUid, $clientId);
-        $connection = $this->connectionPool->getConnectionForTable(self::CONSENT_TABLE);
-
-        if (null !== $existing) {
-            $connection->update(
-                self::CONSENT_TABLE,
-                ['scopes' => implode(' ', $scopes), 'granted_at' => time()],
-                ['uid' => (int) $existing['uid']],
-            );
-        } else {
-            $connection->insert(self::CONSENT_TABLE, [
-                'be_user_uid' => $beUserUid,
-                'client_id' => $clientId,
-                'scopes' => implode(' ', $scopes),
-                'granted_at' => time(),
-            ]);
-        }
     }
 }

@@ -9,7 +9,6 @@ use AutoDudes\AiSuite\Controller\Trait\AjaxResponseTrait;
 use AutoDudes\AiSuite\Service\AiSuiteContext;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TranslationService;
-use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\TokenRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
@@ -48,7 +47,6 @@ class McpController extends AbstractBackendController
         protected readonly OAuthService $oauthService,
         protected readonly TokenRepository $tokenRepository,
         protected readonly SysWorkspaceRepository $sysWorkspaceRepository,
-        protected readonly UuidService $uuidService,
         protected readonly LoggerInterface $logger,
     ) {
         parent::__construct(

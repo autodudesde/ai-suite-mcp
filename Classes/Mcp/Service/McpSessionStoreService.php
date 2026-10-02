@@ -43,11 +43,6 @@ class McpSessionStoreService implements SingletonInterface
         return false === $files ? 0 : count($files);
     }
 
-    public function exceedsWarnThreshold(): bool
-    {
-        return $this->countFiles() > self::WARN_THRESHOLD;
-    }
-
     public function getRetentionSeconds(): int
     {
         try {

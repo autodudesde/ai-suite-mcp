@@ -52,20 +52,6 @@ class SessionTrackerService
         );
     }
 
-    public function getUsed(): int
-    {
-        return $this->creditsUsedInSession;
-    }
-
-    public function getRemaining(): int
-    {
-        if ($this->maxCreditsPerSession <= 0) {
-            return -1; // unlimited
-        }
-
-        return max(0, $this->maxCreditsPerSession - $this->creditsUsedInSession);
-    }
-
     public function isInitialized(): bool
     {
         return $this->initialized;

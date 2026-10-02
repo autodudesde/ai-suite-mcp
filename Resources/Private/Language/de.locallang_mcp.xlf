@@ -12,10 +12,6 @@
                 <source>Your user group needs the "%s" permission to use this tool. Please contact your administrator to enable it.</source>
                 <target>Deine Benutzergruppe benötigt die Berechtigung „%s“, um dieses Tool zu nutzen. Bitte wende dich an deinen Administrator.</target>
             </trans-unit>
-            <trans-unit id="aiSuite.mcp.hint.credits_needed">
-                <source>This action requires approximately %d credits. You currently have %d credits available. Top up your credits in the AI Suite Dashboard.</source>
-                <target>Für diese Aktion werden ca. %d Credits benötigt. Aktuell verfügbar: %d Credits. Lade deine Credits im AI Suite Dashboard auf.</target>
-            </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.model_not_available">
                 <source>The AI model "%s" is not available for your user group. Available models: %s</source>
                 <target>Das KI-Modell „%s“ ist für deine Benutzergruppe nicht verfügbar. Verfügbare Modelle: %s</target>
@@ -37,10 +33,6 @@
             <trans-unit id="aiSuite.mcp.hint.invalid_input">
                 <source>Please check the input: %s</source>
                 <target>Bitte überprüfe die Eingabe: %s</target>
-            </trans-unit>
-            <trans-unit id="aiSuite.mcp.hint.session_budget_reached">
-                <source>You've used %d credits in this session — great productivity! Your session budget of %d credits has been reached. Start a new session or contact your administrator for a higher budget.</source>
-                <target>Du hast in dieser Session %d Credits genutzt. Großartige Produktivität! Dein Session-Budget von %d Credits ist erreicht. Starte eine neue Session oder kontaktiere deinen Administrator für ein höheres Budget.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.internal_issue">
                 <source>Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.</source>
@@ -90,30 +82,6 @@
             </trans-unit>
 
             <!-- Success Messages -->
-            <trans-unit id="aiSuite.mcp.success.metadata_applied">
-                <source>SEO metadata successfully updated for page %d.</source>
-                <target>SEO-Metadaten für Seite %d erfolgreich aktualisiert.</target>
-            </trans-unit>
-            <trans-unit id="aiSuite.mcp.success.translation_created">
-                <source>Translation for page %d (%s) successfully created.</source>
-                <target>Übersetzung für Seite %d (%s) erfolgreich erstellt.</target>
-            </trans-unit>
-            <trans-unit id="aiSuite.mcp.success.mass_action_started">
-                <source>Mass action started for %d pages. Task ID: %s. You can check the progress anytime.</source>
-                <target>Massenaktion für %d Seiten gestartet. Task-ID: %s. Du kannst den Fortschritt jederzeit prüfen.</target>
-            </trans-unit>
-            <trans-unit id="aiSuite.mcp.success.partial">
-                <source>%d of %d items successfully processed. %d items need manual review.</source>
-                <target>%d von %d Elementen erfolgreich verarbeitet. %d Elemente benötigen eine manuelle Prüfung.</target>
-            </trans-unit>
-            <trans-unit id="aiSuite.mcp.success.written_to_workspace">
-                <source>Changes saved to workspace %d. They are ready for review and can be published when approved.</source>
-                <target>Änderungen in Workspace %d gespeichert. Sie stehen zur Prüfung bereit und können nach Freigabe veröffentlicht werden.</target>
-            </trans-unit>
-            <trans-unit id="aiSuite.mcp.success.instruction_created">
-                <source>Content guidelines for page %d successfully created. They will automatically apply to all AI operations on this page.</source>
-                <target>Redaktionsrichtlinien für Seite %d erfolgreich erstellt. Sie werden automatisch auf alle KI-Operationen dieser Seite angewandt.</target>
-            </trans-unit>
 
             <!-- Backend link bounce page -->
             <trans-unit id="aiSuite.mcp.backendLink.title">

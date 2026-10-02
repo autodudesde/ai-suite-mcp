@@ -7,7 +7,6 @@ class McpDashboard {
         this.initCreateToken();
         this.initCopyConfig();
         this.initRevokeTokens();
-        this.initHealthCheck();
     }
 
     initCreateToken() {
@@ -31,14 +30,6 @@ class McpDashboard {
                 this.revokeToken(tokenUid, btn);
             });
         });
-    }
-
-    initHealthCheck() {
-        const btn = document.getElementById('healthCheckBtn');
-        if (!btn) {
-            return;
-        }
-        btn.addEventListener('click', () => this.runHealthCheck());
     }
 
     async createToken() {
@@ -166,39 +157,6 @@ class McpDashboard {
                 TYPO3.lang['aiSuite.module.mcp.revoke'],
                 TYPO3.lang['aiSuite.module.mcp.tokenRevocationError']
             );
-        }
-    }
-
-    async runHealthCheck() {
-        const resultDiv = document.getElementById('healthResult');
-        if (!resultDiv) {
-            return;
-        }
-        resultDiv.innerHTML = '<span class="text-muted">' + TYPO3.lang['aiSuite.module.mcp.wizard.checking'] + '</span>';
-
-        try {
-            const response = await fetch('/aisuite-mcp/health');
-            if (!response.ok) {
-                resultDiv.innerHTML = '<div class="alert alert-danger">' + TYPO3.lang['aiSuite.module.mcp.wizard.healthCheckError'] + '</div>';
-                return;
-            }
-            const data = await response.json();
-
-            let html = '<ul class="list-unstyled">';
-            for (const [key, value] of Object.entries(data.checks || {})) {
-                html += '<li>' + key + ': ' + value + '</li>';
-            }
-            html += '</ul>';
-
-            if (data.status === 'ready') {
-                html = '<div class="alert alert-success">' + TYPO3.lang['aiSuite.module.mcp.wizard.serverReady'] + '</div>' + html;
-            } else {
-                html = '<div class="alert alert-warning">' + TYPO3.lang['aiSuite.module.mcp.wizard.serverNeedsConfig'] + '</div>' + html;
-            }
-
-            resultDiv.innerHTML = html;
-        } catch {
-            resultDiv.innerHTML = '<div class="alert alert-danger">' + TYPO3.lang['aiSuite.module.mcp.wizard.healthCheckError'] + '</div>';
         }
     }
 }

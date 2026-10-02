@@ -56,11 +56,6 @@ class BackendNavigationResolver implements SingletonInterface
         return null === $absolute ? null : $this->linkBounce->wrap($absolute);
     }
 
-    public function buildModuleBaseUrl(string $identifier, LinkStyle $style = LinkStyle::Session): ?string
-    {
-        return $this->buildUrl('openModule', ['module' => $identifier], $style);
-    }
-
     /**
      * @param array<string, mixed> $params
      */

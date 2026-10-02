@@ -62,15 +62,6 @@ class BatchResultBuilderService
     }
 
     /**
-     * @param iterable<mixed>                                          $items
-     * @param callable(mixed, int): array{message: string, uid?: ?int} $handler
-     */
-    public function renderText(iterable $items, string $summaryNoun, callable $handler): string
-    {
-        return $this->build($items, $summaryNoun, $handler)->text;
-    }
-
-    /**
      * @param iterable<mixed>                                                                             $items
      * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, action?: ?string} $handler
      */

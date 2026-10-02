@@ -61,9 +61,4 @@ class RateLimiterService
 
         $this->cache->set($cacheKey, $data, [], $this->windowSeconds);
     }
-
-    public static function forMcpRequests(FrontendInterface $cache, ClockInterface $clock): self
-    {
-        return new self($cache, $clock, maxAttempts: 100, windowSeconds: 60, lockoutSeconds: 60);
-    }
 }

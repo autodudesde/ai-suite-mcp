@@ -24,11 +24,6 @@ class SurfaceSettingOverrides implements SingletonInterface
         $this->additionalExcludedTables = $additionalExcludedTables;
     }
 
-    public function reset(): void
-    {
-        $this->apply(null);
-    }
-
     public function allowsRawMarkupWrite(): ?bool
     {
         return $this->rawMarkupWriteAllowed;

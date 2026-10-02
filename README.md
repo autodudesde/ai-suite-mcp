@@ -742,7 +742,6 @@ logged to `var/log/aisuite_mcp.log` as usual.
 |---|---|
 | `tx_aisuite_oauth_codes` | Short-lived authorization codes (PKCE challenge + redirect URI) |
 | `tx_aisuite_oauth_tokens` | Access + refresh tokens, client metadata, last-used IP, credit usage |
-| `tx_aisuite_oauth_consents` | Remembered per-user / per-client scope consents |
 
 ## Security
 

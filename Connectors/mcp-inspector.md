@@ -97,6 +97,6 @@ For state-gate, RateLimiter DI-cache, Apache `Authorization`-header strip and em
 
 ## Persistence notes
 
-- OAuth tokens are stored in the AI Suite MCP database tables (`tx_aisuite_oauth_codes`, `tx_aisuite_oauth_tokens`, `tx_aisuite_oauth_consents`). Token lifetime is controlled by `mcpTokenLifetimeDays` in the extension configuration (default `30`).
+- OAuth tokens are stored in the AI Suite MCP database tables (`tx_aisuite_oauth_codes`, `tx_aisuite_oauth_tokens`). Token lifetime is controlled by `mcpTokenLifetimeDays` in the extension configuration (default `30`).
 - The Inspector stores its OAuth client credentials and access tokens in browser **localStorage** for the `http://localhost:6274` origin. Closing the tab does not lose them; clearing site data does.
 - A fresh `npx @modelcontextprotocol/inspector` invocation reuses the same localStorage if the browser is the same — no re-authentication needed unless the token expired or was revoked.
