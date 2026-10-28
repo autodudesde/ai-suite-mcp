@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\FormEngine\TcaDatabaseRecordForReading;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FieldCurationService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RelationResolutionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
@@ -12,16 +13,15 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Psr\Http\Message\ServerRequestInterface;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use Psr\Log\LogLevel;
+use TYPO3\CMS\Backend\Form\Exception\AccessDeniedException;
 use TYPO3\CMS\Backend\Form\FormDataCompiler;
-use TYPO3\CMS\Backend\Form\FormDataGroup\TcaDatabaseRecord;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\ServerRequest;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadRecordTool extends AbstractDataTool
 {
     private const HTML_STRIPPED_NOTE = "  ↳ ℹ️ HTML was stripped for this preview — re-read with `raw: true` to get the source markup before editing.\n";
@@ -30,6 +30,10 @@ class ReadRecordTool extends AbstractDataTool
      * @var list<string>
      */
     private const IDENTITY_FIELDS = ['uid', 'pid'];
+
+    private const CTRL_SYSTEM_FIELDS = ['sortby', 'tstamp', 'crdate'];
+
+    private const CTRL_TIMESTAMP_FIELDS = ['tstamp', 'crdate'];
 
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
@@ -161,12 +165,15 @@ class ReadRecordTool extends AbstractDataTool
             ));
         }
 
-        if (null !== $pid) {
-            $this->recordAccess->assertPagePerm($pid, Permission::PAGE_SHOW);
-        }
-
         $allowedPids = null;
         $extraWhere = null;
+        if (null !== $pid) {
+            $this->recordAccess->assertPagePerm($pid, Permission::PAGE_SHOW);
+            $beUser = $this->getBackendUser();
+            if ('pages' === $table && null !== $beUser && !$beUser->isAdmin()) {
+                $extraWhere = $beUser->getPagePermsClause(Permission::PAGE_SHOW);
+            }
+        }
         $pageScopeColumn = 'pid';
         if (null !== $rootPageId) {
             $this->recordAccess->assertPagePerm($rootPageId, Permission::PAGE_SHOW);
@@ -189,12 +196,24 @@ class ReadRecordTool extends AbstractDataTool
         } elseif (null === $pid) {
             $beUser = $this->getBackendUser();
             if (null !== $beUser && !$beUser->isAdmin()) {
-                if ('pages' === $table) {
-                    $extraWhere = $beUser->getPagePermsClause(Permission::PAGE_SHOW);
-                } elseif (!$this->tcaCompatibilityService->isRootLevel($table)) {
+                $ignoresRootLevelRestriction = $this->tcaCompatibilityService->ignoresRootLevelRestriction($table);
+                if (!$this->tcaCompatibilityService->canExistOnPages($table)) {
+                    if (!$ignoresRootLevelRestriction) {
+                        return $this->textError(sprintf(
+                            '%s records live at the root level of the installation, which only administrators can read.',
+                            $table,
+                        ));
+                    }
+                } else {
                     $allowedPids = $this->recordAccess->getReadablePageIds(0, 99);
                     if (empty($allowedPids)) {
                         return $this->textResult(sprintf('No %s records accessible in your webmounts.', $table));
+                    }
+                    if ('pages' === $table) {
+                        $extraWhere = $beUser->getPagePermsClause(Permission::PAGE_SHOW);
+                        $pageScopeColumn = 'uid';
+                    } elseif ($ignoresRootLevelRestriction && $this->tcaCompatibilityService->isRootLevel($table)) {
+                        $allowedPids[] = 0;
                     }
                 }
             }
@@ -260,6 +279,10 @@ class ReadRecordTool extends AbstractDataTool
             );
         }
 
+        if ([] === $sanitizedFilters) {
+            return $this->textResult($text);
+        }
+
         return $this->withFoundRecords(
             $this->textResult($text),
             array_values(array_map(static fn (int|string $uid): array => ['table' => $table, 'uid' => (int) $uid], $uids)),
@@ -286,7 +309,7 @@ class ReadRecordTool extends AbstractDataTool
 
         $this->recordAccess->filterAccessibleFields(
             $table,
-            array_fill_keys(array_diff($names, self::IDENTITY_FIELDS), ''),
+            array_fill_keys(array_diff($names, self::IDENTITY_FIELDS, array_keys($this->ctrlSystemFields($table))), ''),
         );
 
         $names[] = 'uid';
@@ -332,10 +355,10 @@ class ReadRecordTool extends AbstractDataTool
                     'returnUrl' => '',
                     'defaultValues' => [],
                 ],
-                GeneralUtility::makeInstance(TcaDatabaseRecord::class),
+                GeneralUtility::makeInstance(TcaDatabaseRecordForReading::class),
             );
         } catch (\Throwable $e) {
-            $this->logger->warning('ReadRecordTool: FormDataCompiler failed, falling back to BackendUtility::getRecordWSOL', [
+            $this->logger->log($e instanceof AccessDeniedException ? LogLevel::INFO : LogLevel::WARNING, 'ReadRecordTool: FormDataCompiler failed, falling back to BackendUtility::getRecordWSOL', [
                 'table' => $table,
                 'uid' => $uid,
                 'error' => $e->getMessage(),
@@ -411,6 +434,10 @@ class ReadRecordTool extends AbstractDataTool
             $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, $field), $display);
         }
 
+        $text .= $this->renderCtrlSystemFields($table, $rawRecord, $includeSystem);
+        if ($includeSystem && null === $this->allowedFields) {
+            $text .= $this->renderWorkspaceState($table, $rawRecord);
+        }
         $text .= $this->renderContainerContext($table, $databaseRow);
         if ($htmlStripped) {
             $text .= self::HTML_STRIPPED_NOTE;
@@ -425,7 +452,8 @@ class ReadRecordTool extends AbstractDataTool
 
         return $request instanceof ServerRequestInterface
             ? $request
-            : (new ServerRequest())->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_BE);
+            // An empty URI, never none: core accepts null in the constructor and then fails in getUri()
+            : (new ServerRequest(''))->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_BE);
     }
 
     /**
@@ -455,6 +483,9 @@ class ReadRecordTool extends AbstractDataTool
 
         $htmlStripped = false;
         foreach ($record as $field => $value) {
+            if ($this->relationResolver->isEmptyRelation($table, (string) $field, $value)) {
+                $value = '';
+            }
             if (!$this->recordAccess->canAccessField($table, (string) $field)
                 || !$this->fieldCuration->shouldInclude((string) $field, $value, $includeEmpty, $includeSystem, $this->allowedFields)
             ) {
@@ -478,6 +509,7 @@ class ReadRecordTool extends AbstractDataTool
             $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $display);
         }
 
+        $text .= $this->renderCtrlSystemFields($table, $record, $includeSystem);
         $text .= $this->renderContainerContext($table, $record);
         if ($htmlStripped) {
             $text .= self::HTML_STRIPPED_NOTE;
@@ -557,6 +589,7 @@ class ReadRecordTool extends AbstractDataTool
             $text .= sprintf("  `%s` (%s): %s\n", $field, $this->tcaLabel->getFieldLabel($table, (string) $field), $line);
         }
 
+        $text .= $this->renderCtrlSystemFields($table, $record, $includeSystem);
         if ($includeSystem) {
             $text .= $this->renderWorkspaceState($table, $record);
         }
@@ -567,8 +600,51 @@ class ReadRecordTool extends AbstractDataTool
     }
 
     /**
-     * t3ver_* are not TCA columns, so canAccessField() drops them before `includeSystem` is consulted.
-     *
+     * @return array<string, string>
+     */
+    private function ctrlSystemFields(string $table): array
+    {
+        try {
+            $ctrl = $this->tcaCompatibilityService->getRawConfiguration($table);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $fields = [];
+        foreach (self::CTRL_SYSTEM_FIELDS as $key) {
+            $field = (string) ($ctrl[$key] ?? '');
+            if ('' !== $field && !$this->recordAccess->fieldExistsInSchema($table, $field)) {
+                $fields[$field] = $key;
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     */
+    private function renderCtrlSystemFields(string $table, array $record, bool $includeSystem): string
+    {
+        $text = '';
+        foreach ($this->ctrlSystemFields($table) as $field => $key) {
+            $requested = null !== $this->allowedFields ? in_array($field, $this->allowedFields, true) : $includeSystem;
+            if (!$requested || !array_key_exists($field, $record)) {
+                continue;
+            }
+
+            $value = (int) $this->outputFormatter->scalarize($record[$field]);
+            $display = in_array($key, self::CTRL_TIMESTAMP_FIELDS, true) && $value > 0
+                ? sprintf('%s (%d)', date('Y-m-d H:i:s', $value), $value)
+                : (string) $value;
+
+            $text .= sprintf("  `%s` (system, read-only): %s\n", $field, $display);
+        }
+
+        return $text;
+    }
+
+    /**
      * @param array<string, mixed> $record
      */
     private function renderWorkspaceState(string $table, array $record): string

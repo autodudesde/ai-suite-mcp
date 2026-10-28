@@ -27,6 +27,18 @@
             <trans-unit id="aiSuite.module.mcp.tokenCreationError">
                 <source>An error occurred. Please check your connection and try again.</source>
             </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.passwordConfirm">
+                <source>Your backend password</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.passwordConfirmHint">
+                <source>A token acts with your rights, so creating one needs your password once more.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenPasswordInvalid">
+                <source>The password is not correct. No token was created.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenMcpDisabled">
+                <source>MCP is switched off in the extension configuration (enableMcp), so no token can be created.</source>
+            </trans-unit>
             <trans-unit id="aiSuite.module.mcp.tokenCreationFailed">
                 <source>Token creation failed. Please try again.</source>
             </trans-unit>
@@ -55,7 +67,7 @@
                 <source>Claude Desktop (claude_desktop_config.json)</source>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.configClaudeDesktopBridgeHint">
-                <source>Claude Desktop only launches local commands, so the connection runs through the mcp-remote bridge (requires Node.js). With a self-signed certificate (DDEV/mkcert) add "env": {"NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem"} to the entry, because Node.js does not use the operating system trust store. Alternatively add the server URL under Settings, Connectors, Add custom connector and authenticate via OAuth.</source>
+                <source>Claude Desktop only launches local commands, so the connection runs through the mcp-remote bridge (requires Node.js). With a self-signed certificate (DDEV/mkcert) add "NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem" to the existing "env" block of the entry, next to AUTH_HEADER, because Node.js does not use the operating system trust store. Alternatively add the server URL under Settings, Connectors, Add custom connector and authenticate via OAuth.</source>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.configFileLocation">
                 <source>Config file location:</source>
@@ -152,6 +164,27 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.actionmenu.mcp">
                 <source>MCP</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.label">
+                <source>Workspace</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.option">
+                <source>Workspace %1$d: %2$s</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.userDefault">
+                <source>User default</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.userDefaultLive">
+                <source>User default (Live)</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.userDefaultWorkspace">
+                <source>User default (Workspace %d)</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.liveWithoutWorkspaces">
+                <source>Live (workspaces not installed)</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.numbered">
+                <source>Workspace %d</source>
             </trans-unit>
         </body>
     </file>

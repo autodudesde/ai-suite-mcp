@@ -13,9 +13,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class SearchContentTool extends AbstractTool
 {
     private const OWN_HANDLERS = ['pages', 'tt_content'];
@@ -83,12 +81,19 @@ class SearchContentTool extends AbstractTool
             if (!$this->recordAccess->fieldExistsInSchema('tt_content', $field)) {
                 return $this->textError(sprintf('Unknown tt_content field "%s".', $field));
             }
+            if (!$this->recordAccess->canAccessField('tt_content', $field)) {
+                return $this->textError(sprintf('The tt_content field "%s" is not readable for you, so it cannot be searched.', $field));
+            }
+            if ('pages' === $searchIn) {
+                return $this->textError('"field" restricts the content search, so it cannot be combined with searchIn "pages". '
+                    .'Omit "field" to search pages, or use searchIn "content".');
+            }
             $fieldRestricted = true;
         }
 
         $contentFields = $fieldRestricted
             ? [$field]
-            : $this->tcaCompatibilityService->getSearchableTextFields('tt_content');
+            : $this->readableFields('tt_content', $this->tcaCompatibilityService->getSearchableTextFields('tt_content'));
 
         $includeFullContent = (bool) ($params['includeFullContent'] ?? false);
         if ($includeFullContent && !$this->userContext->hasScope('mcp:generate') && !$this->userContext->hasScope('mcp:translate')) {
@@ -119,15 +124,16 @@ class SearchContentTool extends AbstractTool
         $results = [];
         $searchedTables = [];
 
-        if (('all' === $searchIn || 'pages' === $searchIn) && !$fieldRestricted) {
+        if (('all' === $searchIn || 'pages' === $searchIn) && !$fieldRestricted && $this->recordAccess->hasTableReadAccess('pages')) {
             $results = array_merge($results, $this->searchPages($query, $allowedPageIds));
             $searchedTables[] = 'pages';
         }
         if ('all' === $searchIn || 'content' === $searchIn) {
-            $results = array_merge($results, $this->searchContentElements($query, $includeFullContent, $allowedPageIds, $contentFields, $matchHtml));
-            $searchedTables[] = 'tt_content';
+            if ($this->recordAccess->hasTableReadAccess('tt_content') && [] !== $contentFields) {
+                $results = array_merge($results, $this->searchContentElements($query, $includeFullContent, $allowedPageIds, $contentFields, $matchHtml));
+                $searchedTables[] = 'tt_content';
+            }
 
-            // pages and tt_content have their own handlers above, with a richer result shape.
             foreach ($this->searchableTables->getSearchableTables(self::OWN_HANDLERS) as $table) {
                 try {
                     $this->recordAccess->validateTableReadAccess($table);
@@ -166,17 +172,16 @@ class SearchContentTool extends AbstractTool
             $notes[] = sprintf(
                 'Nothing matched in the tables that were searched: %s. A record type outside that list was '
                 .'not looked at, so this is not evidence that it does not exist — read the table directly '
-                .'with readRecords and a filter, or have an administrator add it to the ai_suite_mcp '
-                .'setting "Additional Searchable Tables".',
+                .'with readRecords and a filter. A table is left out when it is not readable for you, has no '
+                .'text field, or is listed in the ai_suite_mcp setting "Excluded tables".',
                 implode(', ', $searchedTables),
             );
         }
         if ([] === $this->searchableTables->getSearchableTables(self::OWN_HANDLERS)) {
-            $notes[] = 'Only pages and content elements are searchable here. Child-record tables (accordion items, '
-                .'card group cards) are detected from the TCA automatically, but none were found here — either this '
-                .'installation has none, or they are listed in the ai_suite_mcp settings "Exclude Auto-Detected Tables '
-                .'from Search" / "MCP Excluded Tables". Standalone record tables such as tx_news_domain_model_news are '
-                .'not child tables and have to be added under "Additional Searchable Tables".';
+            $notes[] = 'Only pages and content elements are searchable here. Every other record table that lives on '
+                .'pages and carries text (accordion items, cards, news) is detected from the TCA automatically, but '
+                .'none were found here — either this installation has none, or they are listed in the ai_suite_mcp '
+                .'setting "Excluded tables".';
         }
         if ([] !== $notes) {
             $payload['note'] = implode(' ', $notes);
@@ -214,7 +219,10 @@ class SearchContentTool extends AbstractTool
      */
     private function searchPages(string $query, ?array $allowedPageIds): array
     {
-        $fields = $this->tcaCompatibilityService->getSearchableTextFields('pages');
+        $fields = $this->readableFields('pages', $this->tcaCompatibilityService->getSearchableTextFields('pages'));
+        if ([] === $fields) {
+            return [];
+        }
         $rows = $this->workspaceRecords->overlayRows(
             'pages',
             $this->workspaceRecords->foldVersionsOntoLive($this->pagesRepository->searchByText($query, 100, $allowedPageIds, $fields)),
@@ -244,7 +252,7 @@ class SearchContentTool extends AbstractTool
      */
     private function searchAdditionalTable(string $table, string $query, ?array $allowedPageIds, bool $matchHtml, ?string $onlyField): array
     {
-        $fields = $this->tcaCompatibilityService->getSearchableTextFields($table);
+        $fields = $this->readableFields($table, $this->tcaCompatibilityService->getSearchableTextFields($table));
         if (null !== $onlyField) {
             $fields = in_array($onlyField, $fields, true) ? [$onlyField] : [];
         }
@@ -279,7 +287,7 @@ class SearchContentTool extends AbstractTool
                 'type' => 'record',
                 'uid' => (int) $row['uid'],
                 'pageId' => $pageId,
-                'label' => (string) ($row[$labelField] ?? '') ?: '(no label)',
+                'label' => ($this->recordAccess->canAccessField($table, $labelField) ? (string) ($row[$labelField] ?? '') : '') ?: '(no label)',
                 'matchIn' => $table,
                 'matchedField' => $matchedField,
                 'preview' => mb_substr($matchHtml ? $value : strip_tags($value), 0, self::PREVIEW_LENGTH),
@@ -353,6 +361,8 @@ class SearchContentTool extends AbstractTool
             $this->workspaceRecords->foldVersionsOntoLive($this->contentRepository->searchByText($query, 100, $allowedPageIds, $searchFields)),
         );
 
+        $bodyReadable = $this->recordAccess->canAccessField('tt_content', 'bodytext');
+        $headerReadable = $this->recordAccess->canAccessField('tt_content', 'header');
         $results = [];
         foreach ($rows as $row) {
             $matchedField = $this->matchedField($row, $searchFields, $query);
@@ -364,12 +374,13 @@ class SearchContentTool extends AbstractTool
             $pageId = (int) $row['pid'];
             $element = [
                 'type' => 'content', 'uid' => (int) $row['uid'], 'pageId' => $pageId,
-                'header' => $row['header'], 'CType' => $row['CType'], 'matchIn' => 'tt_content',
+                'header' => $headerReadable ? $row['header'] : '',
+                'CType' => $row['CType'], 'matchIn' => 'tt_content',
                 'matchedField' => $matchedField,
             ] + $this->languageKeys($pageId, $row);
-            if ($full) {
+            if ($bodyReadable && $full) {
                 $element['bodytext'] = $body;
-            } else {
+            } elseif ($bodyReadable) {
                 $element['bodytext_preview'] = mb_substr($body, 0, self::PREVIEW_LENGTH);
                 $element['bodytext_length'] = mb_strlen($body);
             }
@@ -383,5 +394,15 @@ class SearchContentTool extends AbstractTool
         }
 
         return $results;
+    }
+
+    /**
+     * @param list<string> $fields
+     *
+     * @return list<string>
+     */
+    private function readableFields(string $table, array $fields): array
+    {
+        return array_values(array_filter($fields, fn (string $field): bool => $this->recordAccess->canAccessField($table, $field)));
     }
 }

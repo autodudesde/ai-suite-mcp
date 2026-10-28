@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
-use AutoDudes\AiSuiteMcp\Mcp\Dto\BatchOutcome;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\BatchOutcome;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
@@ -21,8 +21,8 @@ class BatchResultBuilderService
     ) {}
 
     /**
-     * @param iterable<mixed>                                                                             $items
-     * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, action?: ?string} $handler
+     * @param iterable<mixed>                                                                                              $items
+     * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, recordUid?: int, action?: ?string} $handler
      */
     public function run(iterable $items, string $summaryNoun, callable $handler): CallToolResult
     {
@@ -62,8 +62,8 @@ class BatchResultBuilderService
     }
 
     /**
-     * @param iterable<mixed>                                                                             $items
-     * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, action?: ?string} $handler
+     * @param iterable<mixed>                                                                                              $items
+     * @param callable(mixed, int): array{message: string, uid?: ?int, table?: ?string, recordUid?: int, action?: ?string} $handler
      */
     public function build(iterable $items, string $summaryNoun, callable $handler, bool $workspaceContained = true): BatchOutcome
     {
@@ -89,7 +89,7 @@ class BatchResultBuilderService
                     if (is_string($table) && '' !== $table) {
                         $records[] = [
                             'table' => $table,
-                            'uid' => $outcome['uid'],
+                            'uid' => $outcome['recordUid'] ?? $outcome['uid'],
                             'action' => (string) ($outcome['action'] ?? 'update'),
                         ];
                     }

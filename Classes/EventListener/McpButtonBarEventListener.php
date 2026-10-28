@@ -45,7 +45,7 @@ final class McpButtonBarEventListener
         $url = (string) $this->uriBuilder->buildUriFromRoute('ai_suite_mcp', $uriParameters);
 
         $languageService = $this->languageServiceFactory->createFromUserPreferences($this->backendUserService->getBackendUser());
-        $label = $languageService->sL('LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.actionmenu.mcp') ?: 'MCP';
+        $label = $languageService->sL('LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf:aiSuite.module.actionmenu.mcp');
 
         $button = GeneralUtility::makeInstance(AiSuiteLinkButton::class);
         $button

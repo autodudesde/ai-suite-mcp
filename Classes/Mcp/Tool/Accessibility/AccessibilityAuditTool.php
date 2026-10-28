@@ -6,15 +6,9 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Accessibility;
 
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
-use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class AccessibilityAuditTool extends AbstractAiTool
 {
-    protected bool $readOnlyHint = true;
-    protected bool $idempotentHint = true;
     protected ?int $creditCost = 3;
 
     public function getName(): string
@@ -27,7 +21,7 @@ class AccessibilityAuditTool extends AbstractAiTool
         return 'Run a WCAG 2.1 AA accessibility audit for one page, named by pageId — the answer to '
             .'"is page 12 accessible?" (axe-core + HTML_CodeSniffer via pa11y). Returns '
             .'error/warning/notice counts, top issue groups with impact and sample selectors, and '
-            .'prioritized issues with fixability levels. Costs 3 credits.';
+            .'prioritized issues with fixability levels (costs credits, 3).';
     }
 
     public function getSchema(): array
@@ -67,7 +61,7 @@ class AccessibilityAuditTool extends AbstractAiTool
     private function configuredWcagStandard(): string
     {
         try {
-            $standard = (string) (GeneralUtility::makeInstance(ExtensionConfiguration::class)->get('ai_suite')['auditWcagStandard'] ?? '');
+            $standard = (string) ($this->mcpToolContext->extensionConfiguration->get('ai_suite')['auditWcagStandard'] ?? '');
         } catch (\Throwable) {
             return '';
         }

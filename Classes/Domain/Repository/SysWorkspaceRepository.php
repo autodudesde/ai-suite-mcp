@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Domain\Repository;
 
+use AutoDudes\AiSuite\Domain\Repository\AbstractRepository;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Restriction\HiddenRestriction;
 
-class SysWorkspaceRepository
+class SysWorkspaceRepository extends AbstractRepository
 {
     private const TABLE = 'sys_workspace';
 
     private const USER_WORKSPACE_TITLE = 'AI Suite MCP [#%d]';
 
     public function __construct(
-        private readonly ConnectionPool $connectionPool,
-    ) {}
+        ConnectionPool $connectionPool,
+        WorkspaceContextService $workspaceContextService,
+    ) {
+        parent::__construct($connectionPool, $workspaceContextService, self::TABLE);
+    }
 
     /**
      * @return list<array{uid: int, title: string}>

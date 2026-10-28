@@ -7,11 +7,6 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 
-/**
- * Records that live on a page without belonging to a content element — news, categories, the record
- * types a Content Block declares. The reading tools used to show tt_content and nothing else, so a
- * page whose substance sits in such records read as empty.
- */
 class PageRecordsService
 {
     private const RECORDS_PER_TABLE_CAP = 20;
@@ -36,7 +31,6 @@ class PageRecordsService
         }
 
         $found = [];
-        // Content elements are listed above this section, subpages belong to readPageTree.
         foreach ($this->searchableTables->getSearchableTables(self::LISTED_ELSEWHERE) as $table) {
             if (!$this->recordAccess->hasTableReadAccess($table)) {
                 continue;

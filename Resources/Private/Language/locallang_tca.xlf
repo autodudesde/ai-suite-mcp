@@ -8,7 +8,7 @@
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpAccessDescription">
-                <source>Allows connecting via MCP protocol (Claude Desktop, Claude.ai, ChatGPT, etc.)</source>
+                <source>Allows connecting via MCP protocol (Claude Desktop, Claude.ai, ChatGPT, etc.).</source>
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpMediaUpload">
@@ -16,7 +16,7 @@
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpMediaUploadDescription">
-                <source>Allows uploading images/videos into FAL via MCP (by URL, base64 upload, or YouTube/Vimeo link). Filemount permissions still apply on top.</source>
+                <source>Allows uploading images/videos into FAL via MCP (by URL, base64 upload, or YouTube/Vimeo link) and moving files between folders. Filemount permissions still apply on top.</source>
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpRenderedPageRead">

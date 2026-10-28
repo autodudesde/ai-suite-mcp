@@ -10,12 +10,11 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\FieldFormatHintService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RawMarkupPolicyService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadRecordSchemaTool extends AbstractDataTool
 {
     private const MAX_LISTED_TAGS = 20;
+    private const MAX_ENTRY_FIELDS = 10;
 
     protected ?string $requiredScope = null;
     protected bool $readOnlyHint = true;
@@ -122,6 +121,9 @@ class ReadRecordSchemaTool extends AbstractDataTool
                 if (!empty($config['foreign_table'])) {
                     $info['childTable'] = $config['foreign_table'];
                     $info['childTableLabel'] = $this->tcaLabel->getTableLabel($config['foreign_table']);
+                    if ('inline' === $fieldType) {
+                        $info['entryFields'] = $this->entryFields($config);
+                    }
                 }
             }
             if (!empty($config['readOnly'])) {
@@ -193,6 +195,10 @@ class ReadRecordSchemaTool extends AbstractDataTool
                 $text .= sprintf("    - **Format:** %s\n", $f['format']);
             }
 
+            if (!empty($f['entryFields'])) {
+                $text .= sprintf("    - **Each entry:** %s\n", implode(', ', $f['entryFields']));
+            }
+
             if (!empty($f['options'])) {
                 foreach ($f['options'] as $opt) {
                     $text .= sprintf("    - `%s`: %s\n", $opt['value'], $opt['label']);
@@ -209,6 +215,45 @@ class ReadRecordSchemaTool extends AbstractDataTool
         }
 
         return $this->textResult($text);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     *
+     * @return list<string>
+     */
+    private function entryFields(array $config): array
+    {
+        $childTable = (string) $config['foreign_table'];
+        if (!isset($GLOBALS['TCA'][$childTable]) || !$this->recordAccess->hasTableReadAccess($childTable)) {
+            return [];
+        }
+
+        $pointerFields = array_merge(
+            [(string) ($config['foreign_field'] ?? ''), (string) ($config['foreign_table_field'] ?? '')],
+            array_keys(is_array($config['foreign_match_fields'] ?? null) ? $config['foreign_match_fields'] : []),
+            $this->tcaCompatibilityService->getHousekeepingFields(),
+        );
+        $childType = $this->tcaCompatibilityService->resolveDefaultSubSchemaType($childTable);
+
+        $entries = [];
+        foreach ($this->tcaCompatibilityService->getFieldNamesForType($childTable, $childType) as $fieldName) {
+            $fieldConfig = $this->tcaCompatibilityService->getEffectiveFieldConfiguration($childTable, $childType, $fieldName);
+            if ('passthrough' === ($fieldConfig['type'] ?? '') || \in_array($fieldName, $pointerFields, true)
+                || !$this->recordAccess->canAccessField($childTable, $fieldName)) {
+                continue;
+            }
+            $entries[] = 'inline' === ($fieldConfig['type'] ?? '') && !empty($fieldConfig['foreign_table'])
+                ? sprintf('`%s` (children:%s)', $fieldName, $fieldConfig['foreign_table'])
+                : sprintf('`%s`', $fieldName);
+        }
+
+        if (count($entries) > self::MAX_ENTRY_FIELDS) {
+            $more = count($entries) - self::MAX_ENTRY_FIELDS;
+            $entries = [...array_slice($entries, 0, self::MAX_ENTRY_FIELDS), sprintf('+%d more', $more)];
+        }
+
+        return $entries;
     }
 
     /**

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ListTablesTool extends AbstractDataTool
 {
     protected ?string $requiredScope = null;

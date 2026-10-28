@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
+namespace AutoDudes\AiSuiteMcp\Domain\Model\Dto;
+
+use AutoDudes\AiSuiteMcp\Mcp\Service\ToolPermissionPolicy;
 
 final class ToolAccessContext
 {
@@ -16,5 +18,6 @@ final class ToolAccessContext
     public function __construct(
         public readonly array $scopes,
         public readonly string $via,
+        public readonly ?ToolPermissionPolicy $policy = null,
     ) {}
 }

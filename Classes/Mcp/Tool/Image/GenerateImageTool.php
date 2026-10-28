@@ -15,12 +15,10 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\Folder;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class GenerateImageTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:image';
@@ -94,7 +92,7 @@ class GenerateImageTool extends AbstractAiTool
         }
 
         $uuid = $this->uuidService->generateUuid();
-        $targetFolder = (string) ($params['targetFolder'] ?? '1:/user_upload/');
+        $targetFolder = $this->normalizeTargetFolder((string) ($params['targetFolder'] ?? '1:/user_upload/'));
         $prompt = (string) ($params['prompt'] ?? '');
 
         $this->recordAccess->assertFolderWriteAccess($targetFolder);
@@ -197,14 +195,17 @@ class GenerateImageTool extends AbstractAiTool
 
     private function resolveTargetFolder(string $targetFolder): Folder
     {
+        return $this->resourceFactory->getFolderObjectFromCombinedIdentifier($targetFolder);
+    }
+
+    private function normalizeTargetFolder(string $targetFolder): string
+    {
         $combined = $targetFolder;
         if (!preg_match('/^\d+:/', $combined)) {
             $combined = '1:'.$combined;
         }
         [$storagePrefix, $folderPath] = explode(':', $combined, 2);
-        $folderPath = rtrim($folderPath, '/').'/';
-        $combined = $storagePrefix.':'.$folderPath;
 
-        return $this->resourceFactory->getFolderObjectFromCombinedIdentifier($combined);
+        return $storagePrefix.':'.rtrim($folderPath, '/').'/';
     }
 }

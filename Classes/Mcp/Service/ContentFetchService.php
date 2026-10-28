@@ -6,14 +6,14 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuite\Domain\Repository\ContentRepository;
 use AutoDudes\AiSuite\Service\BasicAuthService;
-use AutoDudes\AiSuite\Service\SiteService;
+use AutoDudes\AiSuite\Service\MetadataService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuite\Service\WorkspaceContextService;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\FetchedPageContent;
+use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use Psr\Log\LoggerInterface;
-use TYPO3\CMS\Backend\Routing\PreviewUriBuilder;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
-use TYPO3\CMS\Core\Domain\Repository\PageRepository;
 use TYPO3\CMS\Core\Http\RequestFactory;
 use TYPO3\CMS\Core\Session\UserSessionManager;
 
@@ -50,27 +50,39 @@ class ContentFetchService
 
     private const MIN_TEXT_LENGTH = 3;
 
+    private const INLINE_DEPTH = 2;
+
+    private const INLINE_CHILDREN_PER_FIELD = 100;
+
     public function __construct(
         private readonly McpUserContext $userContext,
         private readonly RequestFactory $requestFactory,
-        private readonly PageRepository $pageRepository,
         private readonly ContentRepository $contentRepository,
-        private readonly SiteService $siteService,
+        private readonly MetadataService $metadataService,
         private readonly BasicAuthService $basicAuthService,
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly WorkspaceContextService $workspaceContextService,
+        private readonly RecordRepository $recordRepository,
+        private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly RenderedHtmlTextExtractor $htmlTextExtractor,
+        private readonly RecordAccessService $recordAccess,
         private readonly LoggerInterface $logger,
     ) {}
 
     public function fetchPageContent(int $pageId, int $languageUid = 0): string
     {
+        return $this->fetch($pageId, $languageUid)->text;
+    }
+
+    public function fetch(int $pageId, int $languageUid = 0): FetchedPageContent
+    {
         if (0 === $this->workspaceContextService->getWorkspaceId()) {
             try {
                 $html = $this->fetchViaPreviewUrl($pageId, $languageUid);
                 if ('' !== $html) {
-                    $text = $this->extractTextFromHtml($html);
+                    $text = $this->htmlTextExtractor->extract($html);
                     if (mb_strlen($text) > 50) {
-                        return $text;
+                        return new FetchedPageContent($text, true);
                     }
                 }
             } catch (\Throwable $e) {
@@ -81,7 +93,7 @@ class ContentFetchService
             }
         }
 
-        return $this->fetchFromDatabase($pageId, $languageUid);
+        return new FetchedPageContent($this->fetchFromDatabase($pageId, $languageUid), false);
     }
 
     private function fetchViaPreviewUrl(int $pageId, int $languageUid): string
@@ -122,24 +134,7 @@ class ContentFetchService
     private function buildPreviewUrl(int $pageId, int $languageUid): string
     {
         try {
-            $page = $this->pageRepository->getPage($pageId);
-            if (($page['is_siteroot'] ?? 0) === 1 && ($page['l10n_parent'] ?? 0) > 0) {
-                $pageId = (int) $page['l10n_parent'];
-            }
-
-            $additionalGetVars = '_language='.$languageUid;
-
-            $previewUri = PreviewUriBuilder::create($pageId)
-                ->withLanguage($languageUid)
-                ->withAdditionalQueryParameters($additionalGetVars)
-                ->buildUri()
-            ;
-
-            if (null === $previewUri) {
-                return '';
-            }
-
-            return $this->siteService->buildAbsoluteUri($previewUri);
+            return $this->metadataService->getPreviewUrl($pageId, [], $languageUid);
         } catch (\Throwable $e) {
             $this->logger->error('Could not build preview URL', [
                 'pageId' => $pageId,
@@ -150,26 +145,6 @@ class ContentFetchService
         }
     }
 
-    private function extractTextFromHtml(string $html): string
-    {
-        $html = preg_replace('/<(script|style|nav|header|footer)\b[^>]*>.*?<\/\1>/si', '', $html) ?? $html;
-
-        if (preg_match('/<main\b[^>]*>(.*?)<\/main>/si', $html, $matches)) {
-            $html = $matches[1];
-        } elseif (preg_match('/<article\b[^>]*>(.*?)<\/article>/si', $html, $matches)) {
-            $html = $matches[1];
-        } elseif (preg_match('/<div[^>]*(?:id|class)\s*=\s*["\'][^"\']*(?:content|main)[^"\']*["\'][^>]*>(.*?)<\/div>/si', $html, $matches)) {
-            $html = $matches[1];
-        }
-
-        $text = strip_tags($html);
-
-        $text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
-        $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
-
-        return trim($text);
-    }
-
     private function fetchFromDatabase(int $pageId, int $languageUid): string
     {
         $workspaceId = $this->workspaceContextService->getWorkspaceId();
@@ -178,6 +153,7 @@ class ContentFetchService
         if (null === $page || [] === $page) {
             return '';
         }
+        $page = $this->pageTranslation($pageId, $languageUid) ?? $page;
 
         $parts = [];
         $parts[] = 'Page: '.($page['title'] ?? '');
@@ -195,7 +171,9 @@ class ContentFetchService
             $parts[] = 'Existing meta description: '.$page['description'];
         }
 
-        $rows = $this->contentRepository->findContentForExtraction($pageId, $languageUid, $workspaceId);
+        $rows = $this->recordAccess->hasTableReadAccess('tt_content')
+            ? $this->contentRepository->findContentForExtraction($pageId, $languageUid, $workspaceId)
+            : [];
 
         foreach ($rows as $row) {
             $elementParts = $this->extractTextFieldsFromRow('tt_content', $row);
@@ -206,6 +184,7 @@ class ContentFetchService
                     $elementParts[] = $flexText;
                 }
             }
+            array_push($elementParts, ...$this->extractInlineChildText('tt_content', $row, self::INLINE_DEPTH));
 
             if (!empty($elementParts)) {
                 $parts[] = implode("\n", $elementParts);
@@ -226,8 +205,10 @@ class ContentFetchService
             return '';
         }
 
+        $previousErrorMode = libxml_use_internal_errors(true);
+
         try {
-            $xml = @simplexml_load_string($flexFormXml);
+            $xml = simplexml_load_string($flexFormXml);
             if (false === $xml) {
                 return '';
             }
@@ -247,6 +228,9 @@ class ContentFetchService
             ]);
 
             return '';
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousErrorMode);
         }
     }
 
@@ -268,7 +252,10 @@ class ContentFetchService
 
         $parts = [];
         foreach ($children as $child) {
-            $childParts = $this->extractTextFieldsFromRow('tt_content', $child);
+            $childParts = [
+                ...$this->extractTextFieldsFromRow('tt_content', $child),
+                ...$this->extractInlineChildText('tt_content', $child, self::INLINE_DEPTH),
+            ];
             if (!empty($childParts)) {
                 $parts[] = implode("\n", $childParts);
             }
@@ -346,6 +333,114 @@ class ContentFetchService
         }
 
         return $parts;
+    }
+
+    /**
+     * @return null|array<string, mixed>
+     */
+    private function pageTranslation(int $pageId, int $languageUid): ?array
+    {
+        if ($languageUid <= 0) {
+            return null;
+        }
+
+        try {
+            $pointerField = $this->tcaCompatibilityService->getTranslationOriginPointerFieldName('pages');
+            $languageField = $this->tcaCompatibilityService->getLanguageFieldName('pages');
+        } catch (\Throwable) {
+            return null;
+        }
+        if (null === $pointerField || null === $languageField) {
+            return null;
+        }
+
+        $translationUid = $this->recordRepository->findTranslationUid('pages', $pageId, $languageUid, $pointerField, $languageField);
+        if (null === $translationUid) {
+            return null;
+        }
+
+        $translation = BackendUtility::getRecordWSOL('pages', $translationUid);
+
+        return is_array($translation) && [] !== $translation ? $translation : null;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return list<string>
+     */
+    private function extractInlineChildText(string $table, array $row, int $depth): array
+    {
+        if ($depth <= 0) {
+            return [];
+        }
+
+        try {
+            $typeKey = $this->tcaCompatibilityService->resolveSubSchemaType($table, $row);
+            $fieldNames = $this->tcaCompatibilityService->getFieldNamesForType($table, $typeKey);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $targets = $this->workspaceRecords->relationTargets($table, (int) ($row['uid'] ?? 0));
+        if ([] === $targets) {
+            return [];
+        }
+
+        $parts = [];
+        foreach ($fieldNames as $fieldName) {
+            try {
+                $config = $this->tcaCompatibilityService->getEffectiveFieldConfiguration($table, $typeKey, $fieldName);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            $childTable = (string) ($config['foreign_table'] ?? '');
+            $pointerField = (string) ($config['foreign_field'] ?? '');
+            if ('inline' !== ($config['type'] ?? '') || '' === $childTable || '' === $pointerField || 'sys_file_reference' === $childTable
+                || !$this->recordAccess->hasTableReadAccess($childTable)
+            ) {
+                continue;
+            }
+            $tableField = (string) ($config['foreign_table_field'] ?? '');
+
+            $children = [];
+            $uids = $this->recordRepository->findUidsByRelation($childTable, $pointerField, $targets, self::INLINE_CHILDREN_PER_FIELD);
+            foreach ($this->workspaceRecords->overlay($childTable, $uids) as $child) {
+                if (!in_array((int) ($child[$pointerField] ?? 0), $targets, true)
+                    || ('' !== $tableField && $table !== (string) ($child[$tableField] ?? ''))
+                    || $this->isDisabled($childTable, $child)
+                ) {
+                    continue;
+                }
+                $children[] = $child;
+            }
+
+            $sortField = $this->workspaceRecords->inlineSortField($childTable, $config);
+            foreach ($this->workspaceRecords->sortRows($children, [$sortField]) as $child) {
+                array_push(
+                    $parts,
+                    ...$this->extractTextFieldsFromRow($childTable, $child),
+                    ...$this->extractInlineChildText($childTable, $child, $depth - 1),
+                );
+            }
+        }
+
+        return $parts;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function isDisabled(string $table, array $row): bool
+    {
+        try {
+            $disabledField = $this->tcaCompatibilityService->getDisabledFieldName($table);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return null !== $disabledField && !empty($row[$disabledField]);
     }
 
     private function isDenylistedField(string $fieldName): bool

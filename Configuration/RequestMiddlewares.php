@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use AutoDudes\AiSuiteMcp\Mcp\Middleware\McpServerMiddleware;
 
 return [

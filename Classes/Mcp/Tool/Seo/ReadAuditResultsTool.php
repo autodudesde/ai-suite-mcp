@@ -9,10 +9,8 @@ use AutoDudes\AiSuite\Utility\AuditScoreUtility;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadAuditResultsTool extends AbstractTool
 {
     private const AUDIT_TYPES = ['seo', 'a11y', 'questions', 'gap', 'cluster', 'competitors'];

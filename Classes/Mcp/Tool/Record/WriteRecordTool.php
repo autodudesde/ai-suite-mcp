@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuite\Service\TranslationService;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
-use AutoDudes\AiSuiteMcp\Mcp\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\McpException;
@@ -24,12 +24,10 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class WriteRecordTool extends AbstractDataTool
 {
     private const LANGUAGE_NEUTRAL_FIELD_TYPES = ['select', 'check', 'radio', 'number', 'datetime', 'color'];
@@ -252,9 +250,9 @@ class WriteRecordTool extends AbstractDataTool
                 null !== $uid
                     ? sprintf('Write each child of `%s` as its own record with `%s`: %d and its own `pid`.', $childTable, $parentField, $uid)
                     : sprintf(
-                        'Nest the children as objects inside `%1$s`; they are expanded into their own `%2$s` records, one level deep. '
-                            .'If this record is itself a nested child, nesting does not reach its children: create this record first, '
-                            .'then write each `%2$s` record on its own with `%3$s` set to the UID it got.',
+                        'Nest the children as objects inside `%1$s` when this record is created; they are expanded into their own `%2$s` records, '
+                            .'their own nested children included. Or write each `%2$s` record flat in the same call with `%3$s` set to "$ref:N", '
+                            .'N being the 0-based position of this record in `records`.',
                         $field,
                         $childTable,
                         $parentField,
@@ -307,13 +305,12 @@ class WriteRecordTool extends AbstractDataTool
         $aliased = $this->translationAliasNormalizer->normalizeFields($table, $fields);
         $fields = $aliased['fields'];
         $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
-        $refFields = $this->referenceFieldNames($fields);
         $fields = $this->resolveReferences($fields, $createdUids);
         $typeKey = $this->resolveTypeKey($table, $fields, $uid);
         $this->assertNoChildCollectionWrites($table, $fields, $typeKey, $uid);
         $fields = $this->normalizeRemainingArrayValues($table, $fields, $typeKey);
         $remapped = [];
-        $fields = $this->resolveRelationTargets($table, $fields, $typeKey, $refFields, $remapped);
+        $fields = $this->resolveRelationTargets($table, $fields, $typeKey, $remapped);
 
         $position = $this->resolvePositionReference((string) ($record['position'] ?? ''), $createdUids);
         $groupKey = sprintf(
@@ -428,6 +425,7 @@ class WriteRecordTool extends AbstractDataTool
         if ($originUid <= 0) {
             throw new InvalidParameterException('The record to translate could not be resolved.');
         }
+        $originUid = $this->workspaceRecords->resolveLiveUid($table, $originUid);
 
         $this->recordAccess->assertRecordEditAccess($table, $originUid);
 
@@ -448,7 +446,6 @@ class WriteRecordTool extends AbstractDataTool
             throw new InvalidParameterException(sprintf('Table "%s" does not support translations.', $table));
         }
 
-        // Reachable by accident: the self-translation hand-over names the UIDs of the localizations.
         $parentUid = (int) ($originRow[$pointerField] ?? 0);
         if ($parentUid > 0) {
             throw new InvalidParameterException(sprintf(
@@ -478,11 +475,13 @@ class WriteRecordTool extends AbstractDataTool
         $aliasHint = '';
         $slugHint = '';
         $divergenceHint = '';
+        $remapped = [];
         if ([] !== $fields) {
             $aliased = $this->translationAliasNormalizer->normalizeFields($table, $fields);
             $aliasHint = $this->translationAliasNormalizer->describeRenames($aliased['renamed']);
             $writeFields = $this->recordAccess->filterAccessibleFields($table, $aliased['fields']);
             $writeFields = $this->resolveReferences($writeFields, $createdUids);
+            $writeFields = $this->resolveRelationTargets($table, $writeFields, $this->resolveTypeKey($table, $writeFields, $translationUid), $remapped);
             $result = $this->recordWrite->update($table, $translationUid, $writeFields);
             $strippedHint = $this->strippedHint($result);
             $divergenceHint = $this->divergenceHint($table, $translationUid, $writeFields);
@@ -495,7 +494,7 @@ class WriteRecordTool extends AbstractDataTool
 
         return [
             'message' => sprintf(
-                '%s translated to %s (UID: %d, %s)%s%s%s%s',
+                '%s translated to %s (UID: %d, %s)%s%s%s%s%s',
                 $this->tcaLabel->getTableLabel($table),
                 $language,
                 $translationUid,
@@ -503,6 +502,7 @@ class WriteRecordTool extends AbstractDataTool
                 $slugHint,
                 $divergenceHint,
                 $strippedHint,
+                $this->remapHint($remapped),
                 $aliasHint,
             ),
             'uid' => $translationUid,
@@ -626,8 +626,6 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * A type-resolved config is empty for a column outside that type's showitem, hence the fallback.
-     *
      * @return array<string, mixed>
      */
     private function fieldConfig(string $table, string $field, ?string $typeKey): array
@@ -643,57 +641,56 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * @param array<string, mixed> $fields
-     *
-     * @return list<string>
-     */
-    private function referenceFieldNames(array $fields): array
-    {
-        $names = [];
-        foreach ($fields as $field => $value) {
-            if (is_string($value) && 1 === preg_match('/^\$ref:\d+$/', $value)) {
-                $names[] = (string) $field;
-            }
-        }
-
-        return $names;
-    }
-
-    /**
-     * @param array<string, mixed> $fields
-     * @param list<string>         $refFields
-     * @param array<string, int>   $remapped
+     * @param array<string, mixed>  $fields
+     * @param array<string, string> $remapped
      *
      * @return array<string, mixed>
      */
-    private function resolveRelationTargets(string $table, array $fields, ?string $typeKey, array $refFields, array &$remapped): array
+    private function resolveRelationTargets(string $table, array $fields, ?string $typeKey, array &$remapped): array
     {
         if (!$this->workspaceRecords->isActive()) {
             return $fields;
         }
 
+        $selfPointers = array_filter([
+            $this->tcaCompatibilityService->getTranslationOriginPointerFieldName($table),
+            $this->tcaCompatibilityService->getTranslationSourceFieldName($table),
+        ]);
+
         foreach ($fields as $field => $value) {
             $field = (string) $field;
-            // $ref values already carry the uid DataHandler handed back, which is the version uid.
-            if (in_array($field, $refFields, true) || !is_scalar($value)) {
+            if (!is_scalar($value) || '' === trim((string) $value)) {
                 continue;
             }
 
-            $uid = (int) $value;
-            if ($uid <= 0 || (string) $uid !== trim((string) $value)) {
-                continue;
+            if (in_array($field, $selfPointers, true)) {
+                $foreignTable = $table;
+            } else {
+                $config = $this->fieldConfig($table, $field, $typeKey);
+                $foreignTable = (string) ($config['foreign_table'] ?? '');
+                if ('' === $foreignTable || !in_array((string) ($config['type'] ?? ''), ['select', 'group', 'inline'], true)) {
+                    continue;
+                }
             }
 
-            $config = $this->fieldConfig($table, $field, $typeKey);
-            $foreignTable = (string) ($config['foreign_table'] ?? '');
-            if ('' === $foreignTable || !in_array((string) ($config['type'] ?? ''), ['select', 'group', 'inline'], true)) {
-                continue;
+            $items = array_map('trim', explode(',', (string) $value));
+            $changed = false;
+            foreach ($items as $i => $item) {
+                $uid = (int) $item;
+                if ($uid <= 0 || (string) $uid !== $item) {
+                    continue;
+                }
+                $liveUid = $this->workspaceRecords->resolveLiveUid($foreignTable, $uid);
+                if ($liveUid !== $uid) {
+                    $items[$i] = (string) $liveUid;
+                    $changed = true;
+                }
             }
 
-            $target = $this->workspaceRecords->resolveWriteTarget($foreignTable, $uid);
-            if ($target !== $uid) {
-                $fields[$field] = $target;
-                $remapped[$field] = $target;
+            if ($changed) {
+                $resolved = implode(',', $items);
+                $fields[$field] = 1 === count($items) ? (int) $resolved : $resolved;
+                $remapped[$field] = $resolved;
             }
         }
 
@@ -701,7 +698,7 @@ class WriteRecordTool extends AbstractDataTool
     }
 
     /**
-     * @param array<string, int> $remapped
+     * @param array<string, string> $remapped
      */
     private function remapHint(array $remapped): string
     {
@@ -711,10 +708,10 @@ class WriteRecordTool extends AbstractDataTool
 
         $parts = [];
         foreach ($remapped as $field => $target) {
-            $parts[] = sprintf('%s → %d', $field, $target);
+            $parts[] = sprintf('%s → %s', $field, $target);
         }
 
-        return sprintf(' (resolved to the workspace version: %s)', implode(', ', $parts));
+        return sprintf(' (resolved to the live record: %s)', implode(', ', $parts));
     }
 
     /**
@@ -744,7 +741,6 @@ class WriteRecordTool extends AbstractDataTool
                 )))->withErrorContext(['table' => $table, 'field' => $field]);
             }
 
-            // A plain list of UIDs is what select/group fields expect, just comma separated.
             if (array_is_list($value) && $this->isScalarList($value)) {
                 $fields[$field] = implode(',', array_map(strval(...), $value));
 

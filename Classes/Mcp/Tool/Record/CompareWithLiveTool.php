@@ -7,10 +7,8 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceComparisonService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class CompareWithLiveTool extends AbstractDataTool
 {
     protected ?string $requiredScope = null;
@@ -116,7 +114,6 @@ class CompareWithLiveTool extends AbstractDataTool
             $droppedFilters[] = (string) $field;
         }
 
-        // Dropping every filter silently would diff the whole page under a "matching filters" header.
         if ([] !== $filters && [] === $sanitizedFilters) {
             return $this->textError(sprintf(
                 'None of the given filters can be used on %s: %s. Check the field names with readRecordSchema.',

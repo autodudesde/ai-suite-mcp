@@ -9,11 +9,9 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadPageTreeTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
@@ -35,8 +33,8 @@ class ReadPageTreeTool extends AbstractTool
     public function getDescription(): string
     {
         return 'Navigate the TYPO3 page tree. Returns page hierarchy with titles, slugs, '
-            .'doctypes, and child counts. Hidden pages are included, so this also resolves a page '
-            .'the user named by title into its UID.';
+            .'doctypes, and child counts, but no page properties such as the meta description. '
+            .'Hidden pages are included, so this also resolves a page the user named by title into its UID.';
     }
 
     public function getSchema(): array
@@ -87,33 +85,9 @@ class ReadPageTreeTool extends AbstractTool
             $tree = $this->buildTree($rootPageId, $depth, $languageUid);
         }
 
-        return $this->withFoundRecords(new CallToolResult([
+        return new CallToolResult([
             new TextContent((string) json_encode($tree, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)),
-        ]), $this->foundPagesOf(array_is_list($tree) ? $tree : [$tree]));
-    }
-
-    /**
-     * @param list<mixed> $nodes
-     *
-     * @return list<array{table: string, uid: int}>
-     */
-    private function foundPagesOf(array $nodes): array
-    {
-        $found = [];
-        foreach ($nodes as $node) {
-            if (!\is_array($node)) {
-                continue;
-            }
-            $uid = (int) ($node['uid'] ?? 0);
-            if ($uid > 0) {
-                $found[] = ['table' => 'pages', 'uid' => $uid];
-            }
-            if (\is_array($node['children'] ?? null)) {
-                $found = [...$found, ...$this->foundPagesOf(array_values($node['children']))];
-            }
-        }
-
-        return $found;
+        ]);
     }
 
     /**

@@ -9,11 +9,11 @@ use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\ProcessedFile;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class FilePreviewService
 {
     public function __construct(
+        private readonly BackendBaseUrlResolver $baseUrlResolver,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -77,15 +77,6 @@ class FilePreviewService
             return null;
         }
 
-        if (1 === preg_match('#^https?://#i', $publicUrl)) {
-            return $publicUrl;
-        }
-
-        $host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST');
-        if (!\is_string($host) || '' === $host) {
-            return null;
-        }
-
-        return rtrim($host, '/').'/'.ltrim($publicUrl, '/');
+        return $this->baseUrlResolver->makeAbsolute($publicUrl);
     }
 }

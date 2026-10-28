@@ -94,6 +94,6 @@ For state-gate, RateLimiter DI-cache, Apache `Authorization`-header strip and em
 
 ## Persistence notes
 
-- Client credentials and OAuth tokens are stored in the AI Suite MCP database tables (`tx_aisuite_oauth_codes`, `tx_aisuite_oauth_tokens`). Access-token lifetime is controlled by `mcpTokenLifetimeDays` in the extension configuration (default `30`); refresh tokens extend that automatically as long as the connector stays in use.
+- Client credentials and OAuth tokens are stored in the AI Suite MCP database tables (`tx_aisuite_oauth_codes`, `tx_aisuite_oauth_tokens`). An access token lives `mcpAccessTokenLifetimeMinutes` (default `60`) and the connector renews it through its refresh token; a connection unused for `mcpRefreshIdleDays` (default `30`) or older than `mcpRefreshMaxLifetimeDays` (default `90`) has to be authorized again.
 - The ChatGPT-side state (which connector is configured per user, OAuth refresh-token cache) lives in each user's ChatGPT account and is not under your control.
 - Revoking access can be done from either side — in ChatGPT by removing the connector, or in the TYPO3 backend via the **MCP dashboard → Revoke Token**.

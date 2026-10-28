@@ -4,25 +4,30 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Domain\Repository;
 
+use AutoDudes\AiSuite\Domain\Repository\AbstractRepository;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Restriction\DeletedRestriction;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-class SysFileReferenceRepository
+class SysFileReferenceRepository extends AbstractRepository
 {
     private const TABLE = 'sys_file_reference';
 
     public function __construct(
-        private readonly ConnectionPool $connectionPool,
-    ) {}
+        ConnectionPool $connectionPool,
+        WorkspaceContextService $workspaceContextService,
+    ) {
+        parent::__construct($connectionPool, $workspaceContextService, self::TABLE);
+    }
 
     /**
      * @param list<int> $uidsForeign
      *
-     * @return array<int, string>
+     * @return list<array<string, mixed>>
      */
-    public function findFirstMediaLabelPerParent(string $tablenames, array $uidsForeign): array
+    public function findMediaTextsByParents(string $tablenames, array $uidsForeign): array
     {
         if ([] === $uidsForeign) {
             return [];
@@ -31,7 +36,7 @@ class SysFileReferenceRepository
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
         $qb->getRestrictions()->removeAll()->add(GeneralUtility::makeInstance(DeletedRestriction::class));
 
-        $rows = $qb
+        return $qb
             ->select('r.uid_foreign', 'r.alternative', 'r.title', 'r.description', 'f.name')
             ->from(self::TABLE, 'r')
             ->leftJoin('r', 'sys_file', 'f', $qb->expr()->eq('f.uid', $qb->quoteIdentifier('r.uid_local')))
@@ -43,24 +48,6 @@ class SysFileReferenceRepository
             ->executeQuery()
             ->fetchAllAssociative()
         ;
-
-        $labels = [];
-        foreach ($rows as $row) {
-            $parent = (int) $row['uid_foreign'];
-            if (isset($labels[$parent])) {
-                continue;
-            }
-            foreach (['alternative', 'title', 'description', 'name'] as $candidate) {
-                $value = trim((string) ($row[$candidate] ?? ''));
-                if ('' !== $value) {
-                    $labels[$parent] = $value;
-
-                    break;
-                }
-            }
-        }
-
-        return $labels;
     }
 
     /**

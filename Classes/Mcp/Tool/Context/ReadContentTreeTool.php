@@ -10,11 +10,9 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadContentTreeTool extends AbstractTool
 {
     private const ELEMENTS_PER_PAGE_CAP = 100;
@@ -82,6 +80,9 @@ class ReadContentTreeTool extends AbstractTool
             $this->recordAccess->assertPagePerm($rootPageId, Permission::PAGE_SHOW);
         }
 
+        $this->recordAccess->validateTableReadAccess('tt_content');
+        $bodyReadable = $this->recordAccess->canAccessField('tt_content', 'bodytext');
+
         $languageUid = $this->recordAccess->resolveLanguageUid($params['language'] ?? null, $rootPageId);
 
         $pageIds = $this->recordAccess->getReadablePageIds($rootPageId, $depth);
@@ -120,7 +121,7 @@ class ReadContentTreeTool extends AbstractTool
                 $uid = (int) $row['uid'];
                 $hidden = !empty($row['hidden']) ? ' [hidden]' : '';
                 $label = $labels[$uid] ?? '';
-                $body = $this->outputFormatter->displayValue($row['bodytext'] ?? '', $maxLength);
+                $body = $bodyReadable ? $this->outputFormatter->displayValue($row['bodytext'] ?? '', $maxLength) : '';
                 $text .= sprintf(
                     "- %d [%s]%s %s: %s\n",
                     $uid,

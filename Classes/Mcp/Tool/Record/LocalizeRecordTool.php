@@ -4,16 +4,24 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
+use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class LocalizeRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
+
+    public function __construct(
+        ToolContext $mcpToolContext,
+        private readonly WorkspaceRecordService $workspaceRecords,
+    ) {
+        parent::__construct($mcpToolContext);
+    }
 
     public function getName(): string
     {
@@ -23,8 +31,8 @@ class LocalizeRecordTool extends AbstractDataTool
     public function getDescription(): string
     {
         return 'Create a translation of a record with the built-in TYPO3 localization (writes, no credits). '
-            .'Mode "localize" creates an empty linked shell; "copyToLanguage" creates an independent full copy. '
-            .'Returns the UID of the new translation record, which is empty until content is written into it.';
+            .'The new record starts with the field values of the source; write the translated text into it with writeRecords. '
+            .'Returns the UID of the new translation record.';
     }
 
     public function getSchema(): array
@@ -67,6 +75,7 @@ class LocalizeRecordTool extends AbstractDataTool
             );
         }
 
+        $uid = $this->workspaceRecords->resolveLiveUid($table, $uid);
         $record = $this->recordAccess->assertRecordReadAccess($table, $uid);
 
         $pageId = 'pages' === $table ? $uid : (int) ($record['pid'] ?? 0);
@@ -115,7 +124,7 @@ class LocalizeRecordTool extends AbstractDataTool
         if (null !== $newUid) {
             $text .= sprintf("\n\nTranslation created: UID %d (table: %s, language: %s)", $newUid, $table, $targetLanguage);
             $text .= sprintf("\nUse writeRecords with uid: %d to edit the translation.", $newUid);
-            if ($hidden) {
+            if (null !== $hiddenField && !empty(BackendUtility::getRecordWSOL($table, (int) $newUid)[$hiddenField] ?? null)) {
                 $text .= sprintf("\n\n**Note:** The new record is hidden by default (TYPO3 standard). Use `readPageContent` with `includeHidden: true` to see it.");
             }
         }

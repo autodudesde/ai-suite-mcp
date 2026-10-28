@@ -57,6 +57,25 @@ class RelationResolutionService
         return $this->processedFallback($table, $field, $rawValue, $fullRow);
     }
 
+    public function isEmptyRelation(string $table, string $field, mixed $rawValue): bool
+    {
+        if (\is_array($rawValue) || !\is_scalar($rawValue)) {
+            return false;
+        }
+
+        try {
+            $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ([] === $config || !$this->tcaCompatibilityService->isRelationalFieldConfig($config) || null === $this->resolveForeignTable($config)) {
+            return false;
+        }
+
+        return [] === $this->extractUids($rawValue) && '' === trim(str_replace(['0', ','], '', (string) $rawValue));
+    }
+
     /**
      * @param array<string, mixed> $row
      */
@@ -139,7 +158,6 @@ class RelationResolutionService
             if (\is_array($part)) {
                 $part = $part['uid'] ?? '';
             }
-            // Trailing integer handles both "12" and "tablename_12" group syntax.
             if (preg_match('/(\d+)$/', (string) $part, $matches)) {
                 $uid = (int) $matches[1];
                 if ($uid > 0) {

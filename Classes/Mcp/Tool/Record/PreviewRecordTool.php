@@ -10,9 +10,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RecordsArgumentDecoder;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class PreviewRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';

@@ -11,9 +11,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\Record\AbstractDataTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class CopyMediaReferenceTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';

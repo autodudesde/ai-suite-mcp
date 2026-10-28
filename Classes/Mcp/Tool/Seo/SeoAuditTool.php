@@ -6,13 +6,9 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Seo;
 
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class SeoAuditTool extends AbstractAiTool
 {
-    protected bool $readOnlyHint = true;
-    protected bool $idempotentHint = true;
     protected ?int $creditCost = 3;
 
     public function getName(): string
@@ -25,7 +21,7 @@ class SeoAuditTool extends AbstractAiTool
         return 'Full SEO audit for one page, named by pageId — the answer to "check page 12 '
             .'for SEO problems". On-page checks, Lighthouse scores with real-user Core Web Vitals, '
             .'GEO/AI-visibility signals. A focus keyword adds SERP position, top-10 competitors and '
-            .'search volume. Issues come back prioritized. Costs 3 credits.';
+            .'search volume. Issues come back prioritized (costs credits, 3).';
     }
 
     public function getSchema(): array

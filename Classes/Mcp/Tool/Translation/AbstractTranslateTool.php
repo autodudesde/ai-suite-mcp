@@ -16,6 +16,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
+use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -57,10 +58,8 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             'Translate the field values below from %s into %s and write them back with `writeRecords`, '
             .'using the record UIDs given here — those records already exist and are empty or still hold the source text. '
             .'Keep every HTML tag, attribute and entity exactly as it is and translate only the text between them. '
+            .'A field marked (link text) holds only the visible text of a link; write the translated text alone, the link target is kept. '
             ."Do not translate field names, and do not add or drop fields.\n\n"
-            // The shape is spelled out because the UIDs below are the translations themselves: a model
-            // that reaches for `translations` here asks for a translation of a translation and, once
-            // refused, has been measured filling `fields` with the source text instead.
             ."One entry per record, addressed by its uid, and no `translations` key:\n"
             ."`{\"records\": [{\"table\": \"pages\", \"uid\": 22, \"fields\": {\"title\": \"…\"}}]}`\n\n",
             '' !== $sourceLanguage ? strtoupper($sourceLanguage) : 'the source language',
@@ -137,12 +136,48 @@ abstract class AbstractTranslateTool extends AbstractAiTool
                 }
                 $kept = array_intersect_key($fields, $sent);
                 if ([] !== $kept) {
-                    $restricted[(string) $table][$uid] = $this->translationService->claimTranslatedFields((string) $table, $kept);
+                    $restricted[(string) $table][$uid] = $this->translationService->claimTranslatedFields((string) $table, $kept, (int) $uid);
                 }
             }
         }
 
         return $restricted;
+    }
+
+    /**
+     * @param array<string, array<int|string, array<string, mixed>>> $records
+     * @param list<string>                                           $blocked
+     *
+     * @return array<string, array<int|string, array<string, mixed>>>
+     */
+    protected function sanitizeTranslatedRecords(array $records, array &$blocked): array
+    {
+        $sanitized = [];
+        foreach ($records as $table => $rows) {
+            foreach ($rows as $uid => $fields) {
+                $row = BackendUtility::getRecordWSOL((string) $table, (int) $uid) ?? [];
+                $report = $this->mcpToolContext->dataHandlerSanitizer->sanitizeFieldsWithReport((string) $table, $fields, null, $row);
+                foreach ($report['blocked'] as $field) {
+                    $blocked[] = sprintf('%s:%s.%s', $table, $uid, $field);
+                }
+                if ([] !== $report['data']) {
+                    $sanitized[(string) $table][$uid] = $report['data'];
+                }
+            }
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * @param list<string> $blocked
+     */
+    protected function describeBlockedFields(array $blocked): string
+    {
+        return [] === $blocked ? '' : sprintf(
+            "**Not written, raw HTML is not allowed through MCP (mcpAllowRawHtmlWrite):** %s\n",
+            implode(', ', $blocked),
+        );
     }
 
     /**
@@ -165,7 +200,10 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         string $model,
         string $sourceLanguage = '',
         bool $hidden = true,
+        int $glossaryPageId = 0,
     ): CallToolResult {
+        $uid = $this->translationService->resolveLiveUid($table, $uid);
+
         try {
             $record = $this->recordAccess->assertRecordEditAccess($table, $uid);
         } catch (\RuntimeException $e) {
@@ -178,7 +216,16 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             return $this->textError(sprintf('%s:%d not found.', $table, $uid));
         }
 
-        $pageId = (int) ($record['pid'] ?: 1);
+        $recordPageId = 'pages' === $table ? $uid : (int) $record['pid'];
+        if ($recordPageId > 0 && $this->isPageExcludedFromAi($recordPageId)) {
+            return $this->textError($this->translateOrFallback('hint.page_excluded_from_ai', [$recordPageId], "Page {$recordPageId} excluded from AI processing."));
+        }
+
+        $contextPageId = $glossaryPageId > 0 ? $glossaryPageId : $recordPageId;
+        $pageId = $this->referencePageId($contextPageId, $sourceLanguage, $targetLanguage);
+        if (0 === $pageId) {
+            return $this->textError('No site in your web mounts to resolve the languages from. Pass pageId with a page of the site whose languages apply.');
+        }
 
         if ('' !== $model) {
             $this->permissionService->validateModelAccess($model);
@@ -237,12 +284,13 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         $recordCount = array_sum(array_map('count', $translateFields));
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
-        $site = $this->siteFinder->getSiteByPageId($pageId);
-        $rootPageId = $site->getRootPageId();
-        $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid);
-        $glossary = $this->glossarService->findDeeplGlossary($rootPageId, $srcLangUid, $destLangUid);
+        $rootPageId = $this->glossarService->getSiteRootPageId($contextPageId);
+        $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid, $rootPageId);
+        $glossary = $rootPageId > 0 ? $this->glossarService->findDeeplGlossary($rootPageId, $srcLangUid, $destLangUid) : false;
 
-        $globalInstructions = $this->globalInstructionService->buildGlobalInstruction($table, 'translation', $pageId);
+        $globalInstructions = 'sys_file_metadata' === $table
+            ? $this->globalInstructionService->buildGlobalInstruction('files', 'translation', null, $this->fileFolderIdentifier((int) ($record['file'] ?? 0)))
+            : $this->globalInstructionService->buildGlobalInstruction('pages', 'translation', $recordPageId);
 
         if ('' === $model) {
             return $this->structuredResult(
@@ -285,10 +333,11 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             return $this->textError('No translation results returned by the server.');
         }
 
-        $cleanedResults = $this->restrictToSentFields($translationResults, $translateFields);
+        $blockedFields = [];
+        $cleanedResults = $this->sanitizeTranslatedRecords($this->restrictToSentFields($translationResults, $translateFields), $blockedFields);
 
         if (empty($cleanedResults)) {
-            return $this->textError('Translation results could not be processed (invalid format).');
+            return $this->textError('Translation results could not be processed (invalid format). '.$this->describeBlockedFields($blockedFields));
         }
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
@@ -307,6 +356,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: %s:%d → %s\n\n", $table, $uid, $targetLanguage);
         $text .= sprintf("**Translation record:** %s:%d\n", $table, (int) $translatedUid);
+        $text .= $this->describeBlockedFields($blockedFields);
 
         foreach ($cleanedResults as $resultTable => $records) {
             foreach ($records as $resultUid => $recFields) {
@@ -377,8 +427,12 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             if (!\is_array($records)) {
                 continue;
             }
+            $columnConfigs = $this->tcaCompatibilityService->getColumnConfigs((string) $table);
             foreach ($records as $uid => $fields) {
-                $names = \is_array($fields) ? array_keys($fields) : [];
+                $names = array_map(
+                    static fn (int|string $name): string => 'link' === ($columnConfigs[$name]['type'] ?? '') ? $name.' (link text)' : (string) $name,
+                    \is_array($fields) ? array_keys($fields) : [],
+                );
                 $text .= [] === $names
                     ? sprintf("- `%s:%s`\n", $table, $uid)
                     : sprintf("- `%s:%s` — %s\n", $table, $uid, implode(', ', array_map('strval', $names)));

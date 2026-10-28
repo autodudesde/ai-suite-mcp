@@ -10,12 +10,10 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\Folder;
 use TYPO3\CMS\Core\Resource\ResourceStorage;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ListFilesTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';

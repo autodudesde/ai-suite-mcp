@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp;
 
+use AutoDudes\AiSuiteMcp\Mcp\Service\ToolPermissionPolicy;
 use Psr\Http\Message\ServerRequestInterface;
 
 class McpUserContext
@@ -19,6 +20,8 @@ class McpUserContext
 
     private bool $initialized = false;
 
+    private ?ToolPermissionPolicy $toolPermissionPolicy = null;
+
     private ?ServerRequestInterface $serverRequest = null;
 
     private bool $inlineBackendLinks = true;
@@ -30,8 +33,13 @@ class McpUserContext
      *
      * @throws \LogicException
      */
-    public function initialize(int $beUserUid, array $scopes, string $clientId, string $issuedVersion = ''): void
-    {
+    public function initialize(
+        int $beUserUid,
+        array $scopes,
+        string $clientId,
+        string $issuedVersion = '',
+        ?ToolPermissionPolicy $toolPermissionPolicy = null,
+    ): void {
         if ($this->initialized) {
             throw new \LogicException(
                 'McpUserContext has already been initialized. It may only be initialized once per request.',
@@ -42,7 +50,13 @@ class McpUserContext
         $this->scopes = $scopes;
         $this->clientId = $clientId;
         $this->issuedVersion = $issuedVersion;
+        $this->toolPermissionPolicy = $toolPermissionPolicy;
         $this->initialized = true;
+    }
+
+    public function getToolPermissionPolicy(): ?ToolPermissionPolicy
+    {
+        return $this->toolPermissionPolicy;
     }
 
     public function isInitialized(): bool

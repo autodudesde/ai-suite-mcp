@@ -6,16 +6,15 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\DataHandlerException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class SavePageTreeTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
@@ -190,7 +189,7 @@ class SavePageTreeTool extends AbstractDataTool
         foreach ($planned as $node) {
             $uid = (int) ($substNEWwithIDs[$node['newId']] ?? 0);
             if ($uid <= 0) {
-                throw new \RuntimeException(sprintf('Page "%s" was not created — DataHandler returned no UID for it.', $node['title']));
+                throw new DataHandlerException(sprintf('Page "%s" was not created: DataHandler returned no UID for it.', $node['title']));
             }
 
             /** @var list<array{newId: string, title: string, children: list<mixed>}> $children */

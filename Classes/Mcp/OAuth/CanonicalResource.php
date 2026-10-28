@@ -11,30 +11,24 @@ final class CanonicalResource
 {
     private const PATH = '/aisuite-mcp';
 
-    public static function get(): string
+    public static function get(ServerRequestInterface $request): string
     {
-        $host = '';
-        $request = $GLOBALS['TYPO3_REQUEST'] ?? null;
-        if ($request instanceof ServerRequestInterface) {
-            $normalizedParams = $request->getAttribute('normalizedParams');
-            if ($normalizedParams instanceof NormalizedParams) {
-                $host = $normalizedParams->getRequestHost();
-            }
-        }
-        if ('' === $host) {
-            $serverHost = $_SERVER['HTTP_HOST'] ?? '';
-            if (\is_string($serverHost) && '' !== $serverHost) {
-                $scheme = (!empty($_SERVER['HTTPS']) && 'off' !== $_SERVER['HTTPS']) ? 'https' : 'http';
-                $host = $scheme.'://'.$serverHost;
-            }
-        }
-
-        return rtrim($host, '/').self::PATH;
+        return self::host($request).self::PATH;
     }
 
-    public static function matches(string $candidate): bool
+    public static function host(ServerRequestInterface $request): string
     {
-        $expected = self::normalize(self::get());
+        $normalizedParams = $request->getAttribute('normalizedParams');
+        if (!$normalizedParams instanceof NormalizedParams) {
+            $normalizedParams = NormalizedParams::createFromRequest($request);
+        }
+
+        return rtrim($normalizedParams->getRequestHost(), '/');
+    }
+
+    public static function matches(string $candidate, string $canonicalResource): bool
+    {
+        $expected = self::normalize($canonicalResource);
         $actual = self::normalize($candidate);
 
         return '' !== $actual && $expected === $actual;

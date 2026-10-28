@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Service\GlobalInstructionService;
+use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Core\Utility\RootlineUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadEditorialGuidelinesTool extends AbstractTool
 {
     /**
@@ -76,16 +76,37 @@ class ReadEditorialGuidelinesTool extends AbstractTool
 
         $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
+        $rootlineUids = $this->rootlineUids($pageId);
+        if (null === $rootlineUids) {
+            return $this->unresolvablePage($pageId);
+        }
+
         $instructions = $this->globalInstructionService->buildGlobalInstruction('pages', $scope, $pageId);
 
         if ('' === trim($instructions)) {
+            $otherScopes = $this->guidelinesOfOtherScopes($pageId, $scope);
+            if ([] !== $otherScopes) {
+                $sections = [];
+                foreach ($otherScopes as $otherScope => $text) {
+                    $sections[] = sprintf("### Scope %s\n\n%s", $otherScope, $text);
+                }
+
+                return $this->textResult(sprintf(
+                    "## Editorial guidelines for page %d\n\nNo guidelines are set for the scope %s, but this page has "
+                        ."guidelines under other scopes. Apply those that fit the task.\n\n%s",
+                    $pageId,
+                    $scope,
+                    implode("\n\n", $sections),
+                ));
+            }
+
             return $this->textResult(sprintf(
                 'No editorial guidelines apply to page %d (scope: %s). Guidelines set on an ancestor page reach this one '
                     ."only when their record has \"use for subtree\" enabled. Rootline checked: %s.\nProceed with the "
                     .'house style visible in the existing content of the page.',
                 $pageId,
                 $scope,
-                implode(' → ', $this->rootlineUids($pageId)),
+                implode(' → ', $rootlineUids),
             ));
         }
 
@@ -93,20 +114,49 @@ class ReadEditorialGuidelinesTool extends AbstractTool
     }
 
     /**
-     * @return list<string>
+     * @return array<string, string>
      */
-    private function rootlineUids(int $pageId): array
+    private function guidelinesOfOtherScopes(int $pageId, string $requestedScope): array
+    {
+        $found = [];
+        foreach (self::SCOPES as $scope) {
+            if ($scope === $requestedScope || 'general' === $scope) {
+                continue;
+            }
+            $instructions = trim($this->globalInstructionService->buildGlobalInstruction('pages', $scope, $pageId));
+            if ('' !== $instructions) {
+                $found[$scope] = $instructions;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * @return null|list<string>
+     */
+    private function rootlineUids(int $pageId): ?array
     {
         try {
             $rootline = GeneralUtility::makeInstance(RootlineUtility::class, $pageId, '')->get();
         } catch (\Throwable) {
-            // A broken or inaccessible rootline must not turn an empty result into an error.
-            return [(string) $pageId];
+            return null;
         }
 
         return array_map(
             static fn (array $page): string => (string) ($page['uid'] ?? '?'),
             array_reverse($rootline),
         );
+    }
+
+    private function unresolvablePage(int $pageId): CallToolResult
+    {
+        $message = sprintf('Page %d cannot be resolved in the current workspace, so its editorial guidelines are unknown, not empty.', $pageId);
+        $parentUid = (int) (BackendUtility::getRecord('pages', $pageId, 'pid')['pid'] ?? 0);
+        if ($parentUid > 0) {
+            $message .= sprintf(' Read them from its parent page %d instead.', $parentUid);
+        }
+
+        return $this->textError($message, McpErrorType::NotFound);
     }
 }

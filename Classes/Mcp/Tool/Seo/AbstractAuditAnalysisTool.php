@@ -6,6 +6,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Seo;
 
 use AutoDudes\AiSuite\Service\AuditModelService;
 use AutoDudes\AiSuite\Service\MetadataService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\RemoteMediaService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -20,13 +21,14 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
         'nl' => 'NL', 'pl' => 'PL', 'pt' => 'PT', 'da' => 'DK', 'sv' => 'SE',
         'nb' => 'NO', 'no' => 'NO', 'fi' => 'FI', 'cs' => 'CZ', 'tr' => 'TR',
     ];
-    protected bool $readOnlyHint = true;
-    protected bool $idempotentHint = true;
+
+    private const EXTERNAL_PAGE_MAX_BYTES = 5242880;
 
     public function __construct(
         ToolContext $mcpToolContext,
         protected readonly MetadataService $metadataService,
         protected readonly AuditModelService $auditModelService,
+        protected readonly ?RemoteMediaService $remoteMediaService = null,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -127,10 +129,12 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
         return '' !== $language ? $language : 'de';
     }
 
-    protected function fetchAnalysisContent(string $url): CallToolResult|string
+    protected function fetchAnalysisContent(string $url, bool $external = false): CallToolResult|string
     {
         try {
-            $content = $this->metadataService->fetchContentFromUrl($url);
+            $content = $external && null !== $this->remoteMediaService
+                ? $this->fetchExternalPage($this->remoteMediaService, $url)
+                : $this->metadataService->fetchContentFromUrl($url);
         } catch (\Throwable $e) {
             $this->logger->warning('Audit analysis could not fetch the page content', ['url' => $url, 'error' => $e->getMessage()]);
             $content = '';
@@ -185,5 +189,16 @@ abstract class AbstractAuditAnalysisTool extends AbstractAiTool
             null === $searchVolume ? 'unknown' : (string) (int) $searchVolume,
             null === $difficulty ? 'unknown' : (string) (int) $difficulty,
         );
+    }
+
+    private function fetchExternalPage(RemoteMediaService $remoteMediaService, string $url): string
+    {
+        $fetched = $remoteMediaService->fetch($url, self::EXTERNAL_PAGE_MAX_BYTES);
+
+        try {
+            return (string) file_get_contents($fetched->tempFilePath);
+        } finally {
+            @unlink($fetched->tempFilePath);
+        }
     }
 }

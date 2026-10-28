@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RefusedRequestException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\PageSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchDefaults;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchPlacement;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class MoveRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
@@ -26,6 +27,7 @@ class MoveRecordTool extends AbstractDataTool
         private readonly BatchResultBuilderService $batchResultBuilder,
         private readonly BatchEntryValidator $batchEntryValidator,
         private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly PageSlugService $pageSlugs,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -79,12 +81,14 @@ class MoveRecordTool extends AbstractDataTool
 
         $this->batchEntryValidator->assertShape($moves, 'moves', ['table', 'uid'], ['targetPid', 'afterUid']);
 
-        return $this->batchResultBuilder->run($moves, 'move(s)', function (mixed $move): array {
+        $placement = new BatchPlacement();
+
+        return $this->batchResultBuilder->run($moves, 'move(s)', function (mixed $move) use ($placement): array {
             if (!is_array($move)) {
                 throw new InvalidParameterException('Skipped (not an object).');
             }
 
-            return $this->performMove($move);
+            return $this->performMove($move, $placement);
         });
     }
 
@@ -93,7 +97,7 @@ class MoveRecordTool extends AbstractDataTool
      *
      * @return array{message: string, uid: int, table: string, action: string}
      */
-    private function performMove(array $move): array
+    private function performMove(array $move, BatchPlacement $placement): array
     {
         $table = (string) ($move['table'] ?? '');
         $uid = (int) ($move['uid'] ?? 0);
@@ -101,11 +105,11 @@ class MoveRecordTool extends AbstractDataTool
         $afterUid = isset($move['afterUid']) ? (int) $move['afterUid'] : null;
 
         if ('' === $table || $uid <= 0) {
-            throw new \RuntimeException('Provide table and uid.');
+            throw RefusedRequestException::invalidParameter('Provide table and uid.');
         }
 
         if (null === $targetPid && null === $afterUid) {
-            throw new \RuntimeException('Provide targetPid or afterUid.');
+            throw RefusedRequestException::invalidParameter('Provide targetPid or afterUid.');
         }
 
         $this->recordAccess->validateTableWriteAccess($table);
@@ -115,7 +119,7 @@ class MoveRecordTool extends AbstractDataTool
         if (null !== $afterUid) {
             $afterRecord = BackendUtility::getRecordWSOL($table, $afterUid);
             if (null === $afterRecord) {
-                throw new \RuntimeException(sprintf('Reference record %s:%d not found.', $table, $afterUid));
+                throw RefusedRequestException::notFound(sprintf('Reference record %s:%d not found.', $table, $afterUid));
             }
             $resolvedTargetPid = (int) ($afterRecord['pid'] ?? 0);
         } else {
@@ -123,12 +127,20 @@ class MoveRecordTool extends AbstractDataTool
         }
         $this->recordAccess->assertRecordCreateAccess($table, $resolvedTargetPid);
 
+        $keepsBatchOrder = false;
+        if (null === $afterUid && null !== $targetPid) {
+            $afterUid = $placement->anchorFor($table, $targetPid, $record);
+            $keepsBatchOrder = null !== $afterUid;
+        }
+
         $destination = null !== $afterUid
             ? -1 * abs($this->workspaceRecords->resolveWriteTarget($table, $afterUid))
             : $targetPid;
 
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $recordLabel = $record[$labelField] ?? $uid;
+
+        $slugSnapshot = 'pages' === $table ? $this->pageSlugs->snapshotBeforeMove($uid) : null;
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
         $dh->start([], [$table => [$uid => ['move' => $destination]]]);
@@ -138,6 +150,10 @@ class MoveRecordTool extends AbstractDataTool
             throw $this->dataHandlerError->toException('move', $table, $uid, $dh->errorLog);
         }
 
+        $slugChange = null !== $slugSnapshot ? $this->pageSlugs->followMove($uid, $slugSnapshot) : null;
+
+        $placement->placed($table, $targetPid, $uid, $record);
+
         $text = sprintf(
             '%s "%s" (UID: %d) moved',
             $this->tcaLabel->getTableLabel($table),
@@ -145,10 +161,17 @@ class MoveRecordTool extends AbstractDataTool
             $uid,
         );
 
-        if (null !== $afterUid) {
+        if ($keepsBatchOrder) {
+            $text .= sprintf(' to page %d, after record %d to keep the order of the batch.', $targetPid, $afterUid);
+        } elseif (null !== $afterUid) {
             $text .= sprintf(' after record %d.', $afterUid);
         } else {
             $text .= sprintf(' to page %d.', $targetPid);
+        }
+
+        if (null !== $slugChange && null !== $slugChange['slug']) {
+            $text .= sprintf(' Slug now %s', $slugChange['slug']);
+            $text .= $slugChange['subpages'] > 0 ? sprintf(', %d subpage slug(s) updated.', $slugChange['subpages']) : '.';
         }
 
         return ['message' => $text, 'uid' => $uid, 'table' => $table, 'action' => 'update'];

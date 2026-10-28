@@ -175,7 +175,6 @@ final class TranslationExpanderService
             }
         }
 
-        // @var array<string, mixed> $fields
         return $fields;
     }
 

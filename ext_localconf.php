@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use AutoDudes\AiSuiteMcp\Mcp\Hooks\PasswordChangeHook;
 use AutoDudes\AiSuiteMcp\Mcp\Log\SensitiveDataProcessor;
 use Psr\Log\LogLevel;
@@ -33,7 +35,7 @@ $GLOBALS['TYPO3_CONF_VARS']['LOG']['AutoDudes']['AiSuiteMcp']['writerConfigurati
     LogLevel::INFO => [
         FileWriter::class => [
             'logFile' => Environment::getVarPath().'/log/aisuite_mcp.log',
-            'disabled' => !(bool) ($aisuiteMcpExtConf['mcpLogVerbose'] ?? true),
+            'disabled' => !(bool) ($aisuiteMcpExtConf['mcpLogVerbose'] ?? false),
         ],
     ],
 ];

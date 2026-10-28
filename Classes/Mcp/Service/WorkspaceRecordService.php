@@ -51,7 +51,6 @@ class WorkspaceRecordService
         return $versionUid > 0 && $versionUid !== $uid ? $versionUid : null;
     }
 
-    // A relation stored against the live uid is never rendered in the draft.
     public function resolveWriteTarget(string $table, int $uid): int
     {
         return $this->resolveVersionUid($table, $uid) ?? $uid;
@@ -166,6 +165,41 @@ class WorkspaceRecordService
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @param list<string>               $fields
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function sortRows(array $rows, array $fields): array
+    {
+        $fields = array_values(array_filter($fields, static fn (string $field): bool => '' !== $field));
+        $key = static fn (array $row): array => [
+            ...array_map(static fn (string $field): int => (int) ($row[$field] ?? 0), $fields),
+            (int) ($row['uid'] ?? 0),
+        ];
+        usort($rows, static fn (array $a, array $b): int => $key($a) <=> $key($b));
+
+        return $rows;
+    }
+
+    public function sortField(string $table): string
+    {
+        try {
+            return (string) ($this->tcaCompatibilityService->getRawConfiguration($table)['sortby'] ?? '');
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $relationConfig
+     */
+    public function inlineSortField(string $childTable, array $relationConfig): string
+    {
+        return (string) ($relationConfig['foreign_sortby'] ?? '') ?: $this->sortField($childTable);
     }
 
     /**

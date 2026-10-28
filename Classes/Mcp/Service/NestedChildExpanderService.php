@@ -8,9 +8,14 @@ use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchIndexRemapper;
 
+/**
+ * @phpstan-type Child array{table: string, pid: int, parentField: string, parentOffset: int, matchFields: array<string, mixed>, fields: array<string, mixed>}
+ */
 final class NestedChildExpanderService
 {
     private const EXPANDABLE_TYPES = ['inline', 'file'];
+
+    private const MAX_DEPTH = 3;
 
     public function __construct(
         private readonly TcaCompatibilityService $tcaCompatibilityService,
@@ -46,7 +51,7 @@ final class NestedChildExpanderService
             foreach ($plan['children'] as $child) {
                 $fields = BatchIndexRemapper::remap($child['fields'], $indexMap);
                 $fields = array_merge($fields, $child['matchFields']);
-                $fields[$child['parentField']] = '$ref:'.$parentIndex;
+                $fields[$child['parentField']] = '$ref:'.($parentIndex + $child['parentOffset']);
 
                 $expanded[] = [
                     'table' => $child['table'],
@@ -60,7 +65,7 @@ final class NestedChildExpanderService
     }
 
     /**
-     * @return array{record: mixed, children: list<array{table: string, pid: int, parentField: string, matchFields: array<string, mixed>, fields: array<string, mixed>}>}
+     * @return array{record: mixed, children: list<Child>}
      */
     private function planRecord(mixed $record): array
     {
@@ -79,6 +84,20 @@ final class NestedChildExpanderService
         }
 
         $children = [];
+        $record['fields'] = $this->collectChildren($table, $fields, $record, 0, 1, $children);
+
+        return ['record' => $record, 'children' => $children];
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @param array<string, mixed> $record
+     * @param list<Child>          $children
+     *
+     * @return array<string, mixed>
+     */
+    private function collectChildren(string $table, array $fields, array $record, int $parentOffset, int $depth, array &$children): array
+    {
         foreach ($fields as $field => $value) {
             $field = (string) $field;
             if (!$this->isListOfObjects($value)) {
@@ -96,6 +115,18 @@ final class NestedChildExpanderService
                 throw new InvalidParameterException(sprintf(
                     '`%s` is an inline field without a `foreign_field` in its TCA, so its children cannot be derived. Write them as their own records.',
                     $field,
+                ));
+            }
+
+            if ($depth > self::MAX_DEPTH) {
+                throw new InvalidParameterException(sprintf(
+                    'Nested children are expanded %d levels deep, and `%s` of `%s` is one level more. '
+                        .'Write the deeper records flat in the same call instead: each as its own entry with `%s` set to "$ref:N", '
+                        .'N being the 0-based position of its parent in `records`.',
+                    self::MAX_DEPTH,
+                    $field,
+                    $table,
+                    $parentField,
                 ));
             }
 
@@ -129,19 +160,27 @@ final class NestedChildExpanderService
             unset($fields[$field]);
 
             foreach ($value as $childFields) {
+                $index = count($children);
                 $children[] = [
                     'table' => $childTable,
                     'pid' => (int) $record['pid'],
                     'parentField' => $parentField,
+                    'parentOffset' => $parentOffset,
                     'matchFields' => $matchFields,
-                    'fields' => $this->unwrapChildFields($childFields),
+                    'fields' => [],
                 ];
+                $children[$index]['fields'] = $this->collectChildren(
+                    $childTable,
+                    $this->unwrapChildFields($childFields),
+                    ['pid' => $record['pid']],
+                    $index + 1,
+                    $depth + 1,
+                    $children,
+                );
             }
         }
 
-        $record['fields'] = $fields;
-
-        return ['record' => $record, 'children' => $children];
+        return $fields;
     }
 
     /**
@@ -197,7 +236,6 @@ final class NestedChildExpanderService
             return $child;
         }
 
-        // @var array<string, mixed> $fields
         return $child['fields'];
     }
 

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+    <file source-language="en" target-language="de" datatype="plaintext" original="messages" date="2026-10-19T12:00:00Z" product-name="ai_suite_mcp">
+        <header/>
+        <body>
+            <trans-unit id="aiSuite.mcp.oauth.scope.read">
+                <source>Analyse pages, content and files</source>
+                <target>Seiten, Content und Dateien analysieren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.scope.write">
+                <source>Create, change or delete content</source>
+                <target>Inhalte anlegen, ändern oder löschen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.scope.generate">
+                <source>Generate SEO metadata, content and page structures</source>
+                <target>SEO-Metadaten, Content und Seitenstrukturen generieren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.scope.translate">
+                <source>Translate pages and content into other languages</source>
+                <target>Seiten und Inhalte in andere Sprachen übersetzen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.scope.image">
+                <source>Generate images with AI (GPTImage, Midjourney, Flux)</source>
+                <target>Bilder mit KI generieren (GPTImage, Midjourney, Flux)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.scope.media">
+                <source>Upload images and videos to the file storage (by URL, upload or YouTube/Vimeo link)</source>
+                <target>Bilder und Videos in die Dateiablage hochladen (per URL, Upload oder YouTube/Vimeo-Link)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.scope.workflow">
+                <source>Run bulk actions and background tasks for many pages at once</source>
+                <target>Massenaktionen und Hintergrund-Tasks für viele Seiten gleichzeitig durchführen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.titleConnect">
+                <source>MCP connection</source>
+                <target>MCP-Verbindung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.titleAuthorize">
+                <source>MCP authorization</source>
+                <target>MCP-Freigabe</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.titleMfa">
+                <source>MCP two-factor authentication</source>
+                <target>MCP: Zwei-Faktor-Authentifizierung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.wouldLikeToConnect">
+                <source>would like to connect to your TYPO3 installation.</source>
+                <target>möchte sich mit deiner TYPO3-Installation verbinden.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.redirectsTo">
+                <source>After you agree, the access code is sent to</source>
+                <target>Nach deiner Zustimmung geht der Zugangscode an</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.requestsAccess">
+                <source>requests access to AI Suite MCP</source>
+                <target>bittet um Zugriff auf AI Suite MCP</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.mfaRequired">
+                <source>two-factor authentication required.</source>
+                <target>Zwei-Faktor-Authentifizierung erforderlich.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.localConnection">
+                <source>Local connection</source>
+                <target>Lokale Verbindung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.logoAlt">
+                <source>Logo</source>
+                <target>Logo</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.loginError">
+                <source>Username or password incorrect. Please try again.</source>
+                <target>Benutzername oder Passwort falsch. Versuche es noch einmal.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.mfaSetupRequired">
+                <source>Your account requires two-factor authentication. Set it up in the TYPO3 backend first, then connect again.</source>
+                <target>Dein Konto verlangt eine Zwei-Faktor-Authentifizierung. Richte sie zuerst im TYPO3-Backend ein und verbinde dich dann erneut.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.accessDenied">
+                <source>MCP access needs to be enabled for your user group. Contact your administrator.</source>
+                <target>Der MCP-Zugriff muss für deine Benutzergruppe freigeschaltet sein. Wende dich an deinen Administrator.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.username">
+                <source>Username</source>
+                <target>Benutzername</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.password">
+                <source>Password</source>
+                <target>Passwort</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.signIn">
+                <source>Sign in</source>
+                <target>Anmelden</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.mfaError">
+                <source>Verification failed. Please try again.</source>
+                <target>Die Prüfung ist fehlgeschlagen. Versuche es noch einmal.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.verify">
+                <source>Verify</source>
+                <target>Bestätigen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.bindWorkspace">
+                <source>Bind token to workspace</source>
+                <target>Token an Workspace binden</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.workspace">
+                <source>Workspace</source>
+                <target>Workspace</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.grantAll">
+                <source>Grant full access</source>
+                <target>Vollen Zugriff gewähren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.customize">
+                <source>Customize permissions</source>
+                <target>Berechtigungen anpassen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.grantSelected">
+                <source>Grant selected permissions</source>
+                <target>Ausgewählte Berechtigungen gewähren</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.deny">
+                <source>Deny access</source>
+                <target>Zugriff verweigern</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.poweredBy">
+                <source>Powered by</source>
+                <target>Bereitgestellt von</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.oauth.page.product">
+                <source>AI Suite for TYPO3</source>
+                <target>AI Suite für TYPO3</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>

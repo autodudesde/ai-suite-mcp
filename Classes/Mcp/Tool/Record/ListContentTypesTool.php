@@ -10,11 +10,9 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\FieldCurationService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FieldFormatHintService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ListContentTypesTool extends AbstractDataTool
 {
     private const MAX_INLINE_FIELDS_PER_CTYPE = 3;
@@ -321,12 +319,19 @@ class ListContentTypesTool extends AbstractDataTool
 
             $config = $this->tcaCompatibilityService->getEffectiveFieldConfiguration($childTable, null, $fieldName);
             $type = (string) ($config['type'] ?? '');
-            if (in_array($type, ['passthrough', 'inline', 'file'], true)) {
+            $nestedTable = 'inline' === $type ? (string) ($config['foreign_table'] ?? '') : '';
+            if (in_array($type, ['passthrough', 'file'], true) || ('inline' === $type && ('' === $nestedTable || 'sys_file_reference' === $nestedTable))) {
                 continue;
             }
 
             if (count($fields) >= self::MAX_CHILD_FIELDS) {
                 ++$omitted;
+
+                continue;
+            }
+
+            if ('' !== $nestedTable) {
+                $fields[] = sprintf('%s (children: %s)', $fieldName, $nestedTable);
 
                 continue;
             }

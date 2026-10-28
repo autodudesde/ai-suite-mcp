@@ -26,6 +26,13 @@ class ClientIpService implements SingletonInterface
         ));
     }
 
+    public function isFromTrustedProxy(ServerRequestInterface $request): bool
+    {
+        $remote = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? '');
+
+        return '' !== $remote && [] !== $this->trustedProxies && IpUtils::checkIp($remote, $this->trustedProxies);
+    }
+
     public function resolve(ServerRequestInterface $request): string
     {
         $remote = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? '');

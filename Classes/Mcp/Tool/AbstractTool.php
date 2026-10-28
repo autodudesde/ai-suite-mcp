@@ -14,6 +14,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\McpException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RefusedRequestException;
+use AutoDudes\AiSuiteMcp\Mcp\Log\ThrowableFrames;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerErrorFormatter;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NavigationTargetCollector;
@@ -120,11 +122,20 @@ abstract class AbstractTool implements ToolInterface
             ]);
 
             return $this->errorResult($e->getMessage(), $e->getErrorType(), $e->getErrorContext());
+        } catch (RefusedRequestException $e) {
+            $this->logger->warning('MCP tool refused the request', [
+                'tool' => $this->getName(),
+                'beUserUid' => $this->getBackendUser()?->user['uid'] ?? null,
+                'message' => $e->getMessage(),
+                'type' => $e->getErrorType()->value,
+            ]);
+
+            return $this->errorResult($e->getMessage(), $e->getErrorType(), $e->getErrorContext());
         } catch (\RuntimeException $e) {
             $this->logger->error('MCP tool execution failed', [
                 'tool' => $this->getName(),
                 'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace' => ThrowableFrames::of($e),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
@@ -137,7 +148,7 @@ abstract class AbstractTool implements ToolInterface
             $this->logger->error('MCP tool execution failed', [
                 'tool' => $this->getName(),
                 'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace' => ThrowableFrames::of($e),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
@@ -198,6 +209,7 @@ abstract class AbstractTool implements ToolInterface
         $this->permissionService->validateToolAccess(
             $this->getName(),
             $this->userContext->getScopes(),
+            $this->userContext->getToolPermissionPolicy(),
         );
     }
 
@@ -329,24 +341,35 @@ abstract class AbstractTool implements ToolInterface
     }
 
     /**
-     * @param list<array{table: string, label: string, targets: list<array{label: string, url: string}>, omitted: int}> $groups
+     * @param list<array{table: string, label: string, targets: list<array{label: string, url: string, download?: bool, language?: string}>, omitted: int}> $groups
      */
     private function renderBackendLinks(array $groups): string
     {
         $note = "\n\n🔗 Open in TYPO3 — include these links in your reply:";
         foreach ($groups as $group) {
             $links = implode(' · ', array_map(
-                static fn (array $target): string => sprintf('[%s](%s)', $target['label'], $target['url']),
+                fn (array $target): string => sprintf(
+                    '[%s](%s)',
+                    isset($target['language']) ? sprintf('%s (%s)', $this->markdownLabel($target['label']), $this->markdownLabel($target['language'])) : $this->markdownLabel($target['label']),
+                    $target['url'],
+                ),
                 $group['targets'],
             ));
             $note .= sprintf(
                 "\n- %s: %s%s",
-                $group['label'],
+                $this->markdownLabel($group['label']),
                 $links,
                 $group['omitted'] > 0 ? sprintf(' (+%d more)', $group['omitted']) : '',
             );
         }
 
         return $note;
+    }
+
+    private function markdownLabel(string $label): string
+    {
+        $singleLine = trim((string) preg_replace('/\s+/u', ' ', $label));
+
+        return addcslashes($singleLine, '\[]');
     }
 }

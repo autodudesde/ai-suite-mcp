@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RefusedRequestException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchEntryValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\BatchPlacement;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class CopyRecordTool extends AbstractDataTool
 {
     protected ?string $requiredScope = 'mcp:write';
@@ -23,6 +24,7 @@ class CopyRecordTool extends AbstractDataTool
         ToolContext $mcpToolContext,
         private readonly BatchResultBuilderService $batchResultBuilder,
         private readonly BatchEntryValidator $batchEntryValidator,
+        private readonly WorkspaceRecordService $workspaceRecords,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -71,12 +73,14 @@ class CopyRecordTool extends AbstractDataTool
 
         $this->batchEntryValidator->assertShape($copies, 'copies', ['table', 'uid', 'targetPid']);
 
-        return $this->batchResultBuilder->run($copies, 'copy/copies', function (mixed $copy): array {
+        $placement = new BatchPlacement();
+
+        return $this->batchResultBuilder->run($copies, 'copy/copies', function (mixed $copy) use ($placement): array {
             if (!is_array($copy)) {
                 throw new InvalidParameterException('Skipped (not an object).');
             }
 
-            return $this->performCopy($copy);
+            return $this->performCopy($copy, $placement);
         });
     }
 
@@ -85,31 +89,37 @@ class CopyRecordTool extends AbstractDataTool
      *
      * @return array{message: string, uid: null|int, table: string, action: string}
      */
-    private function performCopy(array $copy): array
+    private function performCopy(array $copy, BatchPlacement $placement): array
     {
         $table = (string) ($copy['table'] ?? '');
         $uid = (int) ($copy['uid'] ?? 0);
         $targetPid = isset($copy['targetPid']) ? (int) $copy['targetPid'] : null;
 
         if ('' === $table || $uid <= 0 || null === $targetPid) {
-            throw new \RuntimeException('Provide table, uid and targetPid.');
+            throw RefusedRequestException::invalidParameter('Provide table, uid and targetPid.');
         }
 
         $this->recordAccess->validateTableWriteAccess($table);
 
+        $uid = $this->workspaceRecords->resolveLiveUid($table, $uid);
         $record = $this->recordAccess->assertRecordReadAccess($table, $uid);
         $this->recordAccess->assertRecordCreateAccess($table, $targetPid);
 
         $targetPage = BackendUtility::getRecordWSOL('pages', $targetPid);
         if (null === $targetPage) {
-            throw new \RuntimeException(sprintf('Target page %d not found.', $targetPid));
+            throw RefusedRequestException::notFound(sprintf('Target page %d not found.', $targetPid));
         }
 
         $labelField = $this->tcaCompatibilityService->getLabelField($table);
         $recordLabel = $record[$labelField] ?? $uid;
 
+        $anchorUid = $placement->anchorFor($table, $targetPid, $record);
+        $destination = null !== $anchorUid
+            ? -1 * abs($this->workspaceRecords->resolveWriteTarget($table, $anchorUid))
+            : $targetPid;
+
         $dh = GeneralUtility::makeInstance(DataHandler::class);
-        $dh->start([], [$table => [$uid => ['copy' => $targetPid]]]);
+        $dh->start([], [$table => [$uid => ['copy' => $destination]]]);
         $dh->process_cmdmap();
 
         if ([] !== $dh->errorLog) {
@@ -117,6 +127,9 @@ class CopyRecordTool extends AbstractDataTool
         }
 
         $newUid = $dh->copyMappingArray[$table][$uid] ?? null;
+        if (null !== $newUid) {
+            $placement->placed($table, $targetPid, (int) $newUid, $record);
+        }
 
         $text = sprintf(
             '%s "%s" (UID: %d) copied to page %d.',
@@ -128,6 +141,9 @@ class CopyRecordTool extends AbstractDataTool
 
         if (null !== $newUid) {
             $text .= sprintf(' New record UID: %d.', $newUid);
+        }
+        if (null !== $anchorUid) {
+            $text .= sprintf(' Placed after record %d to keep the order of the batch.', $anchorUid);
         }
 
         return [

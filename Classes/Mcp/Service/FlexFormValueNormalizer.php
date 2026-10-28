@@ -62,6 +62,31 @@ class FlexFormValueNormalizer
 
     /**
      * @param array<string, mixed> $row
+     * @param array<string, mixed> $normalized
+     *
+     * @return list<string>
+     */
+    public function rawMarkupFieldsWithMarkup(string $table, string $field, array $row, array $normalized): array
+    {
+        $sheets = $this->resolveSheets($table, $field, $row);
+        $found = [];
+        foreach ((array) ($normalized['data'] ?? []) as $sheetName => $sheet) {
+            foreach ((array) ($sheet[self::LANGUAGE_KEY] ?? []) as $fieldName => $value) {
+                $definition = $sheets[(string) $sheetName][(string) $fieldName] ?? [];
+                $config = $definition['config'] ?? $definition['TCEforms']['config'] ?? [];
+                $leaf = \is_array($value) ? ($value[self::VALUE_KEY] ?? null) : null;
+                if (\is_array($config) && \is_string($leaf) && str_contains($leaf, '<')
+                    && $this->tcaCompatibilityService->isRawMarkupFieldConfig($config)) {
+                    $found[] = $sheetName.'.'.$fieldName;
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * @param array<string, mixed> $row
      *
      * @return array<string, array<string, mixed>>
      */

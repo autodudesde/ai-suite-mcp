@@ -13,12 +13,10 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Backend\View\BackendLayoutView;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadPageContentTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
@@ -95,6 +93,7 @@ class ReadPageContentTool extends AbstractTool
         $offset = (int) ($params['offset'] ?? 0);
 
         $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
+        $this->recordAccess->validateTableReadAccess('tt_content');
 
         $page = BackendUtility::getRecordWSOL('pages', $pageId);
         if (null === $page) {
@@ -226,14 +225,14 @@ class ReadPageContentTool extends AbstractTool
      */
     private function formatElement(array $row, int $languageUid): array
     {
-        $bodytext = strip_tags((string) ($row['bodytext'] ?? ''));
+        $bodytext = $this->recordAccess->canAccessField('tt_content', 'bodytext') ? strip_tags((string) ($row['bodytext'] ?? '')) : '';
         $filesByField = $this->contentRepository->getReferencedFilesByField((int) $row['uid']);
         $fileUids = array_values(array_unique(array_merge(...array_values($filesByField) ?: [[]])));
 
         return [
             'uid' => (int) $row['uid'],
             'CType' => (string) $row['CType'],
-            'header' => (string) $row['header'],
+            'header' => $this->recordAccess->canAccessField('tt_content', 'header') ? (string) $row['header'] : '',
             'colPos' => (int) $row['colPos'],
             'sorting' => (int) ($row['sorting'] ?? 0),
             'hidden' => (bool) $row['hidden'],
@@ -270,6 +269,8 @@ class ReadPageContentTool extends AbstractTool
                     || empty($config['foreign_table'])
                     || empty($config['foreign_field'])
                     || 'sys_file_reference' === $config['foreign_table'] // assets are reported as image count
+                    || !$this->recordAccess->hasTableReadAccess((string) $config['foreign_table'])
+                    || !$this->recordAccess->canAccessField('tt_content', $fieldName)
                 ) {
                     continue;
                 }

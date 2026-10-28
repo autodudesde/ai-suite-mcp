@@ -55,9 +55,10 @@ class OperatingGuidelines
     {
         return <<<'SECTION'
             ## Defaults instead of questions
-            Do not interview the editor. When a request leaves details open, choose sensible defaults from what you already know (the page, its editorial guidelines, an attachment, the surrounding content), state them in one short line, and carry the request out. The host asks the editor to confirm before anything is written, so a default that misses costs one click, not data.
+            Do not interview the editor. When a request leaves details open, choose sensible defaults from what you already know (the page, its editorial guidelines, the surrounding content), state them in one short line, and carry the request out. The host asks the editor to confirm before anything is written, so a default that misses costs one click, not data.
             Ask only when the request cannot be carried out at all without the answer — when two pages match the name, or when it points at a page ("here", "this page") without naming one, which you have no way of resolving. Then ask that one question, not a list. A page is the one thing you must never default.
             Carry out the whole request, not its shell. An element that takes children is created together with its children. A page requested from an attachment is created together with the content from that attachment.
+            Text the editor hands you for a page, in an attachment or in the message, is the page text: keep its wording, voice and length, and do not add to it, shorten it or restyle it. The editorial guidelines govern text you write yourself, not text the editor supplied. A passage the source marks as open stays open and visibly marked; do not write it out. Rework supplied text only when the editor asks for it.
             When you are done, name the one obvious next step in a single sentence and offer to do it.
             SECTION;
     }
@@ -99,7 +100,7 @@ class OperatingGuidelines
             generateFileMetadata, generateImage, translateFileMetadata, the batch* tools and the audit tools (auditSeo, auditAccessibility, auditContent) call the AI Suite Server and consume credits; translatePage and translateRecord do so only when you pass a model. Reach for them for what only they can do:
             - generateImage — creates an image. It writes to FAL directly; no preview exists.
             - generateFileMetadata — inspects the file itself (AI vision), which is what makes alt text useful.
-            - translateFileMetadata — DeepL plus the site's glossary, for consistent terminology. It writes the translation directly; do not call writeRecords afterwards.
+            - translateFileMetadata — DeepL plus the glossary of the site named by `pageId`, for consistent terminology; files belong to no site, so without `pageId` no glossary applies. It writes the translation directly; do not call writeRecords afterwards.
             - translatePage, translateRecord — call them without `model`: they create the translation records, hand you the source fields with the glossary, and you translate and write the result back with writeRecords. That is free and it is the default. Pass `model` only when the request named one; the server then translates and writes directly, and you do not call writeRecords afterwards. localizeRecord only creates an empty translation shell and costs nothing.
             - auditSeo, auditAccessibility, auditContent — they measure the live page from outside, which nothing here can do. The subject is always a rendered page, never a single record or file; those are answered by a read. Run one when the request asks for an audit; readAuditResults reads what earlier runs already stored and is free.
             Anything else you compose yourself and persist with writeRecords — that costs no credits.

@@ -9,6 +9,7 @@ use AutoDudes\AiSuite\Service\GlobalInstructionService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientScopeException;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\RecordAccessService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\OperatingGuidelines;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;
@@ -23,6 +24,7 @@ use Mcp\Types\ResourceTemplate;
 use Mcp\Types\TextResourceContents;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Site\SiteFinder;
+use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
 class McpResourceHandler
 {
@@ -35,6 +37,7 @@ class McpResourceHandler
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly McpUserContext $userContext,
         private readonly PermissionService $permissionService,
+        private readonly RecordAccessService $recordAccess,
     ) {}
 
     public function registerHandlers(Server $server): void
@@ -65,6 +68,9 @@ class McpResourceHandler
         );
 
         foreach ($this->globalInstructionsRepository->findDistinctPidScopes() as $instr) {
+            if (!$this->canShowPage($instr['pid'])) {
+                continue;
+            }
             $resources[] = new Resource(
                 name: 'Content guidelines for page '.$instr['pid'],
                 uri: 'aisuite://instructions/page/'.$instr['pid'],
@@ -133,10 +139,13 @@ class McpResourceHandler
 
         if (str_starts_with($uri, 'aisuite://instructions/page/')) {
             $pid = (int) substr($uri, strlen('aisuite://instructions/page/'));
+            if (!$this->canShowPage($pid)) {
+                throw $this->unknownResource($uri);
+            }
 
             return $this->cacheable(new ReadResourceResult([
                 new TextResourceContents(
-                    text: $this->globalInstructionService->buildGlobalInstruction('', 'pages', $pid) ?: 'No instructions configured for this page.',
+                    text: $this->globalInstructionService->buildGlobalInstruction('pages', 'general', $pid) ?: 'No instructions configured for this page.',
                     uri: $uri,
                     mimeType: 'text/plain',
                 ),
@@ -173,10 +182,30 @@ class McpResourceHandler
             ]));
         }
 
-        throw new McpError(new ErrorData(
+        throw $this->unknownResource($uri);
+    }
+
+    private function unknownResource(string $uri): McpError
+    {
+        return new McpError(new ErrorData(
             code: -32602,
             message: sprintf('Unknown resource URI: %s', $uri),
         ));
+    }
+
+    private function canShowPage(int $pid): bool
+    {
+        if (0 === $pid) {
+            return true;
+        }
+
+        try {
+            $this->recordAccess->assertPagePerm($pid, Permission::PAGE_SHOW);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -188,7 +217,7 @@ class McpResourceHandler
      */
     private function cacheable(CacheableResult $result): CacheableResult
     {
-        $result->setCacheHints(0, CacheableResult::CACHE_SCOPE_PUBLIC);
+        $result->setCacheHints(0, CacheableResult::CACHE_SCOPE_PRIVATE);
 
         return $result;
     }
@@ -198,8 +227,12 @@ class McpResourceHandler
      */
     private function getSiteConfig(): array
     {
+        $beUser = $this->recordAccess->getBackendUser();
         $sites = [];
         foreach ($this->siteFinder->getAllSites() as $site) {
+            if (null === $beUser || (!$beUser->isAdmin() && !$beUser->isInWebMount($site->getRootPageId()))) {
+                continue;
+            }
             $languages = [];
             foreach ($site->getLanguages() as $lang) {
                 $languages[] = [

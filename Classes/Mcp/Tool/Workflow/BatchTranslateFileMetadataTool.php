@@ -7,7 +7,9 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow;
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
 use AutoDudes\AiSuite\Domain\Repository\SysFileMetadataRepository;
 use AutoDudes\AiSuite\Enumeration\GenerationLibraryEnumeration;
+use AutoDudes\AiSuite\Service\GlossarService;
 use AutoDudes\AiSuite\Service\LibraryService;
+use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\UuidService;
 use AutoDudes\AiSuite\Service\WorkflowProcessingService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
@@ -17,10 +19,9 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\FolderFileSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
+use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslateFileMetadataTool extends AbstractAiTool
 {
     use FolderFileSelectionTrait;
@@ -34,6 +35,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly SysFileMetadataRepository $sysFileMetadataRepository,
         private readonly WorkflowProcessingService $workflowProcessingService,
+        private readonly GlossarService $glossarService,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -76,6 +78,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
                     'description' => 'Metadata fields to translate: alternative (alt text), title, description.',
                 ],
                 'model' => ['type' => 'string', 'description' => 'Translation model identifier (e.g. DeepL). Omit to list available models.'],
+                'pageId' => ['type' => 'integer', 'description' => 'Optional. UID of any page of the site whose glossary applies; files belong to no site, so without it no glossary is used.'],
             ],
             'required' => ['targetLanguage'],
         ];
@@ -137,13 +140,22 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
 
         $this->permissionService->validateModelAccess($model);
 
+        $glossaryPageId = max(0, (int) ($params['pageId'] ?? 0));
+        if ($glossaryPageId > 0) {
+            $this->recordAccess->assertPagePerm($glossaryPageId, Permission::PAGE_SHOW);
+        }
         $sourceLanguage = $params['sourceLanguage'] ?? '';
-        if ('' === $sourceLanguage) {
-            $sourceLanguage = $this->resolveLanguageIsoCode('', 1);
+        $languagePageId = $this->referencePageId($glossaryPageId, $sourceLanguage, $targetLanguage);
+        if (0 === $languagePageId) {
+            return $this->textError('No site in your web mounts to resolve the languages from. Pass pageId with a page of the site whose languages apply.');
         }
 
-        $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, 1);
-        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, 1);
+        if ('' === $sourceLanguage) {
+            $sourceLanguage = $this->resolveLanguageIsoCode('', $languagePageId);
+        }
+
+        $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $languagePageId);
+        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $languagePageId);
 
         if (0 === $targetLanguageUid) {
             return $this->textError("Language \"{$targetLanguage}\" is not configured for this site.");
@@ -254,6 +266,7 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
             return $this->textError('No valid files found to translate.');
         }
 
+        $this->assertCreditBudget();
         $parentUuid = $this->uuidService->generateUuid();
 
         $result = $this->workflowProcessingService->processFileMetadataTranslation(
@@ -281,6 +294,12 @@ class BatchTranslateFileMetadataTool extends AbstractAiTool
                 'payload' => $payload,
                 'scope' => 'metadata',
                 'type' => 'translation',
+                ...$this->glossarService->buildRequestParameters(
+                    (string) json_encode($result['translatableContentForGlossary'], SendRequestService::JSON_SAFE_FLAGS),
+                    $sourceLanguageUid,
+                    $targetLanguageUid,
+                    $this->glossarService->getSiteRootPageId($glossaryPageId),
+                ),
             ],
             '',
             '',

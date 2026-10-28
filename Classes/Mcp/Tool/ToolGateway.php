@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\ToolAccessContext;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
@@ -28,12 +29,12 @@ class ToolGateway
     {
         $tools = [];
         foreach ($this->toolRegistry->getTools() as $tool) {
-            if ($this->permissionService->isToolAvailable($tool->getName(), $context->scopes)) {
+            if ($this->permissionService->isToolAvailable($tool->getName(), $context->scopes, $context->policy)) {
                 $tools[] = $tool;
             }
         }
 
-        return [...$tools, ...array_values($hostTools)];
+        return [...$tools, ...array_values($this->withoutShadowing($hostTools, $context))];
     }
 
     /**
@@ -49,6 +50,7 @@ class ToolGateway
             'arguments' => array_keys($arguments),
         ]);
 
+        $hostTools = $this->withoutShadowing($hostTools, $context);
         if (isset($hostTools[$name])) {
             return $this->run($hostTools[$name], $name, $arguments, $startTime, $context);
         }
@@ -67,7 +69,7 @@ class ToolGateway
         }
 
         try {
-            $this->permissionService->validateToolAccess($name, $context->scopes);
+            $this->permissionService->validateToolAccess($name, $context->scopes, $context->policy);
         } catch (\Throwable $e) {
             return $this->failure(
                 $name,
@@ -90,6 +92,23 @@ class ToolGateway
         }
 
         return $text;
+    }
+
+    /**
+     * @param array<string, ToolInterface> $hostTools
+     *
+     * @return array<string, ToolInterface>
+     */
+    private function withoutShadowing(array $hostTools, ToolAccessContext $context): array
+    {
+        foreach ($hostTools as $key => $tool) {
+            if (null !== $this->toolRegistry->getTool((string) $key) || null !== $this->toolRegistry->getTool($tool->getName())) {
+                $this->logger->warning('MCP host tool ignored: its name belongs to a registry tool', ['tool' => $tool->getName(), 'via' => $context->via]);
+                unset($hostTools[$key]);
+            }
+        }
+
+        return $hostTools;
     }
 
     /**

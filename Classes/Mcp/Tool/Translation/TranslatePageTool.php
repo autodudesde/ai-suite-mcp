@@ -8,12 +8,10 @@ use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class TranslatePageTool extends AbstractTranslateTool implements SelfTranslatingToolInterface
 {
     protected ?string $requiredScope = 'mcp:translate';
@@ -59,7 +57,7 @@ class TranslatePageTool extends AbstractTranslateTool implements SelfTranslating
 
     protected function doExecute(array $params): CallToolResult
     {
-        $pageId = (int) $params['pageId'];
+        $pageId = $this->translationService->resolveLiveUid('pages', (int) $params['pageId']);
         $targetLanguage = (string) $params['targetLanguage'];
         $translationScope = (string) ($params['translationScope'] ?? 'all');
         $model = (string) ($params['model'] ?? '');
@@ -121,10 +119,9 @@ class TranslatePageTool extends AbstractTranslateTool implements SelfTranslating
         }
         $translateFieldsJson = json_encode($translateFields, SendRequestService::JSON_SAFE_FLAGS);
 
-        $site = $this->siteFinder->getSiteByPageId($pageId);
-        $rootPageId = $site->getRootPageId();
-        $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid);
-        $glossary = $this->glossarService->findDeeplGlossary($rootPageId, $srcLangUid, $destLangUid);
+        $rootPageId = $this->glossarService->getSiteRootPageId($pageId);
+        $glossarEntries = $this->glossarService->findGlossarEntries((string) $translateFieldsJson, $destLangUid, $srcLangUid, $rootPageId);
+        $glossary = $rootPageId > 0 ? $this->glossarService->findDeeplGlossary($rootPageId, $srcLangUid, $destLangUid) : false;
 
         $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('pages', 'translation', $pageId);
 
@@ -178,10 +175,11 @@ class TranslatePageTool extends AbstractTranslateTool implements SelfTranslating
             return $this->textError('No translation results returned by the server.');
         }
 
-        $cleanedResults = $this->restrictToSentFields($translationResults, $translateFields);
+        $blockedFields = [];
+        $cleanedResults = $this->sanitizeTranslatedRecords($this->restrictToSentFields($translationResults, $translateFields), $blockedFields);
 
         if (empty($cleanedResults)) {
-            return $this->textError('Translation results could not be processed (invalid format).');
+            return $this->textError('Translation results could not be processed (invalid format). '.$this->describeBlockedFields($blockedFields));
         }
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
@@ -200,6 +198,7 @@ class TranslatePageTool extends AbstractTranslateTool implements SelfTranslating
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: Page %d → %s\n\n", $pageId, $targetLanguage);
         $text .= sprintf("**Scope:** %s | **Elements:** %d\n\n", $translationScope, $elementsCount);
+        $text .= $this->describeBlockedFields($blockedFields);
 
         foreach ($cleanedResults as $table => $records) {
             foreach ($records as $uid => $fields) {

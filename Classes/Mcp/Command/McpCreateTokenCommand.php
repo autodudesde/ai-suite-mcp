@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Command;
 
-use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpCliAccessService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -20,7 +19,7 @@ class McpCreateTokenCommand extends Command
 {
     public function __construct(
         private readonly OAuthService $oauthService,
-        private readonly PermissionService $permissionService,
+        private readonly McpCliAccessService $cliAccess,
     ) {
         parent::__construct();
     }
@@ -29,11 +28,11 @@ class McpCreateTokenCommand extends Command
     {
         $this
             ->setDescription('Create an MCP access token for testing (e.g. MCP Inspector)')
-            ->addOption('user', 'u', InputOption::VALUE_REQUIRED, 'Backend user UID or username', '1')
-            ->addOption('scopes', 's', InputOption::VALUE_OPTIONAL, 'Space-separated scopes (default: all available for user)')
-            ->addOption('client', 'c', InputOption::VALUE_OPTIONAL, 'Client ID', 'mcp-inspector')
-            ->addOption('workspace', 'w', InputOption::VALUE_OPTIONAL, 'Workspace UID to bind this token to (0 = user default; ignored when ext:workspaces is not loaded)', '0')
-            ->addOption('audience', 'a', InputOption::VALUE_OPTIONAL, 'Canonical resource URI to bind the token to (RFC 8707). Default: derived from TYPO3_REQUEST_HOST. Set this explicitly when running over CLI on a host different from the public URL.')
+            ->addOption('audience', 'a', InputOption::VALUE_REQUIRED, 'Canonical resource URI to bind the token to (RFC 8707), e.g. https://your-host/aisuite-mcp. Must be passed: the CLI has no request host to derive it from.')
+            ->addOption('user', 'u', InputOption::VALUE_REQUIRED, 'Backend user UID or username (required)')
+            ->addOption('scopes', 's', InputOption::VALUE_REQUIRED, 'Space-separated scopes (default: all available for user)')
+            ->addOption('client', 'c', InputOption::VALUE_REQUIRED, 'Client ID', 'mcp-inspector')
+            ->addOption('workspace', 'w', InputOption::VALUE_REQUIRED, 'Workspace UID to bind this token to (0 = user default; ignored when ext:workspaces is not loaded)', '0')
         ;
     }
 
@@ -42,6 +41,11 @@ class McpCreateTokenCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $userInput = (string) $input->getOption('user');
         $clientId = (string) $input->getOption('client');
+        if ('' === $userInput) {
+            $io->error('Name the backend user the token acts as: --user=<uid|username>.');
+
+            return Command::FAILURE;
+        }
 
         $backendUser = GeneralUtility::makeInstance(BackendUserAuthentication::class);
         if (ctype_digit($userInput)) {
@@ -58,6 +62,12 @@ class McpCreateTokenCommand extends Command
         $backendUser->fetchGroupData();
         $GLOBALS['BE_USER'] = $backendUser;
 
+        if (null !== ($refusal = $this->cliAccess->refusal($beUserUid))) {
+            $io->error($refusal);
+
+            return Command::FAILURE;
+        }
+
         $workspaceUid = (int) $input->getOption('workspace');
         if ($workspaceUid > 0 && !ExtensionManagementUtility::isLoaded('workspaces')) {
             $output->writeln('<warning>Workspace flag ignored — ext:workspaces is not loaded; token created with workspace_uid=0.</warning>');
@@ -70,10 +80,9 @@ class McpCreateTokenCommand extends Command
         }
 
         $scopeInput = $input->getOption('scopes');
-        if (null !== $scopeInput && '' !== $scopeInput) {
-            $scopes = array_filter(explode(' ', (string) $scopeInput));
-        } else {
-            $scopes = $this->permissionService->getAvailableScopes();
+        ['granted' => $scopes, 'dropped' => $dropped] = $this->cliAccess->scopes(null !== $scopeInput ? (string) $scopeInput : null);
+        if ([] !== $dropped) {
+            $io->warning(sprintf('Not granted, the user lacks the permission or the scope does not exist: %s', implode(' ', $dropped)));
         }
 
         if (empty($scopes)) {
@@ -82,13 +91,10 @@ class McpCreateTokenCommand extends Command
             return Command::FAILURE;
         }
 
-        // Resolve audience for RFC 8707 binding.
-        $audienceInput = (string) ($input->getOption('audience') ?? '');
-        $audience = '' !== $audienceInput ? $audienceInput : CanonicalResource::get();
-        if ('' === $audience || !preg_match('#^https?://#', $audience)) {
+        $audience = (string) ($input->getOption('audience') ?? '');
+        if (!preg_match('#^https?://#', $audience)) {
             $io->error(sprintf(
-                'Could not derive a canonical resource URI from the CLI environment (got "%s"). '
-                .'Pass --audience=https://your-host/aisuite-mcp explicitly.',
+                'The token needs a canonical resource URI (got "%s"). Pass --audience=https://your-host/aisuite-mcp.',
                 $audience,
             ));
 
@@ -99,8 +105,8 @@ class McpCreateTokenCommand extends Command
             $beUserUid,
             $clientId,
             array_values($scopes),
-            $workspaceUid > 0 ? $workspaceUid : null,
             $audience,
+            $workspaceUid > 0 ? $workspaceUid : null,
         );
 
         $io->success('MCP access token created');

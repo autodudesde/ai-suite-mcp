@@ -35,18 +35,28 @@ class McpDashboard {
     async createToken() {
         const clientName = document.getElementById('clientName')?.value || 'Claude Desktop';
         const workspaceUid = document.getElementById('workspaceUid')?.value || '0';
+        const passwordField = document.getElementById('mcpPasswordConfirm');
+        const password = passwordField?.value || '';
+        if (passwordField) {
+            passwordField.value = '';
+        }
 
         try {
             const response = await fetch(TYPO3.settings.ajaxUrls['aisuite_mcp_create_token'], {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: new URLSearchParams({clientName, workspaceUid}),
+                body: new URLSearchParams({clientName, workspaceUid, password}),
             });
 
             if (!response.ok) {
+                const failure = await response.json().catch(() => ({}));
+                const messages = {
+                    password_invalid: 'aiSuite.module.mcp.tokenPasswordInvalid',
+                    mcp_disabled: 'aiSuite.module.mcp.tokenMcpDisabled',
+                };
                 Notification.error(
                     TYPO3.lang['aiSuite.module.mcp.createToken'],
-                    TYPO3.lang['aiSuite.module.mcp.tokenCreationFailed']
+                    TYPO3.lang[messages[failure.error] || 'aiSuite.module.mcp.tokenCreationFailed']
                 );
                 return;
             }
@@ -59,8 +69,7 @@ class McpDashboard {
 
                 configPre.textContent = data.claudeDesktopConfig;
                 document.getElementById('claudeCodeConfig').textContent = data.claudeCodeConfig;
-                resultDiv.style.display = 'block';
-                resultDiv.dataset.config = data.claudeDesktopConfig;
+                resultDiv.hidden = false;
 
                 if (data.revokedClientId) {
                     Notification.warning(
@@ -145,8 +154,7 @@ class McpDashboard {
             if (data.success) {
                 const row = document.getElementById('token-row-' + tokenUid);
                 if (row) {
-                    row.style.opacity = '0.3';
-                    row.style.textDecoration = 'line-through';
+                    row.classList.add('aisuite-mcp-token-revoked');
                     buttonElement.disabled = true;
                     buttonElement.textContent = TYPO3.lang['aiSuite.module.mcp.revoked'];
                 }

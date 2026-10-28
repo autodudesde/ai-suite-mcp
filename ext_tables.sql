@@ -11,6 +11,7 @@ CREATE TABLE tx_aisuite_oauth_codes (
     workspace_uid int(11) NOT NULL DEFAULT '0',
     expires_at int(11) unsigned NOT NULL DEFAULT '0',
     used tinyint(1) unsigned DEFAULT '0',
+    token_uid int(11) unsigned NOT NULL DEFAULT '0',
 
     PRIMARY KEY (uid),
     UNIQUE KEY code (code(191)),
@@ -37,6 +38,8 @@ CREATE TABLE tx_aisuite_oauth_tokens (
     family_id int(11) unsigned NOT NULL DEFAULT '0',
     replaced_by int(11) unsigned NOT NULL DEFAULT '0',
     rotated_at int(11) unsigned NOT NULL DEFAULT '0',
+    family_created_at int(11) unsigned NOT NULL DEFAULT '0',
+    refresh_expires_at int(11) unsigned NOT NULL DEFAULT '0',
 
     PRIMARY KEY (uid),
     KEY token (token(191)),
@@ -46,4 +49,16 @@ CREATE TABLE tx_aisuite_oauth_tokens (
     KEY audience (audience(191)),
     KEY revoked_cleanup (deleted, created_at),
     KEY family_id (family_id)
+);
+
+CREATE TABLE tx_aisuite_oauth_clients (
+    uid int(11) unsigned NOT NULL AUTO_INCREMENT,
+    client_id varchar(64) NOT NULL DEFAULT '',
+    client_name varchar(100) NOT NULL DEFAULT '',
+    redirect_uris text,
+    created_at int(11) unsigned NOT NULL DEFAULT '0',
+    last_used_at int(11) unsigned NOT NULL DEFAULT '0',
+
+    PRIMARY KEY (uid),
+    UNIQUE KEY client_id (client_id)
 );

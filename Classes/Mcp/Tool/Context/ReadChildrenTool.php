@@ -10,9 +10,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadChildrenTool extends AbstractTool
 {
     private const MAX_CHILDREN_PER_FIELD = 200;
@@ -93,8 +91,13 @@ class ReadChildrenTool extends AbstractTool
             $childUids[] = (int) ($child['uid'] ?? 0);
         }
 
+        $rows = $this->workspaceRecords->sortRows(
+            $this->workspaceRecords->overlay('tt_content', $childUids),
+            ['colPos', $this->workspaceRecords->sortField('tt_content')],
+        );
+
         $children = [];
-        foreach ($this->workspaceRecords->overlay('tt_content', $childUids) as $child) {
+        foreach ($rows as $child) {
             $children[] = [
                 'uid' => (int) ($child['uid'] ?? 0),
                 'label' => (string) ($child['header'] ?? '') ?: '(no header)',
@@ -124,6 +127,8 @@ class ReadChildrenTool extends AbstractTool
                     || empty($config['foreign_table'])
                     || empty($config['foreign_field'])
                     || 'sys_file_reference' === $config['foreign_table']
+                    || !$this->recordAccess->hasTableReadAccess((string) $config['foreign_table'])
+                    || !$this->recordAccess->canAccessField($table, $fieldName)
                 ) {
                     continue;
                 }
@@ -137,17 +142,22 @@ class ReadChildrenTool extends AbstractTool
                     self::MAX_CHILDREN_PER_FIELD,
                 );
 
-                $children = [];
-                $labelField = $this->tcaCompatibilityService->getLabelField($foreignTable);
+                $rows = [];
                 foreach ($this->workspaceRecords->overlay($foreignTable, $childUids) as $childRecord) {
                     // A live row still names the live parent; only the overlaid value decides membership.
-                    if (!in_array((int) ($childRecord[$foreignField] ?? 0), $targets, true)) {
-                        continue;
+                    if (in_array((int) ($childRecord[$foreignField] ?? 0), $targets, true)) {
+                        $rows[] = $childRecord;
                     }
+                }
 
+                $children = [];
+                $labelField = $this->tcaCompatibilityService->getLabelField($foreignTable);
+                $labelReadable = $this->recordAccess->canAccessField($foreignTable, $labelField);
+                $sortField = $this->workspaceRecords->inlineSortField($foreignTable, $config);
+                foreach ($this->workspaceRecords->sortRows($rows, [$sortField]) as $childRecord) {
                     $children[] = [
                         'uid' => (int) ($childRecord['uid'] ?? 0),
-                        'label' => (string) ($childRecord[$labelField] ?? '') ?: '(no label)',
+                        'label' => ($labelReadable ? (string) ($childRecord[$labelField] ?? '') : '') ?: '(no label)',
                         'type' => $foreignTable,
                         'state' => $this->workspaceRecords->stateLabel($childRecord),
                     ];

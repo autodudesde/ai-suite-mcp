@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use AutoDudes\AiSuite\Events\AfterButtonBarGeneratedEvent;
 use AutoDudes\AiSuiteMcp\Controller\McpController;
 use AutoDudes\AiSuiteMcp\EventListener\McpButtonBarEventListener;
 use AutoDudes\AiSuiteMcp\Mcp\Command\McpCleanupCommand;
@@ -41,6 +42,7 @@ return function (ContainerConfigurator $configurator, ContainerBuilder $containe
         ->tag('console.command', [
             'command' => 'ai-suite-mcp:cleanup',
             'description' => 'Clean up expired MCP OAuth tokens and sessions',
+            'schedulable' => true,
         ])
     ;
 
@@ -48,6 +50,7 @@ return function (ContainerConfigurator $configurator, ContainerBuilder $containe
         ->tag('console.command', [
             'command' => 'ai-suite-mcp:create-token',
             'description' => 'Create an MCP access token for testing (e.g. MCP Inspector)',
+            'schedulable' => false,
         ])
     ;
 
@@ -55,12 +58,14 @@ return function (ContainerConfigurator $configurator, ContainerBuilder $containe
         ->tag('console.command', [
             'command' => 'ai-suite-mcp:server',
             'description' => 'Run a local MCP server over stdio (trusted CLI clients only)',
+            'schedulable' => false,
         ])
     ;
 
     $services->set(McpButtonBarEventListener::class)
         ->tag('event.listener', [
             'identifier' => 'ai-suite-mcp/button-bar',
+            'event' => AfterButtonBarGeneratedEvent::class,
         ])
     ;
 };

@@ -8,10 +8,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\ContentFetchService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadRenderedPageTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
@@ -33,7 +31,8 @@ class ReadRenderedPageTool extends AbstractTool
     public function getDescription(): string
     {
         return 'Read a page as a visitor sees it: the rendered frontend text, including plugin output and TypoScript-composed content. '
-            .'Unlike readPageContent, which returns the stored tt_content records.';
+            .'Unlike readPageContent, which returns the stored tt_content records. '
+            .'In a workspace, or when the page cannot be rendered, the text is assembled from the stored records instead, and the answer says so.';
     }
 
     public function getSchema(): array
@@ -59,12 +58,21 @@ class ReadRenderedPageTool extends AbstractTool
 
         $this->recordAccess->assertPagePerm($pageId, Permission::PAGE_SHOW);
 
-        $text = $this->contentFetchService->fetchPageContent($pageId, $language);
+        $content = $this->contentFetchService->fetch($pageId, $language);
 
-        if ('' === trim($text)) {
-            return $this->textResult(sprintf('Page %d rendered no text content.', $pageId));
+        if ($content->rendered) {
+            return $this->textResult(sprintf("## Rendered content of page %d\n\n%s", $pageId, $content->text));
         }
 
-        return $this->textResult(sprintf("## Rendered content of page %d\n\n%s", $pageId, $text));
+        $source = 0 !== $this->mcpToolContext->workspaceContextService->getWorkspaceId()
+            ? 'Workspace drafts are not rendered, so this text was assembled from the stored records of the draft.'
+            : 'The page could not be rendered, so this text was assembled from the stored records.';
+        $source .= ' Plugin output and TypoScript-composed content are missing.';
+
+        if ('' === trim($content->text)) {
+            return $this->textResult(sprintf("Page %d has no text content.\n\n%s", $pageId, $source));
+        }
+
+        return $this->textResult(sprintf("## Content of page %d (not rendered)\n\n%s\n\n%s", $pageId, $source, $content->text));
     }
 }

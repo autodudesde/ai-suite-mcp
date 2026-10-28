@@ -6,9 +6,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Translation;
 
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class TranslateRecordTool extends AbstractTranslateTool implements SelfTranslatingToolInterface
 {
     protected ?string $requiredScope = 'mcp:translate';

@@ -1,0 +1,14 @@
+.aisuite-mcp-input {
+    max-width: 300px;
+}
+
+.aisuite-mcp-config {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+}
+
+.aisuite-mcp-token-revoked {
+    opacity: 0.3;
+    text-decoration: line-through;
+}

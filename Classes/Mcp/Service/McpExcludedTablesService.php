@@ -15,14 +15,11 @@ class McpExcludedTablesService implements SingletonInterface
      * @var list<string>
      */
     public const SHIPPED_DEFAULTS = [
-        // Personal data.
         'fe_users', 'fe_groups', 'be_users', 'be_groups',
-        // Editors' chat history.
         'tx_cheddi_session',
-        // Configuration, not content.
         'sys_template', 'backend_layout', 'form_definition', 'index_config',
-        // System administration.
         'tx_scheduler_task', 'tx_scheduler_task_group', 'tx_impexp_presets', 'be_dashboards',
+        'sys_webhook', 'sys_reaction', 'sys_file_storage', 'sys_filemounts', 'sys_workspace', 'sys_redirect',
     ];
 
     /** @var null|list<string> */

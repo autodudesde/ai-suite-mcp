@@ -35,6 +35,22 @@
                 <source>An error occurred. Please check your connection and try again.</source>
                 <target>Es ist ein Fehler aufgetreten. Bitte prüfe deine Verbindung und versuche es erneut.</target>
             </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.passwordConfirm">
+                <source>Your backend password</source>
+                <target>Dein Backend-Passwort</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.passwordConfirmHint">
+                <source>A token acts with your rights, so creating one needs your password once more.</source>
+                <target>Ein Token handelt mit deinen Rechten, darum braucht die Erstellung noch einmal dein Passwort.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenPasswordInvalid">
+                <source>The password is not correct. No token was created.</source>
+                <target>Das Passwort stimmt nicht. Es wurde kein Token erstellt.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.tokenMcpDisabled">
+                <source>MCP is switched off in the extension configuration (enableMcp), so no token can be created.</source>
+                <target>MCP ist in der Extension-Konfiguration ausgeschaltet (enableMcp), darum kann kein Token erstellt werden.</target>
+            </trans-unit>
             <trans-unit id="aiSuite.module.mcp.tokenCreationFailed">
                 <source>Token creation failed. Please try again.</source>
                 <target>Der Token konnte nicht erstellt werden. Bitte versuche es erneut.</target>
@@ -72,8 +88,8 @@
                 <target>Claude Desktop (claude_desktop_config.json)</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.configClaudeDesktopBridgeHint">
-                <source>Claude Desktop only launches local commands, so the connection runs through the mcp-remote bridge (requires Node.js). With a self-signed certificate (DDEV/mkcert) add "env": {"NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem"} to the entry, because Node.js does not use the operating system trust store. Alternatively add the server URL under Settings, Connectors, Add custom connector and authenticate via OAuth.</source>
-                <target>Claude Desktop startet nur lokale Befehle, deshalb läuft die Verbindung über die Bridge mcp-remote (benötigt Node.js). Bei einem selbstsignierten Zertifikat (DDEV/mkcert) ergänze im Eintrag "env": {"NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem"}, weil Node.js den Zertifikatsspeicher des Betriebssystems nicht verwendet. Alternativ trägst du die Server-URL unter Einstellungen, Konnektoren, Benutzerdefinierten Konnektor hinzufügen ein und meldest dich per OAuth an.</target>
+                <source>Claude Desktop only launches local commands, so the connection runs through the mcp-remote bridge (requires Node.js). With a self-signed certificate (DDEV/mkcert) add "NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem" to the existing "env" block of the entry, next to AUTH_HEADER, because Node.js does not use the operating system trust store. Alternatively add the server URL under Settings, Connectors, Add custom connector and authenticate via OAuth.</source>
+                <target>Claude Desktop startet nur lokale Befehle, deshalb läuft die Verbindung über die Bridge mcp-remote (benötigt Node.js). Bei einem selbstsignierten Zertifikat (DDEV/mkcert) ergänze im vorhandenen "env"-Block des Eintrags neben AUTH_HEADER "NODE_EXTRA_CA_CERTS": "&lt;mkcert -CAROOT&gt;/rootCA.pem", weil Node.js den Zertifikatsspeicher des Betriebssystems nicht verwendet. Alternativ trägst du die Server-URL unter Einstellungen, Konnektoren, Benutzerdefinierten Konnektor hinzufügen ein und meldest dich per OAuth an.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.configFileLocation">
                 <source>Config file location:</source>
@@ -93,7 +109,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.connect.connectorConfigRequired">
                 <source>Required Extension Settings for external connectors:</source>
-                <target>Benötigte Extension-Einstellungen für externe Connectoren:</target>
+                <target>Benötigte Extension-Konfiguration für externe Connectoren:</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.connect.connectorUrl">
                 <source>Connector URL</source>
@@ -105,7 +121,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.connect.externalConnectorWarning">
                 <source>External connectors will not work in production without configuring Allowed Origins and Allowed Redirect URIs. Configure these in Extension Settings → AI Suite → MCP.</source>
-                <target>Externe Connectoren funktionieren im Produktivbetrieb nur, wenn Allowed Origins und Allowed Redirect URIs konfiguriert sind. Das stellst du unter Extension-Einstellungen → AI Suite → MCP ein.</target>
+                <target>Externe Connectoren funktionieren im Produktivbetrieb nur, wenn Allowed Origins und Allowed Redirect URIs konfiguriert sind. Das stellst du unter Extension-Konfiguration → AI Suite → MCP ein.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.connect.externalConnectors">
                 <source>External Connectors (claude.ai, ChatGPT, etc.)</source>
@@ -169,7 +185,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.notEnabledDescription">
                 <source>Enable the MCP Server in Extension Settings → AI Suite → MCP → Enable MCP Server.</source>
-                <target>Aktiviere den MCP-Server unter Extension-Einstellungen → AI Suite → MCP → Enable MCP Server.</target>
+                <target>Aktiviere den MCP-Server unter Extension-Konfiguration → AI Suite → MCP → Enable MCP Server.</target>
             </trans-unit>
             <trans-unit id="aiSuite.module.mcp.serverEnabled">
                 <source>MCP Server enabled</source>
@@ -202,6 +218,34 @@
             <trans-unit id="aiSuite.module.actionmenu.mcp">
                 <source>MCP</source>
                 <target>MCP</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.label">
+                <source>Workspace</source>
+                <target>Workspace</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.option">
+                <source>Workspace %1$d: %2$s</source>
+                <target>Workspace %1$d: %2$s</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.userDefault">
+                <source>User default</source>
+                <target>Benutzerstandard</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.userDefaultLive">
+                <source>User default (Live)</source>
+                <target>Benutzerstandard (Live)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.userDefaultWorkspace">
+                <source>User default (Workspace %d)</source>
+                <target>Benutzerstandard (Workspace %d)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.liveWithoutWorkspaces">
+                <source>Live (workspaces not installed)</source>
+                <target>Live (Workspaces nicht installiert)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.module.mcp.workspace.numbered">
+                <source>Workspace %d</source>
+                <target>Workspace %d</target>
             </trans-unit>
         </body>
     </file>

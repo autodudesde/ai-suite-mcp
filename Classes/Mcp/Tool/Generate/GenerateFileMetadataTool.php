@@ -14,9 +14,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class GenerateFileMetadataTool extends AbstractAiTool
 {
     protected ?string $requiredScope = 'mcp:generate';
@@ -73,7 +71,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
         }
 
         $fields = $params['fields'] ?? ['alternative', 'title'];
-        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), 1);
+        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $this->referencePageId(0));
 
         $this->permissionService->validateModelAccess($model);
         $this->recordAccess->assertFileReadAccess($fileUid);
@@ -93,8 +91,9 @@ class GenerateFileMetadataTool extends AbstractAiTool
             );
         }
 
-        $globalInstructions = $this->globalInstructionService->buildGlobalInstruction('sys_file_metadata', 'metadata');
-        $globalInstructionsOverride = $this->globalInstructionService->checkOverridePredefinedPrompt('files', 'metadata', []);
+        $folder = $this->fileFolderIdentifier($fileUid);
+        $globalInstructions = null === $folder ? '' : $this->globalInstructionService->buildGlobalInstruction('files', 'metadata', null, $folder);
+        $globalInstructionsOverride = null !== $folder && $this->globalInstructionService->checkOverridePredefinedPrompt('files', 'metadata', [$folder]);
 
         $text = $this->appendDataFlowInfo('', $model);
         $allSuggestions = [];

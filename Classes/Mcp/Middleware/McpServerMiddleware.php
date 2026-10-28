@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Middleware;
 
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\RateLimitPolicy;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RateLimitExceededException;
 use AutoDudes\AiSuiteMcp\Mcp\Http\AiSuiteMcpEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\Http\BackendLinkEndpoint;
 use AutoDudes\AiSuiteMcp\Mcp\Http\HealthCheckEndpoint;
@@ -24,7 +26,6 @@ use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\Response;
-use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 class McpServerMiddleware implements MiddlewareInterface
 {
@@ -58,10 +59,6 @@ class McpServerMiddleware implements MiddlewareInterface
     {
         $path = $request->getUri()->getPath();
 
-        if ('/favicon.ico' === $path) {
-            return $this->serveFavicon();
-        }
-
         if (BackendLinkEndpoint::PATH === $path || BackendLinkEndpoint::SCRIPT_PATH === $path) {
             return ($this->backendLinkEndpoint)($request);
         }
@@ -87,7 +84,6 @@ class McpServerMiddleware implements MiddlewareInterface
             );
         }
 
-        // Origin validation (MCP 2025-11-25 spec: DNS-rebinding protection)
         $originCheck = $this->enforceOriginValidation($request, $extConf);
         if (null !== $originCheck) {
             return $originCheck;
@@ -104,20 +100,20 @@ class McpServerMiddleware implements MiddlewareInterface
         }
 
         if (self::MCP_PATH === $path || $path === self::MCP_PATH.'/') {
-            $rateCheck = $this->enforceRateLimit($request);
+            $rateCheck = $this->enforceRateLimit($request, $extConf);
             if (null !== $rateCheck) {
                 return $rateCheck;
             }
         }
 
-        if ($path === self::MCP_PATH.'/oauth/token' || $path === self::MCP_PATH.'/oauth/register') {
+        if (\in_array($path, [self::MCP_PATH.'/oauth/token', self::MCP_PATH.'/oauth/register', self::MCP_PATH.'/oauth/revoke'], true)) {
             $rateCheck = $this->enforceOAuthRateLimit($request);
             if (null !== $rateCheck) {
                 return $rateCheck;
             }
         }
 
-        $response = $this->route($path, $request);
+        $response = $this->withSecurityHeaders($this->route($path, $request), $path);
 
         return $this->addCorsHeaders($response, $request->getHeaderLine('Origin'), $extConf);
     }
@@ -133,22 +129,18 @@ class McpServerMiddleware implements MiddlewareInterface
 
     private function route(string $path, ServerRequestInterface $request): ResponseInterface
     {
-        // Health check (no auth required)
         if ($path === self::MCP_PATH.'/health') {
             return ($this->healthCheckEndpoint)($request);
         }
 
-        // Well-known OAuth metadata — the OIDC discovery path serves the same RFC 8414 document.
         if (self::WELL_KNOWN_PATH === $path || self::OPENID_CONFIGURATION_PATH === $path) {
             return ($this->metadataEndpoint)($request);
         }
 
-        // Protected Resource Metadata (RFC 9728)
         if (self::PROTECTED_RESOURCE_PATH === $path) {
             return ($this->protectedResourceMetadataEndpoint)($request);
         }
 
-        // OAuth: Dynamic Client Registration (RFC 7591)
         if ($path === self::MCP_PATH.'/oauth/register') {
             return ($this->registrationEndpoint)($request);
         }
@@ -176,34 +168,15 @@ class McpServerMiddleware implements MiddlewareInterface
         return new JsonResponse(['error' => 'not_found'], 404);
     }
 
-    private function serveFavicon(): ResponseInterface
-    {
-        $svgPath = ExtensionManagementUtility::extPath('ai_suite', 'Resources/Public/Icons/Extension.svg');
-        if (!file_exists($svgPath)) {
-            return new JsonResponse(['error' => 'not_found'], 404);
-        }
-
-        $response = new Response('php://temp', 200, [
-            'Content-Type' => 'image/svg+xml',
-            'Cache-Control' => 'public, max-age=86400',
-        ]);
-        $response->getBody()->write((string) file_get_contents($svgPath));
-
-        return $response;
-    }
-
     /**
      * @param array<string, mixed> $extConf
      */
     private function enforceHttps(ServerRequestInterface $request, array $extConf): ?ResponseInterface
     {
-        $host = $request->getUri()->getHost();
-        $isLocalhost = in_array($host, ['localhost', '127.0.0.1', '[::1]'], true);
-        $isDdev = str_ends_with($host, '.ddev.site');
         $isHttps = 'https' === $request->getUri()->getScheme()
-            || 'https' === $request->getHeaderLine('X-Forwarded-Proto');
+            || ('https' === $request->getHeaderLine('X-Forwarded-Proto') && $this->clientIpService->isFromTrustedProxy($request));
 
-        if (!$isHttps && !$isLocalhost && !$isDdev && !((bool) ($extConf['mcpAllowHttp'] ?? false))) {
+        if (!$isHttps && !$this->isLocalDevelopmentHost($request->getUri()->getHost()) && !((bool) ($extConf['mcpAllowHttp'] ?? false))) {
             return new JsonResponse([
                 'error' => 'https_required',
                 'error_description' => 'MCP endpoint requires HTTPS. Please use a secure connection.',
@@ -231,8 +204,7 @@ class McpServerMiddleware implements MiddlewareInterface
 
         $originHost = (string) (parse_url($origin, PHP_URL_HOST) ?: '');
 
-        // Local development hosts always accepted (parity with HTTPS exemption).
-        if (in_array($originHost, ['localhost', '127.0.0.1', '[::1]'], true) || str_ends_with($originHost, '.ddev.site')) {
+        if ($this->isLocalDevelopmentHost($originHost)) {
             return null;
         }
 
@@ -272,6 +244,31 @@ class McpServerMiddleware implements MiddlewareInterface
         ], 403);
     }
 
+    private function isLocalDevelopmentHost(string $host): bool
+    {
+        if (Environment::getContext()->isProduction()) {
+            return false;
+        }
+
+        return in_array($host, ['localhost', '127.0.0.1', '[::1]'], true) || str_ends_with($host, '.ddev.site');
+    }
+
+    private function withSecurityHeaders(ResponseInterface $response, string $path): ResponseInterface
+    {
+        $response = $response
+            ->withHeader('X-Frame-Options', 'DENY')
+            ->withHeader('X-Content-Type-Options', 'nosniff')
+        ;
+        if (!$response->hasHeader('Content-Security-Policy')) {
+            $response = $response->withHeader('Content-Security-Policy', "frame-ancestors 'none'");
+        }
+        if (str_starts_with($path, self::MCP_PATH.'/oauth/') && !$response->hasHeader('Cache-Control')) {
+            $response = $response->withHeader('Cache-Control', 'no-store')->withHeader('Pragma', 'no-cache');
+        }
+
+        return $response;
+    }
+
     /**
      * @param array<string, mixed> $extConf
      */
@@ -297,6 +294,7 @@ class McpServerMiddleware implements MiddlewareInterface
     private function bodySize(ServerRequestInterface $request): int
     {
         try {
+            // Stream::getSize() warns on a failing fstat() before TYPO3 v13
             return @$request->getBody()->getSize() ?? 0;
         } catch (\Throwable) {
             return 0;
@@ -307,11 +305,15 @@ class McpServerMiddleware implements MiddlewareInterface
     {
         $ip = $this->clientIpService->resolve($request);
         $path = $request->getUri()->getPath();
-        $bucket = str_ends_with($path, '/register') ? 'oauth_register_' : 'oauth_token_';
+        $bucket = match (true) {
+            str_ends_with($path, '/register') => 'oauth_register_',
+            str_ends_with($path, '/revoke') => 'oauth_revoke_',
+            default => 'oauth_token_',
+        };
 
         try {
-            $this->rateLimiter->checkAndIncrement($bucket.$ip);
-        } catch (\RuntimeException $e) {
+            $this->rateLimiter->checkAndIncrement($bucket.$ip, RateLimitPolicy::oauthEndpoint());
+        } catch (RateLimitExceededException $e) {
             $this->logger->warning('OAuth endpoint rate limit exceeded', [
                 'ip' => $ip,
                 'path' => $path,
@@ -322,24 +324,27 @@ class McpServerMiddleware implements MiddlewareInterface
                 'error' => 'rate_limit_exceeded',
                 'error_description' => $e->getMessage(),
             ], 429, [
-                'Retry-After' => '60',
+                'Retry-After' => (string) $e->retryAfter,
             ]);
         }
 
         return null;
     }
 
-    private function enforceRateLimit(ServerRequestInterface $request): ?ResponseInterface
+    /**
+     * @param array<string, mixed> $extConf
+     */
+    private function enforceRateLimit(ServerRequestInterface $request, array $extConf): ?ResponseInterface
     {
         $authHeader = $request->getHeaderLine('Authorization');
 
         if ('' !== $authHeader && str_starts_with($authHeader, 'Bearer ')) {
-            $tokenPrefix = substr($authHeader, 7, 16); // First 16 chars for rate limit key
+            $tokenPrefix = substr($authHeader, 7, 16);
             $identifier = 'mcp_'.hash('sha256', $tokenPrefix);
 
             try {
-                $this->rateLimiter->checkAndIncrement($identifier);
-            } catch (\RuntimeException $e) {
+                $this->rateLimiter->checkAndIncrement($identifier, RateLimitPolicy::forBearerToken($extConf));
+            } catch (RateLimitExceededException $e) {
                 $this->logger->warning('MCP rate limit exceeded for bearer token', [
                     'identifier' => $identifier,
                     'path' => $request->getUri()->getPath(),
@@ -348,9 +353,9 @@ class McpServerMiddleware implements MiddlewareInterface
 
                 return new JsonResponse([
                     'error' => 'rate_limit_exceeded',
-                    'error_description' => $e->getMessage(),
+                    'error_description' => $e->getMessage().' An administrator can raise or disable this limit with ext_conf \'mcpRateLimitRequests\'.',
                 ], 429, [
-                    'Retry-After' => '60',
+                    'Retry-After' => (string) $e->retryAfter,
                 ]);
             }
         }

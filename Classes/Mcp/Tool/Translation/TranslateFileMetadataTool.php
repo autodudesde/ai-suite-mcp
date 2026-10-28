@@ -14,9 +14,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class TranslateFileMetadataTool extends AbstractTranslateTool
 {
     protected ?string $requiredScope = 'mcp:translate';
@@ -41,7 +40,7 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
 
     public function getDescription(): string
     {
-        return 'Translate a file\'s metadata — alt text, title, description — into a target language, using DeepL and the site glossary '
+        return 'Translate a file\'s metadata — alt text, title, description — into a target language, using DeepL and the glossary of the site named by pageId '
             .DescriptionSnippets::COSTS_CREDITS.'. '
             .'Writes the translation itself; localizeRecord only creates an empty translation shell.';
     }
@@ -61,6 +60,7 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
                     'type' => 'string',
                     'description' => 'ISO source language. Default: site default language.',
                 ]),
+                'pageId' => ['type' => 'integer', 'description' => 'Optional. UID of any page of the site whose glossary applies; files belong to no site, so without it no glossary is used.'],
             ],
             'required' => ['fileUid', 'targetLanguage'],
         ];
@@ -75,6 +75,10 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
         }
 
         $fileUid = (int) $params['fileUid'];
+        $glossaryPageId = max(0, (int) ($params['pageId'] ?? 0));
+        if ($glossaryPageId > 0) {
+            $this->recordAccess->assertPagePerm($glossaryPageId, Permission::PAGE_SHOW);
+        }
 
         try {
             $this->recordAccess->assertFileReadAccess($fileUid);
@@ -100,6 +104,7 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
             (string) $params['targetLanguage'],
             $model,
             (string) ($params['sourceLanguage'] ?? ''),
+            glossaryPageId: $glossaryPageId,
         );
     }
 

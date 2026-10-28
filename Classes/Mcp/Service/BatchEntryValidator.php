@@ -71,11 +71,6 @@ class BatchEntryValidator
     }
 
     /**
-     * "missing `fields`" names what is absent and not what to do about it, and a model that has the
-     * values in `translations` reads it as "put something in fields" — measured 18.09.2026: after two
-     * such refusals the cheapest model filled `fields` with the source text and overwrote the very
-     * translation it had just written. Where the two keys meet, the message names both valid shapes.
-     *
      * @param list<string>         $missing
      * @param array<string, mixed> $entry
      */

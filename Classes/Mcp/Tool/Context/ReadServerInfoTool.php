@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\RateLimitPolicy;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpWriteModeResolver;
@@ -11,7 +12,6 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Server\Server;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
@@ -19,7 +19,6 @@ use TYPO3\CMS\Core\Information\Typo3Version;
 use TYPO3\CMS\Core\Site\Entity\Site;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadServerInfoTool extends AbstractTool
 {
     protected ?string $requiredScope = null;
@@ -97,6 +96,11 @@ class ReadServerInfoTool extends AbstractTool
             $lines[] = sprintf('- **MCP enabled:** %s', $mcpEnabled ? 'yes' : 'no');
             $lines[] = sprintf('- **Write mode (default):** %s', $this->writeModeResolver->getWriteMode());
             $lines[] = sprintf('- **Session timeout:** %ds', (int) ($extConf['mcpSessionTimeoutSeconds'] ?? 1800));
+            $rateLimit = RateLimitPolicy::forBearerToken($extConf);
+            $lines[] = sprintf(
+                '- **Rate limit per token:** %s',
+                $rateLimit->isUnlimited() ? 'off' : sprintf('%d requests / %ds', $rateLimit->maxAttempts, $rateLimit->windowSeconds),
+            );
             $lines[] = sprintf('- **Workspace extension:** %s', ExtensionManagementUtility::isLoaded('workspaces') ? 'installed' : 'not installed');
             $lines[] = '';
 
@@ -152,7 +156,6 @@ class ReadServerInfoTool extends AbstractTool
                     $sessionFiles,
                 );
                 $warnings[] = $message;
-                // The response reaches admins only, and only when they ask. Monitoring tails the log.
                 $this->logger->warning($message, ['sessionFiles' => $sessionFiles, 'path' => $sessionPath]);
             }
 

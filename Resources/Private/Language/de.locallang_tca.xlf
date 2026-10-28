@@ -9,7 +9,7 @@
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpAccessDescription">
-                <source>Allows connecting via MCP protocol (Claude Desktop, Claude.ai, ChatGPT, etc.)</source>
+                <source>Allows connecting via MCP protocol (Claude Desktop, Claude.ai, ChatGPT, etc.).</source>
                 <target>Erlaubt die Verbindung über das MCP-Protokoll (Claude Desktop, Claude.ai, ChatGPT usw.).</target>
             </trans-unit>
 
@@ -19,8 +19,8 @@
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpMediaUploadDescription">
-                <source>Allows uploading images/videos into FAL via MCP (by URL, base64 upload, or YouTube/Vimeo link). Filemount permissions still apply on top.</source>
-                <target>Erlaubt das Hochladen von Bildern/Videos nach FAL über MCP (per URL, Base64-Upload oder YouTube-/Vimeo-Link). Die Dateimount-Berechtigungen gelten zusätzlich.</target>
+                <source>Allows uploading images/videos into FAL via MCP (by URL, base64 upload, or YouTube/Vimeo link) and moving files between folders. Filemount permissions still apply on top.</source>
+                <target>Erlaubt das Hochladen von Bildern/Videos nach FAL über MCP (per URL, Base64-Upload oder YouTube-/Vimeo-Link) und das Verschieben von Dateien zwischen Ordnern. Die Dateimount-Berechtigungen gelten zusätzlich.</target>
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpRenderedPageRead">
@@ -31,6 +31,16 @@
             <trans-unit id="aiSuite.mcp.permissions.enableMcpRenderedPageReadDescription">
                 <source>Allows the readRenderedPage tool. It renders a page through a backend preview session of the MCP user, so it also returns hidden and unpublished pages as well as workspace drafts. The user's own page permissions still apply on top.</source>
                 <target>Erlaubt das Tool readRenderedPage. Es rendert eine Seite über eine Backend-Vorschau-Session des MCP-Benutzers und liefert deshalb auch versteckte und unveröffentlichte Seiten sowie Workspace-Entwürfe. Die Seitenrechte des Benutzers gelten zusätzlich.</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableAudit">
+                <source>Enable SEO and accessibility audits</source>
+                <target>SEO- und Barrierefreiheits-Audits aktivieren</target>
+            </trans-unit>
+
+            <trans-unit id="aiSuite.mcp.permissions.enableAuditDescription">
+                <source>Allows running SEO and WCAG accessibility audits for public page URLs via the AutoDudes audit infrastructure (page URL and content leave the TYPO3 instance).</source>
+                <target>Erlaubt SEO- und WCAG-Barrierefreiheits-Audits für öffentliche Seiten-URLs über die AutoDudes-Audit-Infrastruktur (Seiten-URL und Inhalt verlassen die TYPO3-Instanz).</target>
             </trans-unit>
         </body>
     </file>

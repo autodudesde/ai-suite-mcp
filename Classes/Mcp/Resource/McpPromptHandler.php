@@ -39,7 +39,6 @@ class McpPromptHandler
     {
         $prompts = [];
 
-        // fallback for clients that miss the initialize instruction
         $prompts[] = new Prompt(
             name: 'operating-guidelines',
             description: 'Load mandatory workflow rules for this MCP server (write workflow, model selection, batch operations)',
@@ -50,7 +49,7 @@ class McpPromptHandler
             description: 'Get content guidelines (tone, audience, style) for a specific page or section',
             arguments: [
                 new PromptArgument(name: 'pageId', description: 'Page UID to get guidelines for', required: true),
-                new PromptArgument(name: 'scope', description: 'Context: metadata, translation, editContent, pages'),
+                new PromptArgument(name: 'scope', description: 'Scope: general (default), metadata, translation, editContent, contentElement, pageTree, imageWizard, newsRecord'),
             ],
         );
 
@@ -78,9 +77,13 @@ class McpPromptHandler
 
         if ('content-guidelines' === $name) {
             $pageId = (int) ($args['pageId'] ?? 0);
-            $scope = $args['scope'] ?? 'pages';
+            $scope = (string) ($args['scope'] ?? '');
+            $scopes = array_column($this->globalInstructionService->getScopeItems('pages'), 'value');
+            if (!in_array($scope, $scopes, true)) {
+                $scope = 'general';
+            }
 
-            $instructions = $this->globalInstructionService->buildGlobalInstruction('', $scope, $pageId);
+            $instructions = $this->globalInstructionService->buildGlobalInstruction('pages', $scope, $pageId);
 
             return $this->userMessage('' !== $instructions
                 ? "Content guidelines for this page:\n\n".$instructions

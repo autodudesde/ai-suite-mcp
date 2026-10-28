@@ -6,8 +6,8 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
 use AutoDudes\AiSuite\Domain\Repository\BackgroundTaskRepository;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
-use AutoDudes\AiSuiteMcp\Mcp\Dto\RecordWriteResult;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use Psr\Log\LoggerInterface;
@@ -25,6 +25,7 @@ class RecordWriteService
         private readonly BackgroundTaskRepository $backgroundTaskRepository,
         private readonly RecordAccessService $recordAccess,
         private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly PageSlugService $pageSlugs,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -38,6 +39,9 @@ class RecordWriteService
         $report = $this->dataHandlerSanitizer->sanitizeFieldsWithReport($table, $fields, null, ['uid' => 0, 'pid' => $pid]);
         $this->assertNothingBlocked($table, null, $report['blocked']);
         $fields = $report['data'];
+        if ('pages' === $table) {
+            $fields = $this->pageSlugs->nestSuppliedSlug($fields, $pid);
+        }
         $newId = 'NEW'.substr(md5((string) time().random_int(0, 100000)), 0, 22);
 
         $fields['pid'] = $this->resolvePosition($table, $pid, $fields, $position);
@@ -81,7 +85,9 @@ class RecordWriteService
         }
         $report = $this->dataHandlerSanitizer->sanitizeFieldsWithReport($table, $fields, $typeKey, $record);
         $this->assertNothingBlocked($table, $uid, $report['blocked']);
+        $this->assertNothingUnlinked($table, $uid, $report['unlinked']);
         $fields = $report['data'];
+        $newParent = $this->changedInlineParent($table, $fields, $record);
 
         $dh = GeneralUtility::makeInstance(DataHandler::class);
         $dh->start([$table => [$uid => $fields]], []);
@@ -89,6 +95,10 @@ class RecordWriteService
 
         if ([] !== $dh->errorLog) {
             throw $this->dataHandlerError->toException('update', $table, $uid, $dh->errorLog);
+        }
+
+        if (null !== $newParent) {
+            $this->moveBehindLastSibling($table, $uid, $newParent);
         }
 
         $this->cleanupBackgroundTasks($table, $uid, $fields);
@@ -105,6 +115,109 @@ class RecordWriteService
         if ([] !== $dh->errorLog) {
             throw $this->dataHandlerError->toException('rollback delete', $table, $uid, $dh->errorLog);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @param array<string, mixed> $record
+     *
+     * @return null|array{field: string, uid: int, tableField: string, table: string}
+     */
+    private function changedInlineParent(string $table, array $fields, array $record): ?array
+    {
+        try {
+            $parentTables = $this->tcaCompatibilityService->getAllTableNames();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        foreach ($parentTables as $parentTable) {
+            foreach ($this->tcaCompatibilityService->getColumnConfigs($parentTable) as $config) {
+                $field = (string) ($config['foreign_field'] ?? '');
+                if ('inline' !== ($config['type'] ?? '')
+                    || $table !== ($config['foreign_table'] ?? '')
+                    || '' === $field
+                    || !array_key_exists($field, $fields)
+                ) {
+                    continue;
+                }
+
+                $tableField = (string) ($config['foreign_table_field'] ?? '');
+                $newTable = '' !== $tableField ? (string) ($fields[$tableField] ?? $record[$tableField] ?? '') : '';
+                if ('' !== $tableField && $newTable !== $parentTable) {
+                    continue;
+                }
+
+                $unchanged = (int) $fields[$field] === (int) ($record[$field] ?? 0)
+                    && ('' === $tableField || $newTable === (string) ($record[$tableField] ?? ''));
+
+                return $unchanged || (int) $fields[$field] <= 0
+                    ? null
+                    : ['field' => $field, 'uid' => (int) $fields[$field], 'tableField' => $tableField, 'table' => $parentTable];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array{field: string, uid: int, tableField: string, table: string} $parent
+     */
+    private function moveBehindLastSibling(string $table, int $uid, array $parent): void
+    {
+        $sortField = (string) ($this->tcaCompatibilityService->getRawConfiguration($table)['sortby'] ?? '');
+        if ('' === $sortField) {
+            return;
+        }
+
+        $self = $this->workspaceRecords->resolveLiveUid($table, $uid);
+        $candidates = $this->recordRepository->findUidsByRelation($table, $parent['field'], [$parent['uid']], 500);
+
+        $last = null;
+        foreach ($this->workspaceRecords->overlay($table, $candidates) as $row) {
+            $rowUid = (int) ($row['uid'] ?? 0);
+            if ($rowUid === $self
+                || $parent['uid'] !== (int) ($row[$parent['field']] ?? 0)
+                || ('' !== $parent['tableField'] && $parent['table'] !== (string) ($row[$parent['tableField']] ?? ''))
+            ) {
+                continue;
+            }
+            if (null === $last || (int) ($row[$sortField] ?? 0) > (int) ($last[$sortField] ?? 0)) {
+                $last = $row;
+            }
+        }
+
+        if (null === $last) {
+            return;
+        }
+
+        $dh = GeneralUtility::makeInstance(DataHandler::class);
+        $dh->start([], [$table => [$uid => ['move' => -1 * $this->workspaceRecords->resolveWriteTarget($table, (int) $last['uid'])]]]);
+        $dh->process_cmdmap();
+
+        if ([] !== $dh->errorLog) {
+            throw $this->dataHandlerError->toException('move', $table, $uid, $dh->errorLog);
+        }
+    }
+
+    /**
+     * @param list<string> $unlinked
+     */
+    private function assertNothingUnlinked(string $table, int $uid, array $unlinked): void
+    {
+        if ([] === $unlinked) {
+            return;
+        }
+
+        throw (new InvalidParameterException(sprintf(
+            'Field(s) %s of %s:%d are links, and the record holds no link to put this text into as its title. Nothing was written. Send the full link instead, e.g. `t3://page?uid=12 - - "Link text"`.',
+            implode(', ', $unlinked),
+            $table,
+            $uid,
+        )))
+            ->withErrorType(McpErrorType::InvalidParameter)
+            ->withErrorContext(['table' => $table, 'field' => $unlinked[0], 'uid' => $uid])
+        ;
     }
 
     /**

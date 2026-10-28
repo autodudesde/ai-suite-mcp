@@ -11,10 +11,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ListStaleContentTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
@@ -97,7 +95,9 @@ class ListStaleContentTool extends AbstractTool
 
         if (null !== $rootPageId) {
             $this->recordAccess->assertPagePerm((int) $rootPageId, Permission::PAGE_SHOW);
-            $restrictToPageIds = $this->pagesRepository->getSubtreePageIds((int) $rootPageId);
+            $restrictToPageIds = $this->getBackendUser()?->isAdmin()
+                ? $this->pagesRepository->getSubtreePageIds((int) $rootPageId)
+                : array_values(array_unique([(int) $rootPageId, ...$this->recordAccess->getReadablePageIds((int) $rootPageId)]));
             if (empty($restrictToPageIds)) {
                 return $this->textResult('No pages found in the specified subtree.');
             }

@@ -8,10 +8,13 @@ use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\IconService;
 use AutoDudes\AiSuiteMcp\Domain\Model\Dto\TokenData;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
+use AutoDudes\AiSuiteMcp\Mcp\Log\ThrowableFrames;
 use AutoDudes\AiSuiteMcp\Mcp\McpBackendUserInitializer;
 use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
+use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidTokenException;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ServerInstructionsService;
@@ -23,11 +26,11 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
-use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
-use TYPO3\CMS\Core\Core\Environment;
+use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\Response;
+use TYPO3\CMS\Core\Information\Typo3Version;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class AiSuiteMcpEndpoint
@@ -63,18 +66,45 @@ class AiSuiteMcpEndpoint
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly ServerInstructionsService $serverInstructions,
         private readonly IconService $iconService,
+        private readonly PermissionService $permissionService,
+        private readonly McpSessionStoreService $sessionFiles,
+        private readonly Typo3Version $typo3Version,
         private readonly LoggerInterface $logger,
     ) {}
 
     public function __invoke(ServerRequestInterface $request): ResponseInterface
     {
+        $previousRequest = $GLOBALS['TYPO3_REQUEST'] ?? null;
+        $GLOBALS['TYPO3_REQUEST'] = $request->withAttribute('applicationType', SystemEnvironmentBuilder::REQUESTTYPE_BE);
+
+        try {
+            return $this->handle($request);
+        } finally {
+            if (null === $previousRequest) {
+                unset($GLOBALS['TYPO3_REQUEST']);
+            } else {
+                $GLOBALS['TYPO3_REQUEST'] = $previousRequest;
+            }
+        }
+    }
+
+    private function handle(ServerRequestInterface $request): ResponseInterface
+    {
         try {
             $rawToken = $this->extractBearerToken($request);
-            $tokenData = $this->oauthService->validateToken($rawToken);
+            $tokenData = $this->oauthService->validateToken($rawToken, CanonicalResource::get($request), $request);
 
             $versionResponse = $this->validateProtocolVersionHeader($request);
             if (null !== $versionResponse) {
                 return $versionResponse;
+            }
+
+            $sessionHeader = trim($request->getHeaderLine('Mcp-Session-Id'));
+            if ('' !== $sessionHeader && 1 !== preg_match('/^[a-f0-9]{64}$/', $sessionHeader)) {
+                return new JsonResponse([
+                    'error' => 'invalid_request',
+                    'error_description' => 'The Mcp-Session-Id header is malformed. Send the id the server returned, or none to start a new session.',
+                ], 400);
             }
 
             $this->validateBackendUserStatus($tokenData, $rawToken);
@@ -116,7 +146,7 @@ class AiSuiteMcpEndpoint
 
             $body = $sdkResponse->getBody();
             if (null !== $body) {
-                $body = $this->enrichServerIdentity($body, $this->rpcMethod($payload));
+                $body = $this->enrichServerIdentity($body, $this->rpcMethod($payload), $request);
             }
 
             $this->logger->info('MCP endpoint response', [
@@ -148,7 +178,7 @@ class AiSuiteMcpEndpoint
                 'error' => 'unauthorized',
                 'error_description' => 'Bearer token required. Use the OAuth 2.1 flow to obtain a token.',
             ], 401, [
-                'WWW-Authenticate' => $this->bearerChallenge(),
+                'WWW-Authenticate' => $this->bearerChallenge($request),
             ]);
         } catch (InsufficientPermissionException $e) {
             $this->logger->warning('MCP endpoint denied request: insufficient permission', [
@@ -157,13 +187,11 @@ class AiSuiteMcpEndpoint
                 'client_id' => $tokenData->clientId,
             ]);
 
-            return new JsonResponse(['error' => 'access_denied', 'error_description' => $e->getMessage()], 403, [
-                'WWW-Authenticate' => $this->bearerChallenge('insufficient_scope'),
-            ]);
+            return new JsonResponse(['error' => 'access_denied', 'error_description' => $e->getMessage()], 403, $this->forbiddenHeaders($request));
         } catch (\Throwable $e) {
             $this->logger->critical('MCP endpoint error', [
                 'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace' => ThrowableFrames::of($e),
             ]);
 
             return new JsonResponse(['error' => 'server_error'], 500);
@@ -196,7 +224,7 @@ class AiSuiteMcpEndpoint
     private function sessionStore(): FileSessionStore
     {
         if (null === $this->sessionStore) {
-            $sessionPath = Environment::getVarPath().'/aisuite_mcp_sessions/';
+            $sessionPath = $this->sessionFiles->getDirectory();
             if (!is_dir($sessionPath)) {
                 GeneralUtility::mkdir_deep($sessionPath);
             }
@@ -287,15 +315,28 @@ class AiSuiteMcpEndpoint
         return \is_string($method) ? $method : '';
     }
 
-    private function bearerChallenge(?string $error = null): string
+    /**
+     * @return array<string, string>
+     */
+    private function forbiddenHeaders(ServerRequestInterface $request): array
     {
-        $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
+        // PHP turns a response with WWW-Authenticate into a 401; only the v14 core re-sends the status line
+        if ($this->typo3Version->getMajorVersion() < 14) {
+            return [];
+        }
+
+        return ['WWW-Authenticate' => $this->bearerChallenge($request, 'insufficient_scope')];
+    }
+
+    private function bearerChallenge(ServerRequestInterface $request, ?string $error = null): string
+    {
+        $baseUrl = CanonicalResource::host($request);
 
         $parameters = [];
         if (null !== $error) {
             $parameters[] = 'error="'.$error.'"';
         }
-        $parameters[] = 'scope="'.implode(' ', PermissionService::supportedScopes()).'"';
+        $parameters[] = 'scope="'.implode(' ', $this->permissionService->supportedScopes()).'"';
         $parameters[] = 'resource_metadata="'.$baseUrl.'/.well-known/oauth-protected-resource"';
 
         return 'Bearer '.implode(', ', $parameters);
@@ -345,7 +386,7 @@ class AiSuiteMcpEndpoint
         return $described;
     }
 
-    private function enrichServerIdentity(string $body, string $rpcMethod): string
+    private function enrichServerIdentity(string $body, string $rpcMethod, ServerRequestInterface $request): string
     {
         if (!in_array($rpcMethod, [self::METHOD_INITIALIZE, self::METHOD_DISCOVER], true)) {
             return $body;
@@ -363,8 +404,8 @@ class AiSuiteMcpEndpoint
 
         $serverInfo = $this->resolveServerInfo($result);
         if ($serverInfo instanceof \stdClass) {
-            $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
-            $iconPath = $this->iconService->getPublicIconUrl('tx-aisuite-extension');
+            $baseUrl = CanonicalResource::host($request);
+            $iconPath = $this->iconService->getPublicIconUrl('tx-aisuite-extension', $request);
 
             if ('' !== $iconPath) {
                 $serverInfo->icons = [
@@ -479,9 +520,7 @@ class AiSuiteMcpEndpoint
 
     private function validateBackendUserStatus(TokenData $tokenData, string $rawToken): void
     {
-        $beUser = BackendUtility::getRecord('be_users', $tokenData->beUserUid);
-
-        if (null === $beUser || 0 !== (int) ($beUser['disable'] ?? 0) || 0 !== (int) ($beUser['deleted'] ?? 0)) {
+        if (!$this->oauthService->isBackendUserActive($tokenData->beUserUid)) {
             $this->oauthService->revokeToken($rawToken);
 
             throw new InsufficientPermissionException(

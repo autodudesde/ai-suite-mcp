@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\StatusReport;
 
+use AutoDudes\AiSuite\Service\LocalizationService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
@@ -16,6 +17,7 @@ class McpSecurityStatus implements StatusProviderInterface
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly McpSessionStoreService $sessionStore,
+        private readonly LocalizationService $localizationService,
     ) {}
 
     /**
@@ -33,43 +35,35 @@ class McpSecurityStatus implements StatusProviderInterface
         $isProduction = Environment::getContext()->isProduction();
 
         if ((bool) ($extConf['mcpAllowHttp'] ?? false)) {
-            $statuses[] = new Status(
-                'MCP HTTP Security',
-                'HTTP allowed',
-                'MCP is configured to accept unencrypted HTTP connections (mcpAllowHttp=1). '
-                .'This exposes Bearer tokens to network interception. '
-                .'Disable this setting in production: Extension Settings → AI Suite → MCP → Allow HTTP.',
-                ContextualFeedbackSeverity::WARNING,
-            );
+            $statuses[] = $this->status('http', ContextualFeedbackSeverity::WARNING);
         }
 
         if ($isProduction && empty(trim((string) ($extConf['mcpAllowedOrigins'] ?? '')))) {
-            $statuses[] = new Status(
-                'MCP CORS Configuration',
-                'No CORS origins configured',
-                'MCP has no CORS origins configured. In production, this means no CORS headers are sent (same-origin only). '
-                .'If browser-based MCP clients need access, configure allowed origins in Extension Settings → AI Suite → MCP.',
-                ContextualFeedbackSeverity::INFO,
-            );
+            $statuses[] = $this->status('cors', ContextualFeedbackSeverity::INFO);
         }
 
         if ($isProduction && empty(trim((string) ($extConf['mcpAllowedRedirectUris'] ?? '')))) {
-            $statuses[] = new Status(
-                'MCP Redirect URI Security',
-                'No external redirect URIs configured',
-                'Only localhost redirect URIs are allowed for OAuth. To allow external MCP clients, '
-                .'configure allowed redirect URIs in Extension Settings → AI Suite → MCP.',
-                ContextualFeedbackSeverity::INFO,
-            );
+            $statuses[] = $this->status('redirect', ContextualFeedbackSeverity::INFO);
+        }
+
+        if ($isProduction && (bool) ($extConf['mcpLogVerbose'] ?? false)) {
+            $statuses[] = $this->status('verboseLog', ContextualFeedbackSeverity::WARNING);
+        }
+
+        if ('live' === (string) ($extConf['mcpWriteMode'] ?? 'workspace')) {
+            $statuses[] = $this->status('writeLive', ContextualFeedbackSeverity::WARNING);
+        }
+
+        if (isset($extConf['mcpRateLimitRequests']) && (int) $extConf['mcpRateLimitRequests'] <= 0) {
+            $statuses[] = $this->status('rateLimitOff', ContextualFeedbackSeverity::WARNING);
+        }
+
+        if ((bool) ($extConf['mcpAllowRawHtmlWrite'] ?? false)) {
+            $statuses[] = $this->status('rawHtml', ContextualFeedbackSeverity::WARNING);
         }
 
         if (empty($statuses)) {
-            $statuses[] = new Status(
-                'MCP Security',
-                'Configuration looks good',
-                'MCP security settings are properly configured.',
-                ContextualFeedbackSeverity::OK,
-            );
+            $statuses[] = $this->status('ok', ContextualFeedbackSeverity::OK);
         }
 
         $statuses[] = $this->sessionStoreStatus();
@@ -79,7 +73,17 @@ class McpSecurityStatus implements StatusProviderInterface
 
     public function getLabel(): string
     {
-        return 'AI Suite MCP Security';
+        return 'LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_mcp.xlf:aiSuite.mcp.status.security.label';
+    }
+
+    private function status(string $key, ContextualFeedbackSeverity $severity): Status
+    {
+        return new Status(
+            $this->localizationService->translate('mcp:status.'.$key.'.title'),
+            $this->localizationService->translate('mcp:status.'.$key.'.value'),
+            $this->localizationService->translate('mcp:status.'.$key.'.message'),
+            $severity,
+        );
     }
 
     private function sessionStoreStatus(): Status
@@ -88,20 +92,15 @@ class McpSecurityStatus implements StatusProviderInterface
         $exceeded = $count > McpSessionStoreService::WARN_THRESHOLD;
 
         return new Status(
-            'MCP Session Store',
-            sprintf('%d stored session file(s)', $count),
+            $this->localizationService->translate('mcp:status.sessions.title'),
+            $this->localizationService->translate('mcp:status.sessions.value', [$count]),
             $exceeded
-                ? sprintf(
-                    '%d session files are stored in %s. Stateless MCP clients leave one behind per request. '
-                    .'Schedule ai-suite-mcp:cleanup — it removes session files older than %d seconds.',
+                ? $this->localizationService->translate('mcp:status.sessions.exceeded', [
                     $count,
                     $this->sessionStore->getDirectory(),
                     $this->sessionStore->getRetentionSeconds(),
-                )
-                : sprintf(
-                    'Session files in %s are within the expected range. ai-suite-mcp:cleanup keeps them bounded.',
-                    $this->sessionStore->getDirectory(),
-                ),
+                ])
+                : $this->localizationService->translate('mcp:status.sessions.ok', [$this->sessionStore->getDirectory()]),
             $exceeded ? ContextualFeedbackSeverity::WARNING : ContextualFeedbackSeverity::OK,
         );
     }

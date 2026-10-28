@@ -1,6 +1,6 @@
 <html xmlns:f="http://typo3.org/ns/TYPO3/CMS/Fluid/ViewHelpers">
 <head>
-    <title>{siteName} — MCP Connect</title>
+    <title>{siteName}: {labels.titleConnect}</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <f:if condition="{faviconUrl}">
@@ -184,9 +184,10 @@
 <body class="typo3-login">
     <div class="typo3-login-wrap">
         <div class="client-info">
-            <p><strong>{clientId}</strong></p> <p>would like to connect to your TYPO3 installation.</p>
+            <p><strong>{clientName}</strong></p> <p>{labels.wouldLikeToConnect}</p>
+            <p>{labels.redirectsTo} <strong>{redirectHost}</strong></p>
             <f:if condition="{isLocalhost}">
-                <p><span class="localhost-badge">&#10003; Local connection</span></p>
+                <p><span class="localhost-badge">&#10003; {labels.localConnection}</span></p>
             </f:if>
         </div>
 
@@ -195,7 +196,7 @@
                 <div class="typo3-login-logo">
                     <f:if condition="{hasCustomLogo}">
                         <f:then>
-                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: 'Logo')}" />
+                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: labels.logoAlt)}" />
                         </f:then>
                         <f:else>
                             <svg viewBox="0 0 150 42" width="150" height="52" aria-hidden="true">
@@ -211,13 +212,18 @@
 
                 <f:if condition="{loginError}">
                     <div class="alert-error">
-                        Username or password incorrect. Please try again.
+                        {labels.loginError}
                     </div>
                 </f:if>
 
                 <f:if condition="{accessDenied}">
                     <div class="alert-error">
-                        MCP access needs to be enabled for your user group. Contact your administrator.
+                        {labels.accessDenied}
+                    </div>
+                </f:if>
+                <f:if condition="{mfaSetupRequired}">
+                    <div class="alert-error">
+                        {labels.mfaSetupRequired}
                     </div>
                 </f:if>
 
@@ -230,16 +236,16 @@
                     <input type="hidden" name="resource" value="{resource}" />
 
                     <div class="form-group">
-                        <label for="username">Username</label>
+                        <label for="username">{labels.username}</label>
                         <input type="text" id="username" name="username" autocomplete="username" required="required" autofocus="autofocus" />
                     </div>
 
                     <div class="form-group">
-                        <label for="password">Password</label>
+                        <label for="password">{labels.password}</label>
                         <input type="password" id="password" name="password" autocomplete="current-password" required="required" />
                     </div>
 
-                    <button type="submit" class="btn-login">Sign in</button>
+                    <button type="submit" class="btn-login">{labels.signIn}</button>
                 </form>
             </div>
 
@@ -250,11 +256,11 @@
                     </f:then>
                     <f:else>
                         <span class="footer-note">
-                            Powered by
+                            {labels.poweredBy}
                             <f:if condition="{aiSuiteIconUrl}">
                                 <img src="{aiSuiteIconUrl}" alt="" />
                             </f:if>
-                            AI Suite for TYPO3
+                            {labels.product}
                         </span>
                     </f:else>
                 </f:if>

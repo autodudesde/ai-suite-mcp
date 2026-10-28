@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Seo;
 
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ContentAuditTool extends AbstractAuditAnalysisTool
 {
     // The type keys are the stored audit types readAuditResults reads back; do not rename them.
@@ -29,7 +27,7 @@ class ContentAuditTool extends AbstractAuditAnalysisTool
     {
         return 'Analyse what one page does not yet cover, rated answered/partial/open against '
             .'its content. Pick the angle with type: reader questions, weak rankings, topic clusters or a '
-            .'competitor gap. Costs 2 credits for questions, 3 otherwise.';
+            .'competitor gap (costs credits, 2 for questions, 3 otherwise).';
     }
 
     public function getSchema(): array
@@ -83,7 +81,7 @@ class ContentAuditTool extends AbstractAuditAnalysisTool
             $keyword = '';
         }
 
-        $content = $this->fetchAnalysisContent($url);
+        $content = $this->fetchAnalysisContent($url, (int) ($params['pageId'] ?? 0) <= 0);
         if ($content instanceof CallToolResult) {
             return $content;
         }

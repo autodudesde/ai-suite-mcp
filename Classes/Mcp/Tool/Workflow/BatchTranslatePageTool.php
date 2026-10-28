@@ -17,10 +17,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\PageSubtreeSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchTranslatePageTool extends AbstractAiTool
 {
     use PageSubtreeSelectionTrait;
@@ -128,11 +126,11 @@ class BatchTranslatePageTool extends AbstractAiTool
 
         $sourceLanguage = $params['sourceLanguage'] ?? '';
         if ('' === $sourceLanguage) {
-            $sourceLanguage = $this->resolveLanguageIsoCode('', $pageIds[0] ?? 1);
+            $sourceLanguage = $this->resolveLanguageIsoCode('', $this->referencePageId($pageIds[0] ?? 0));
         }
 
-        $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $pageIds[0] ?? 1);
-        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $pageIds[0] ?? 1);
+        $sourceLanguageUid = $this->recordAccess->resolveLanguageUid($sourceLanguage, $this->referencePageId($pageIds[0] ?? 0));
+        $targetLanguageUid = $this->recordAccess->resolveLanguageUid($targetLanguage, $this->referencePageId($pageIds[0] ?? 0));
 
         // resolveLanguageUid() answers 0 for both "default language" and "could not resolve".
         if (0 === $targetLanguageUid) {
@@ -171,6 +169,7 @@ class BatchTranslatePageTool extends AbstractAiTool
             return $this->textError('No valid pages found to translate.');
         }
 
+        $this->assertCreditBudget();
         $parentUuid = $this->uuidService->generateUuid();
 
         $request = $this->userContext->getServerRequest();
@@ -187,35 +186,29 @@ class BatchTranslatePageTool extends AbstractAiTool
             model: $model,
         );
 
-        $payload = $result['payload'];
-        $bulkPayload = $result['bulkPayload'];
         $failedPages = $result['failedPages'];
 
-        if (empty($payload)) {
+        if (empty($result['payload'])) {
             return $this->textError('No translatable content found for the given pages.');
         }
 
-        $serverResult = $this->sendRequestService->sendDataRequest(
-            'createMassAction',
-            [
-                'uuid' => $parentUuid,
-                'payload' => $payload,
-                'scope' => 'page-translation',
-                'type' => 'translation',
-            ],
-            '',
-            '',
-            ['translate' => $model],
+        $errorMessage = $this->workflowProcessingService->sendPageTranslationRequests(
+            $result,
+            $parentUuid,
+            $model,
+            $sourceLanguageUid,
+            $targetLanguageUid,
+            true,
+            $this->sendRequestService,
+            $this->backgroundTaskRepository,
         );
 
-        if ('Error' === $serverResult->getType()) {
+        if (null !== $errorMessage) {
             return new CallToolResult(
-                [new TextContent('Server error: '.($serverResult->getResponseData()['message'] ?? 'unknown'))],
+                [new TextContent('Server error: '.$errorMessage)],
                 isError: true,
             );
         }
-
-        $this->backgroundTaskRepository->insertBackgroundTasks($bulkPayload);
 
         $allSkipped = array_merge($skipped, $failedPages);
         $totalPages = count($pageIds) - count($allSkipped);

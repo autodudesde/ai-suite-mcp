@@ -1,6 +1,6 @@
 <html xmlns:f="http://typo3.org/ns/TYPO3/CMS/Fluid/ViewHelpers">
 <head>
-    <title>{siteName} — MCP Authorize</title>
+    <title>{siteName}: {labels.titleAuthorize}</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <f:if condition="{faviconUrl}">
@@ -193,6 +193,26 @@
             height: 18px;
             border-radius: 3px;
         }
+
+        .workspace-binding {
+            border-bottom: 1px solid #f0f0f0;
+            padding-bottom: .75rem;
+            margin-bottom: 1rem;
+        }
+
+        .workspace-binding label {
+            display: block;
+            font-size: .85rem;
+            color: var(--typo3-login-text-muted);
+            margin-bottom: .35rem;
+        }
+
+        .workspace-binding select {
+            width: 100%;
+            padding: .5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
     </style>
     <f:if condition="{highlightColorStyles}">
         <style>{highlightColorStyles -> f:format.raw()}</style>
@@ -204,9 +224,10 @@
 <body class="typo3-login">
     <div class="typo3-login-wrap">
         <div class="client-info">
-            <p><strong>{clientId}</strong></p> <p>requests access to AI Suite MCP</p>
+            <p><strong>{clientName}</strong></p> <p>{labels.requestsAccess}</p>
+            <p>{labels.redirectsTo} <strong>{redirectHost}</strong></p>
             <f:if condition="{isLocalhost}">
-                <p><span class="localhost-badge">&#10003; Local connection</span></p>
+                <p><span class="localhost-badge">&#10003; {labels.localConnection}</span></p>
             </f:if>
         </div>
 
@@ -215,7 +236,7 @@
                 <div class="typo3-login-logo">
                     <f:if condition="{hasCustomLogo}">
                         <f:then>
-                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: 'Logo')}" />
+                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: labels.logoAlt)}" />
                         </f:then>
                         <f:else>
                             <svg viewBox="0 0 150 42" width="150" height="52" aria-hidden="true">
@@ -238,25 +259,23 @@
                     <input type="hidden" name="consent_ticket" value="{consentTicket}" />
 
                     <f:if condition="{availableWorkspaces}">
-                        <div class="scopes" style="border-bottom: 1px solid #f0f0f0; padding-bottom: .75rem; margin-bottom: 1rem;">
-                            <label for="workspace_uid" style="display: block; font-size: .85rem; color: var(--typo3-login-text-muted); margin-bottom: .35rem;">
-                                Bind token to workspace
-                            </label>
-                            <select name="workspace_uid" id="workspace_uid" style="width: 100%; padding: .5rem; border: 1px solid #ddd; border-radius: 4px;">
+                        <div class="scopes workspace-binding">
+                            <label for="workspace_uid">{labels.bindWorkspace}</label>
+                            <select name="workspace_uid" id="workspace_uid">
                                 <option value="0">{defaultWorkspaceLabel}</option>
                                 <f:for each="{availableWorkspaces}" as="ws">
-                                    <option value="{ws.uid}">Workspace {ws.uid}: {ws.title}</option>
+                                    <option value="{ws.uid}">{labels.workspace} {ws.uid}: {ws.title}</option>
                                 </f:for>
                             </select>
                         </div>
                     </f:if>
 
                     <button type="submit" name="consent" value="all" class="btn btn-primary">
-                        Grant full access
+                        {labels.grantAll}
                     </button>
 
                     <details>
-                        <summary>Customize permissions</summary>
+                        <summary>{labels.customize}</summary>
 
                         <div class="scopes">
                             <f:for each="{scopes}" as="scope" key="scopeKey">
@@ -271,12 +290,12 @@
                         </div>
 
                         <button type="submit" name="consent" value="custom" class="btn btn-secondary">
-                            Grant selected permissions
+                            {labels.grantSelected}
                         </button>
                     </details>
 
                     <button type="submit" name="consent" value="deny" class="btn btn-deny">
-                        Deny access
+                        {labels.deny}
                     </button>
                 </form>
             </div>
@@ -288,11 +307,11 @@
                     </f:then>
                     <f:else>
                         <span class="footer-note">
-                            Powered by
+                            {labels.poweredBy}
                             <f:if condition="{aiSuiteIconUrl}">
                                 <img src="{aiSuiteIconUrl}" alt="" />
                             </f:if>
-                            AI Suite for TYPO3
+                            {labels.product}
                         </span>
                     </f:else>
                 </f:if>

@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Context;
 
 use AutoDudes\AiSuite\Domain\Repository\SysFileMetadataRepository;
-use AutoDudes\AiSuite\Domain\Repository\SysFileReferenceRepository;
+use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FilePreviewService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\Content;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use TYPO3\CMS\Core\Resource\File;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadFileInfoTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
@@ -24,7 +24,8 @@ class ReadFileInfoTool extends AbstractTool
     public function __construct(
         ToolContext $mcpToolContext,
         private readonly SysFileMetadataRepository $sysFileMetadataRepository,
-        private readonly SysFileReferenceRepository $sysFileReferenceRepository,
+        private readonly RecordRepository $recordRepository,
+        private readonly WorkspaceRecordService $workspaceRecords,
         private readonly FilePreviewService $filePreviewService,
     ) {
         parent::__construct($mcpToolContext);
@@ -100,7 +101,7 @@ class ReadFileInfoTool extends AbstractTool
         }
 
         if (\in_array('references', $include, true)) {
-            $result['references'] = $this->buildReferences($fileUid, null);
+            $result['references'] = $this->buildReferences($file);
         }
 
         /** @var list<Content> $content */
@@ -129,25 +130,47 @@ class ReadFileInfoTool extends AbstractTool
     /**
      * @return list<array<string, mixed>>
      */
-    private function buildReferences(?int $fileUid, ?int $pageId): array
+    private function buildReferences(File $file): array
     {
-        $rows = $this->sysFileReferenceRepository->findByFileOrPage($fileUid, $pageId);
+        if (!$this->recordAccess->hasTableReadAccess('sys_file_reference')) {
+            return [];
+        }
 
-        return array_map(fn ($r) => [
-            'referenceUid' => (int) $r['uid'],
-            'fileUid' => (int) $r['uid_local'],
-            'fileName' => $r['file_name'],
-            'extension' => $r['extension'],
-            'identifier' => $r['identifier'],
-            'usedIn' => [
-                'table' => $r['tablenames'],
-                'field' => $r['fieldname'],
-                'recordUid' => (int) $r['uid_foreign'],
-            ],
-            'title' => (string) $r['title'],
-            'alternative' => (string) $r['alternative'],
-            'hasAltText' => '' !== trim((string) $r['alternative']),
-        ], $rows);
+        $uids = $this->recordRepository->findUidsByRelation('sys_file_reference', 'uid_local', [(int) $file->getUid()], 200);
+
+        $references = [];
+        foreach ($this->workspaceRecords->overlay('sys_file_reference', $uids) as $row) {
+            if ((int) ($row['uid_local'] ?? 0) !== (int) $file->getUid()
+                || !$this->recordAccess->canReadRecordTitle((string) $row['tablenames'], (int) $row['uid_foreign'])
+            ) {
+                continue;
+            }
+
+            $reference = [
+                'referenceUid' => (int) $row['uid'],
+                'fileUid' => (int) $file->getUid(),
+                'fileName' => $file->getName(),
+                'extension' => $file->getExtension(),
+                'identifier' => $file->getIdentifier(),
+                'usedIn' => [
+                    'table' => (string) $row['tablenames'],
+                    'field' => (string) $row['fieldname'],
+                    'recordUid' => (int) $row['uid_foreign'],
+                ],
+                'title' => (string) ($row['title'] ?? ''),
+                'alternative' => (string) ($row['alternative'] ?? ''),
+                'hasAltText' => '' !== trim((string) ($row['alternative'] ?? '')),
+            ];
+            $state = $this->workspaceRecords->stateLabel($row);
+            if ('' !== $state) {
+                $reference['state'] = $state;
+            }
+            $references[] = $reference;
+        }
+
+        usort($references, static fn (array $a, array $b): int => [$a['usedIn']['table'], $a['usedIn']['recordUid'], $a['referenceUid']] <=> [$b['usedIn']['table'], $b['usedIn']['recordUid'], $b['referenceUid']]);
+
+        return $references;
     }
 
     /**

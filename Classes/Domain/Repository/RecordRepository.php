@@ -49,10 +49,11 @@ class RecordRepository extends AbstractRepository
 
         if (null !== $pid) {
             $query->where($qb->expr()->eq('pid', $qb->createNamedParameter($pid, Connection::PARAM_INT)));
-        } elseif (null !== $extraWhere) {
-            $query->andWhere($extraWhere);
         } elseif (null !== $allowedPids && [] !== $allowedPids) {
             $query->andWhere($qb->expr()->in($scopeColumn, $qb->createNamedParameter($allowedPids, Connection::PARAM_INT_ARRAY)));
+        }
+        if (null !== $extraWhere) {
+            $query->andWhere($extraWhere);
         }
 
         foreach ($fieldFilters as $field => $value) {
@@ -451,6 +452,25 @@ class RecordRepository extends AbstractRepository
         ;
 
         return false !== $uid ? (int) $uid : null;
+    }
+
+    /**
+     * @param list<int> $values
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function findPagesByFieldValues(string $field, array $values): array
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable('pages');
+        $this->withoutFrontendRestrictions($qb);
+        $this->addWorkspaceRestriction($qb);
+
+        return $qb->select('*')
+            ->from('pages')
+            ->where($qb->expr()->in($field, $qb->createNamedParameter($values, Connection::PARAM_INT_ARRAY)))
+            ->executeQuery()
+            ->fetchAllAssociative()
+        ;
     }
 
     private function withoutFrontendRestrictions(QueryBuilder $queryBuilder): void

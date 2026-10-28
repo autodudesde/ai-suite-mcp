@@ -17,10 +17,8 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\FolderFileSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Resource\File;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateFileMetadataTool extends AbstractAiTool
 {
     use FolderFileSelectionTrait;
@@ -89,7 +87,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
         $fileUids = $params['fileUids'] ?? [];
         $model = (string) ($params['model'] ?? '');
         $fields = $params['fields'] ?? ['alternative', 'title'];
-        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), 1);
+        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $this->referencePageId(0));
 
         if (empty($fileUids)) {
             return $this->textError('Give fileUids or folderIdentifiers — one of the two, non-empty.');
@@ -191,6 +189,7 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
             return $this->textError('No valid files found to process.');
         }
 
+        $this->assertCreditBudget();
         $parentUuid = $this->uuidService->generateUuid();
         $languageParts = [strtoupper($langIsoCode), (string) 0];
 

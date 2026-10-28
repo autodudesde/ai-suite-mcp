@@ -5,11 +5,18 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint;
 
 use AutoDudes\AiSuite\Service\IconService;
+use AutoDudes\AiSuite\Service\LoginStyleService;
 use AutoDudes\AiSuite\Service\ViewFactoryService;
-use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\RateLimitPolicy;
+use AutoDudes\AiSuiteMcp\Domain\Repository\OAuthClientRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RateLimitExceededException;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
+use AutoDudes\AiSuiteMcp\Mcp\OAuth\RedirectUriPolicy;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BackendCredentialService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ClientIpService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpWorkspaceOptionsService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthTicketService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RateLimiterService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TokenAuthenticatedBackendUserService;
@@ -22,25 +29,22 @@ use TYPO3\CMS\Core\Authentication\Mfa\MfaProviderPropertyManager;
 use TYPO3\CMS\Core\Authentication\Mfa\MfaProviderRegistry;
 use TYPO3\CMS\Core\Authentication\Mfa\MfaViewType;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
-use TYPO3\CMS\Core\Core\Environment;
-use TYPO3\CMS\Core\Crypto\PasswordHashing\InvalidPasswordHashException;
-use TYPO3\CMS\Core\Crypto\PasswordHashing\PasswordHashFactory;
 use TYPO3\CMS\Core\Http\HtmlResponse;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\RedirectResponse;
-use TYPO3\CMS\Core\Information\Typo3Version;
-use TYPO3\CMS\Core\SystemResource\Publishing\SystemResourcePublisherInterface;
-use TYPO3\CMS\Core\SystemResource\SystemResourceFactory;
-use TYPO3\CMS\Core\SystemResource\Type\PublicResourceInterface;
-use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Core\Localization\LanguageService;
+use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
+use TYPO3\CMS\Core\Localization\Locales;
 
 class AuthorizationEndpoint
 {
-    private const MFA_TICKET_TTL = 60;
-    private const MFA_TICKET_PURPOSE = 'mcp-oauth-mfa';
-    private const CONSENT_TICKET_TTL = 600;
-    private const CONSENT_TICKET_PURPOSE = 'mcp-oauth-consent';
+    private const LABELS = 'LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_oauth.xlf:aiSuite.mcp.oauth.';
+
+    private const PAGE_LABELS = [
+        'titleConnect', 'titleAuthorize', 'titleMfa', 'wouldLikeToConnect', 'requestsAccess', 'mfaRequired',
+        'localConnection', 'redirectsTo', 'logoAlt', 'loginError', 'accessDenied', 'mfaSetupRequired', 'username', 'password', 'signIn', 'mfaError',
+        'verify', 'bindWorkspace', 'workspace', 'grantAll', 'customize', 'grantSelected', 'deny', 'poweredBy', 'product',
+    ];
 
     public function __construct(
         private readonly OAuthService $oauthService,
@@ -50,11 +54,17 @@ class AuthorizationEndpoint
         private readonly AuthenticationStyleInformation $authStyleInfo,
         private readonly MfaProviderRegistry $mfaProviderRegistry,
         private readonly ViewFactoryService $viewFactoryService,
-        private readonly Typo3Version $typo3Version,
-        private readonly SysWorkspaceRepository $sysWorkspaceRepository,
+        private readonly LoginStyleService $loginStyleService,
+        private readonly McpWorkspaceOptionsService $workspaceOptions,
+        private readonly LanguageServiceFactory $languageServiceFactory,
+        private readonly Locales $locales,
         private readonly ClientIpService $clientIpService,
         private readonly TokenAuthenticatedBackendUserService $tokenAuthenticatedBackendUser,
         private readonly IconService $iconService,
+        private readonly BackendCredentialService $backendCredentials,
+        private readonly OAuthTicketService $oauthTicketService,
+        private readonly OAuthClientRepository $clientRepository,
+        private readonly RedirectUriPolicy $redirectUriPolicy,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -63,8 +73,8 @@ class AuthorizationEndpoint
         $ip = $this->clientIpService->resolve($request);
 
         try {
-            $this->rateLimiter->checkAndIncrement('auth_'.$ip);
-        } catch (\RuntimeException $e) {
+            $this->rateLimiter->checkAndIncrement('auth_'.$ip, RateLimitPolicy::oauthEndpoint());
+        } catch (RateLimitExceededException $e) {
             $this->logger->warning('OAuth authorize endpoint rate limit exceeded', [
                 'ip' => $ip,
                 'reason' => $e->getMessage(),
@@ -73,7 +83,7 @@ class AuthorizationEndpoint
             return new JsonResponse([
                 'error' => 'rate_limit_exceeded',
                 'error_description' => $e->getMessage(),
-            ], 429);
+            ], 429, ['Retry-After' => (string) $e->retryAfter]);
         }
 
         if ('GET' === $request->getMethod()) {
@@ -91,7 +101,7 @@ class AuthorizationEndpoint
     {
         $params = $request->getQueryParams();
 
-        $validation = $this->validateAuthorizationParams($params);
+        $validation = $this->validateAuthorizationParams($params, CanonicalResource::get($request));
         if (null !== $validation) {
             return $validation;
         }
@@ -131,7 +141,11 @@ class AuthorizationEndpoint
             return $this->handleConsent($request, $body);
         }
 
-        $beUserUid = $this->authenticateUser($username, $password);
+        if (null === $this->resolveClient($clientId, $redirectUri)) {
+            return $this->invalidClientResponse();
+        }
+
+        $beUserUid = $this->backendCredentials->authenticate($username, $password, $request);
 
         if (null === $beUserUid) {
             return new HtmlResponse($this->renderOAuthView('OAuth/Login', [
@@ -146,7 +160,7 @@ class AuthorizationEndpoint
             ], $request));
         }
 
-        if (!$this->userHasMcpAccess($beUserUid)) {
+        if (!$this->backendCredentials->hasMcpAccess($beUserUid)) {
             return new HtmlResponse($this->renderOAuthView('OAuth/Login', [
                 'clientId' => $clientId,
                 'redirectUri' => $redirectUri,
@@ -160,6 +174,21 @@ class AuthorizationEndpoint
         }
 
         $backendUser = $this->initBackendUser($beUserUid);
+
+        if (!$this->mfaProviderRegistry->hasActiveProviders($backendUser) && $backendUser->isMfaSetupRequired()) {
+            $this->logger->notice('MCP OAuth: refused a login that requires MFA the user has not set up', ['be_user_uid' => $beUserUid]);
+
+            return new HtmlResponse($this->renderOAuthView('OAuth/Login', [
+                'clientId' => $clientId,
+                'redirectUri' => $redirectUri,
+                'codeChallenge' => $codeChallenge,
+                'scope' => $scope,
+                'state' => $state,
+                'resource' => $resource,
+                'mfaSetupRequired' => true,
+                'isLocalhost' => $this->isLocalhostRedirect($redirectUri),
+            ], $request));
+        }
 
         if ($this->mfaProviderRegistry->hasActiveProviders($backendUser)) {
             return $this->renderMfaChallenge(
@@ -192,7 +221,11 @@ class AuthorizationEndpoint
         $resource = (string) ($body['resource'] ?? '');
         $ip = $this->clientIpService->resolve($request);
 
-        $beUserUid = $this->verifyMfaTicket($ticket, $ip);
+        $beUserUid = $this->oauthTicketService->verifyMfaTicket($ticket, $ip);
+        if (null === $this->resolveClient($clientId, $redirectUri)) {
+            return $this->invalidClientResponse();
+        }
+
         if (null === $beUserUid) {
             $this->logger->warning('MCP OAuth: invalid or expired MFA ticket', ['ip' => $ip]);
             $separator = str_contains($redirectUri, '?') ? '&' : '?';
@@ -203,8 +236,8 @@ class AuthorizationEndpoint
         }
 
         try {
-            $this->rateLimiter->checkAndIncrement('mfa_'.$beUserUid);
-        } catch (\RuntimeException $e) {
+            $this->rateLimiter->checkAndIncrement('mfa_'.$beUserUid, RateLimitPolicy::mfaVerify());
+        } catch (RateLimitExceededException $e) {
             $this->logger->warning('OAuth MFA verify endpoint rate limit exceeded', [
                 'beUserUid' => $beUserUid,
                 'reason' => $e->getMessage(),
@@ -213,14 +246,14 @@ class AuthorizationEndpoint
             return new JsonResponse([
                 'error' => 'rate_limit_exceeded',
                 'error_description' => $e->getMessage(),
-            ], 429);
+            ], 429, ['Retry-After' => (string) $e->retryAfter]);
         }
 
         $backendUser = $this->initBackendUser($beUserUid);
 
         $provider = $this->mfaProviderRegistry->getFirstAuthenticationAwareProvider($backendUser);
         if (null === $provider) {
-            return $this->renderConsent($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $state, $resource, $request);
+            return new JsonResponse(['error' => 'access_denied', 'error_description' => 'No MFA provider of this account can verify a login.'], 403);
         }
 
         $propertyManager = MfaProviderPropertyManager::create($provider, $backendUser);
@@ -279,14 +312,14 @@ class AuthorizationEndpoint
     ): ResponseInterface {
         $provider = $this->mfaProviderRegistry->getFirstAuthenticationAwareProvider($backendUser);
         if (null === $provider) {
-            return $this->renderConsent($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $state, $resource, $request);
+            return new JsonResponse(['error' => 'access_denied', 'error_description' => 'No MFA provider of this account can verify a login.'], 403);
         }
 
         $propertyManager = MfaProviderPropertyManager::create($provider, $backendUser);
         $providerResponse = $provider->handleRequest($request, $propertyManager, MfaViewType::AUTH);
 
         $ip = $this->clientIpService->resolve($request);
-        $ticket = $this->createMfaTicket($beUserUid, $ip);
+        $ticket = $this->oauthTicketService->createMfaTicket($beUserUid, $ip);
 
         return new HtmlResponse($this->renderOAuthView('OAuth/Mfa', [
             'clientId' => $clientId,
@@ -311,9 +344,9 @@ class AuthorizationEndpoint
         string $scope,
         string $state,
         string $resource,
-        ?ServerRequestInterface $request = null,
+        ServerRequestInterface $request,
     ): ResponseInterface {
-        $bindingError = $this->validateConsentBindings($clientId, $redirectUri, $codeChallenge, $resource);
+        $bindingError = $this->validateConsentBindings($clientId, $redirectUri, $codeChallenge, $resource, CanonicalResource::get($request));
         if (null !== $bindingError) {
             return $bindingError;
         }
@@ -322,8 +355,10 @@ class AuthorizationEndpoint
         $availableScopes = $this->permissionService->getAvailableScopes();
         $grantableScopes = array_values(array_intersect($requestedScopes, $availableScopes));
 
-        $ip = null !== $request ? $this->clientIpService->resolve($request) : '';
-        $consentTicket = $this->createConsentTicket($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $resource, $ip);
+        $ip = $this->clientIpService->resolve($request);
+        $consentTicket = $this->oauthTicketService->createConsentTicket($beUserUid, $clientId, $redirectUri, $codeChallenge, $scope, $resource, $ip);
+        $backendUser = $this->initBackendUser($beUserUid);
+        $languageService = $this->languageServiceFor($request);
 
         return new HtmlResponse($this->renderOAuthView('OAuth/Consent', [
             'clientId' => $clientId,
@@ -332,47 +367,18 @@ class AuthorizationEndpoint
             'state' => $state,
             'resource' => $resource,
             'consentTicket' => $consentTicket,
-            'scopes' => $this->getScopeDescriptions($grantableScopes),
+            'scopes' => $this->getScopeDescriptions($grantableScopes, $languageService),
             'isLocalhost' => $this->isLocalhostRedirect($redirectUri),
-            'availableWorkspaces' => $this->resolveAvailableWorkspaces($beUserUid),
-            'defaultWorkspaceLabel' => $this->resolveDefaultWorkspaceLabel($beUserUid),
+            'availableWorkspaces' => $this->workspaceOptions->availableFor($backendUser),
+            'defaultWorkspaceLabel' => $this->workspaceOptions->defaultLabel($backendUser, $languageService),
         ], $request));
     }
 
-    /**
-     * @return list<array{uid: int, title: string}>
-     */
-    private function resolveAvailableWorkspaces(int $beUserUid): array
+    private function languageServiceFor(ServerRequestInterface $request): LanguageService
     {
-        if (!ExtensionManagementUtility::isLoaded('workspaces')) {
-            return [];
-        }
-
-        $backendUser = $this->initBackendUser($beUserUid);
-
-        $available = [];
-        foreach ($this->sysWorkspaceRepository->findAll() as $row) {
-            if ($backendUser->checkWorkspace($row['uid'])) {
-                $available[] = $row;
-            }
-        }
-
-        return $available;
-    }
-
-    private function resolveDefaultWorkspaceLabel(int $beUserUid): string
-    {
-        if (!ExtensionManagementUtility::isLoaded('workspaces')) {
-            return 'Live (workspaces not installed)';
-        }
-
-        $backendUser = $this->initBackendUser($beUserUid);
-        $defaultWs = (int) $backendUser->workspace;
-        if (0 === $defaultWs) {
-            return 'User default (Live)';
-        }
-
-        return sprintf('User default (Workspace %d)', $defaultWs);
+        return $this->languageServiceFactory->create(
+            $this->locales->getPreferredClientLanguage($request->getHeaderLine('Accept-Language')),
+        );
     }
 
     private function initBackendUser(int $beUserUid): BackendUserAuthentication
@@ -383,141 +389,21 @@ class AuthorizationEndpoint
         return $backendUser;
     }
 
-    private function createMfaTicket(int $beUserUid, string $ip): string
-    {
-        $expires = time() + self::MFA_TICKET_TTL;
-        $payload = $beUserUid.'|'.$ip.'|'.$expires;
-        $payloadEncoded = $this->base64UrlEncode($payload);
-        $signature = $this->base64UrlEncode(hash_hmac('sha256', $payloadEncoded, $this->getHmacSecret(), true));
-
-        return $payloadEncoded.'.'.$signature;
-    }
-
-    private function verifyMfaTicket(string $ticket, string $ip): ?int
-    {
-        $parts = explode('.', $ticket);
-        if (2 !== count($parts)) {
-            return null;
-        }
-        [$payloadEncoded, $signature] = $parts;
-
-        $expected = $this->base64UrlEncode(hash_hmac('sha256', $payloadEncoded, $this->getHmacSecret(), true));
-        if (!hash_equals($expected, $signature)) {
-            return null;
-        }
-
-        $payload = $this->base64UrlDecode($payloadEncoded);
-        if (null === $payload) {
-            return null;
-        }
-
-        $segments = explode('|', $payload);
-        if (3 !== count($segments)) {
-            return null;
-        }
-
-        [$uid, $ticketIp, $expires] = $segments;
-        if ($ticketIp !== $ip || (int) $expires < time()) {
-            return null;
-        }
-
-        return (int) $uid;
-    }
-
-    private function getHmacSecret(string $purpose = self::MFA_TICKET_PURPOSE): string
-    {
-        $key = (string) ($GLOBALS['TYPO3_CONF_VARS']['SYS']['encryptionKey'] ?? '');
-        if ('' === $key) {
-            throw new \RuntimeException('encryptionKey is not configured.', 1744800000);
-        }
-
-        return $key.'|'.$purpose;
-    }
-
-    private function createConsentTicket(
-        int $beUserUid,
-        string $clientId,
-        string $redirectUri,
-        string $codeChallenge,
-        string $scope,
-        string $resource,
-        string $ip,
-    ): string {
-        $payload = [
-            'uid' => $beUserUid,
-            'cid' => $clientId,
-            'ru' => $redirectUri,
-            'cc' => $codeChallenge,
-            'sc' => $scope,
-            'res' => $resource,
-            'ip' => $ip,
-            'exp' => time() + self::CONSENT_TICKET_TTL,
-        ];
-        $payloadEncoded = $this->base64UrlEncode((string) json_encode($payload));
-        $signature = $this->base64UrlEncode(hash_hmac('sha256', $payloadEncoded, $this->getHmacSecret(self::CONSENT_TICKET_PURPOSE), true));
-
-        return $payloadEncoded.'.'.$signature;
-    }
-
-    /**
-     * @return null|array{uid: int, cid: string, ru: string, cc: string, sc: string, res: string, ip: string, exp: int}
-     */
-    private function verifyConsentTicket(string $ticket, string $ip): ?array
-    {
-        $parts = explode('.', $ticket);
-        if (2 !== count($parts)) {
-            return null;
-        }
-        [$payloadEncoded, $signature] = $parts;
-
-        $expected = $this->base64UrlEncode(hash_hmac('sha256', $payloadEncoded, $this->getHmacSecret(self::CONSENT_TICKET_PURPOSE), true));
-        if (!hash_equals($expected, $signature)) {
-            return null;
-        }
-
-        $json = $this->base64UrlDecode($payloadEncoded);
-        if (null === $json) {
-            return null;
-        }
-
-        $payload = json_decode($json, true);
-        if (!is_array($payload)
-            || !isset($payload['uid'], $payload['cid'], $payload['ru'], $payload['cc'], $payload['res'], $payload['ip'], $payload['exp'])
-        ) {
-            return null;
-        }
-
-        if ((string) $payload['ip'] !== $ip || (int) $payload['exp'] < time()) {
-            return null;
-        }
-
-        return [
-            'uid' => (int) $payload['uid'],
-            'cid' => (string) $payload['cid'],
-            'ru' => (string) $payload['ru'],
-            'cc' => (string) $payload['cc'],
-            'sc' => (string) ($payload['sc'] ?? ''),
-            'res' => (string) $payload['res'],
-            'ip' => (string) $payload['ip'],
-            'exp' => (int) $payload['exp'],
-        ];
-    }
-
-    private function validateConsentBindings(string $clientId, string $redirectUri, string $codeChallenge, string $resource): ?ResponseInterface
+    private function validateConsentBindings(string $clientId, string $redirectUri, string $codeChallenge, string $resource, string $canonicalResource): ?ResponseInterface
     {
         if ('' === $clientId) {
             return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'client_id is required.'], 400);
         }
 
-        if ('' === $redirectUri || !$this->validateRedirectUri($redirectUri)) {
-            return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'A valid redirect_uri is required.'], 400);
+        if (null === $this->resolveClient($clientId, $redirectUri)) {
+            return $this->invalidClientResponse();
         }
 
         if ('' === $codeChallenge) {
             return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'code_challenge is required (PKCE).'], 400);
         }
 
-        if ('' === $resource || !CanonicalResource::matches($resource)) {
+        if ('' === $resource || !CanonicalResource::matches($resource, $canonicalResource)) {
             return new JsonResponse(['error' => 'invalid_target', 'error_description' => 'resource parameter is missing or does not match this MCP server.'], 400);
         }
 
@@ -532,18 +418,6 @@ class AuthorizationEndpoint
         return null;
     }
 
-    private function base64UrlEncode(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-    }
-
-    private function base64UrlDecode(string $data): ?string
-    {
-        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-
-        return false === $decoded ? null : $decoded;
-    }
-
     /**
      * @param array<string, mixed> $body
      */
@@ -553,7 +427,7 @@ class AuthorizationEndpoint
         $state = (string) ($body['state'] ?? '');
 
         $ip = $this->clientIpService->resolve($request);
-        $ticket = $this->verifyConsentTicket((string) ($body['consent_ticket'] ?? ''), $ip);
+        $ticket = $this->oauthTicketService->verifyConsentTicket((string) ($body['consent_ticket'] ?? ''), $ip);
         if (null === $ticket) {
             $this->logger->warning('MCP OAuth: invalid or expired consent ticket', ['ip' => $ip]);
 
@@ -572,18 +446,17 @@ class AuthorizationEndpoint
         if ('deny' === $consentAction) {
             $separator = str_contains($redirectUri, '?') ? '&' : '?';
 
-            return new RedirectResponse($redirectUri.$separator.'error=access_denied&state='.urlencode($state).'&iss='.urlencode($this->issuer()));
+            return new RedirectResponse($redirectUri.$separator.'error=access_denied&state='.urlencode($state).'&iss='.urlencode(CanonicalResource::host($request)));
         }
 
         $backendUser = $this->tokenAuthenticatedBackendUser->createForUid($beUserUid);
         $GLOBALS['BE_USER'] = $backendUser;
 
-        $availableScopes = $this->permissionService->getAvailableScopes();
-        if ('all' === $consentAction) {
-            $grantedScopes = $availableScopes;
-        } else {
-            $grantedScopes = array_values(array_intersect((array) ($body['scopes'] ?? []), $availableScopes));
-        }
+        $requestedScopes = array_values(array_filter(explode(' ', (string) ($ticket['sc'] ?? ''))));
+        $grantableScopes = array_values(array_intersect($requestedScopes, $this->permissionService->getAvailableScopes()));
+        $grantedScopes = 'all' === $consentAction
+            ? $grantableScopes
+            : array_values(array_intersect((array) ($body['scopes'] ?? []), $grantableScopes));
 
         $workspaceUid = (int) ($body['workspace_uid'] ?? 0);
         if ($workspaceUid > 0 && false === $backendUser->checkWorkspace($workspaceUid)) {
@@ -611,19 +484,14 @@ class AuthorizationEndpoint
         $separator = str_contains($redirectUri, '?') ? '&' : '?';
 
         return new RedirectResponse(
-            $redirectUri.$separator.'code='.urlencode($rawCode).'&state='.urlencode($state).'&iss='.urlencode($this->issuer()),
+            $redirectUri.$separator.'code='.urlencode($rawCode).'&state='.urlencode($state).'&iss='.urlencode(CanonicalResource::host($request)),
         );
-    }
-
-    private function issuer(): string
-    {
-        return rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
     }
 
     /**
      * @param array<string, mixed> $params
      */
-    private function validateAuthorizationParams(array $params): ?ResponseInterface
+    private function validateAuthorizationParams(array $params, string $canonicalResource): ?ResponseInterface
     {
         if (($params['response_type'] ?? '') !== 'code') {
             return new JsonResponse([
@@ -636,17 +504,13 @@ class AuthorizationEndpoint
             return new JsonResponse(['error' => 'invalid_request', 'error_description' => 'client_id is required.'], 400);
         }
 
-        if (empty($params['redirect_uri']) || !$this->validateRedirectUri($params['redirect_uri'])) {
-            $this->logger->warning('MCP OAuth: redirect_uri validation failed', [
-                'redirect_uri' => $params['redirect_uri'] ?? '(empty)',
-                'client_id' => $params['client_id'] ?? '(empty)',
-                'all_params' => array_keys($params),
+        if (null === $this->resolveClient((string) $params['client_id'], (string) ($params['redirect_uri'] ?? ''))) {
+            $this->logger->warning('MCP OAuth: client or redirect_uri validation failed', [
+                'redirect_host' => $this->redirectUriPolicy->host((string) ($params['redirect_uri'] ?? '')),
+                'client_id' => $params['client_id'],
             ]);
 
-            return new JsonResponse([
-                'error' => 'invalid_request',
-                'error_description' => 'A valid redirect_uri is required. Received: '.($params['redirect_uri'] ?? '(empty)'),
-            ], 400);
+            return $this->invalidClientResponse();
         }
 
         if (empty($params['code_challenge'])) {
@@ -663,7 +527,7 @@ class AuthorizationEndpoint
             ], 400);
         }
 
-        // state required, min 22 chars.  OAuth 2.1 BCP (RFC 9700 §4.7) recommends >=128 bit entropy.
+        // RFC 9700 §4.7: >=128 bit entropy
         $state = $params['state'] ?? '';
         if (strlen($state) < 22) {
             return new JsonResponse([
@@ -678,16 +542,16 @@ class AuthorizationEndpoint
                 'error' => 'invalid_target',
                 'error_description' => sprintf(
                     'resource parameter is required (RFC 8707). Expected: %s',
-                    CanonicalResource::get(),
+                    $canonicalResource,
                 ),
             ], 400);
         }
-        if (!CanonicalResource::matches($resource)) {
+        if (!CanonicalResource::matches($resource, $canonicalResource)) {
             return new JsonResponse([
                 'error' => 'invalid_target',
                 'error_description' => sprintf(
                     'resource parameter does not match this MCP server. Expected: %s',
-                    CanonicalResource::get(),
+                    $canonicalResource,
                 ),
             ], 400);
         }
@@ -706,96 +570,49 @@ class AuthorizationEndpoint
         return null;
     }
 
-    private function validateRedirectUri(string $redirectUri): bool
+    /**
+     * @return null|array{client_id: string, client_name: string, redirect_uris: list<string>}
+     */
+    private function resolveClient(string $clientId, string $redirectUri): ?array
     {
-        $parsed = parse_url($redirectUri);
-        $scheme = $parsed['scheme'] ?? '';
-
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            return false;
-        }
-
-        $host = $parsed['host'] ?? '';
-
-        if (in_array($host, ['localhost', '127.0.0.1', '[::1]'], true)) {
-            return true;
-        }
-
-        $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
-        $allowedRedirectUris = array_filter(
-            array_map('trim', explode(',', (string) ($extConf['mcpAllowedRedirectUris'] ?? ''))),
-        );
-
-        if (empty($allowedRedirectUris)) {
-            return !Environment::getContext()->isProduction();
-        }
-
-        foreach ($allowedRedirectUris as $allowed) {
-            if (str_starts_with($redirectUri, $allowed)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function authenticateUser(string $username, string $password): ?int
-    {
-        if ('' === $username || '' === $password) {
+        if ('' === $clientId || '' === $redirectUri || !$this->redirectUriPolicy->isAllowed($redirectUri)) {
             return null;
         }
 
-        try {
-            $backendUser = GeneralUtility::makeInstance(BackendUserAuthentication::class);
-            $backendUser->setBeUserByName($username);
-            $user = $backendUser->user;
-
-            if (null === $user) {
-                $this->logger->notice('Authentication failed: user not found', ['username' => $username]);
-
-                return null;
-            }
-
-            $hashInstance = GeneralUtility::makeInstance(PasswordHashFactory::class)->get($user['password'], 'BE');
-            if (!$hashInstance->checkPassword($password, $user['password'])) {
-                $this->logger->notice('Authentication failed: invalid password', ['username' => $username]);
-
-                return null;
-            }
-
-            return (int) $user['uid'];
-        } catch (InvalidPasswordHashException $e) {
-            $this->logger->notice('Authentication failed: password hash error', ['username' => $username, 'error' => $e->getMessage()]);
-        } catch (\Throwable $e) {
-            $this->logger->notice('Authentication failed', ['username' => $username, 'error' => $e->getMessage()]);
-        }
-
-        return null;
-    }
-
-    private function userHasMcpAccess(int $beUserUid): bool
-    {
-        try {
-            $backendUser = GeneralUtility::makeInstance(BackendUserAuthentication::class);
-            $backendUser->setBeUserByUid($beUserUid);
-            $backendUser->fetchGroupData();
-
-            return $backendUser->check('custom_options', 'tx_aisuite_features:enable_mcp_access');
-        } catch (\Throwable $e) {
-            $this->logger->warning('AuthorizationEndpoint: MCP access check failed for backend user, denying access', [
-                'beUserUid' => $beUserUid,
-                'error' => $e->getMessage(),
+        $client = $this->clientRepository->find($clientId);
+        if (null === $client && $this->clientRepository->hasTokens($clientId)) {
+            $this->clientRepository->register($clientId, 'MCP Client', [$redirectUri], time());
+            $this->logger->notice('MCP OAuth: registered a client that predates the client registry', [
+                'client_id' => $clientId,
+                'redirect_host' => $this->redirectUriPolicy->host($redirectUri),
             ]);
-
-            return false;
+            $client = $this->clientRepository->find($clientId);
         }
+
+        if (null === $client || !in_array($redirectUri, $client['redirect_uris'], true)) {
+            return null;
+        }
+        $this->clientRepository->touch($clientId, time());
+
+        return $client;
     }
 
     private function isLocalhostRedirect(string $redirectUri): bool
     {
-        $host = parse_url($redirectUri, PHP_URL_HOST) ?? '';
+        return $this->redirectUriPolicy->isLocalhost($redirectUri);
+    }
 
-        return in_array($host, ['localhost', '127.0.0.1', '[::1]'], true);
+    private function clientNameFor(string $clientId): string
+    {
+        return $this->clientRepository->find($clientId)['client_name'] ?? $clientId;
+    }
+
+    private function invalidClientResponse(): ResponseInterface
+    {
+        return new JsonResponse([
+            'error' => 'invalid_request',
+            'error_description' => 'Unknown client_id, or a redirect_uri that this client did not register or this server does not allow (mcpAllowedRedirectUris).',
+        ], 400);
     }
 
     /**
@@ -803,23 +620,14 @@ class AuthorizationEndpoint
      *
      * @return array<string, array{key: string, label: string}>
      */
-    private function getScopeDescriptions(array $scopes): array
+    private function getScopeDescriptions(array $scopes, LanguageService $languageService): array
     {
-        $descriptions = [
-            'mcp:read' => 'Seiten, Content und Dateien analysieren',
-            'mcp:write' => 'Inhalte anlegen, ändern oder löschen (immer mit Vorschau und Bestätigung)',
-            'mcp:generate' => 'SEO-Metadaten, Content und Seitenstrukturen generieren',
-            'mcp:translate' => 'Seiten und Inhalte in andere Sprachen übersetzen',
-            'mcp:image' => 'Bilder mit KI generieren (GPTImage, Midjourney, Flux)',
-            'mcp:media' => 'Bilder und Videos in die Dateiablage hochladen (per URL, Upload oder YouTube/Vimeo-Link)',
-            'mcp:workflow' => 'Massenaktionen und Hintergrund-Tasks für viele Seiten gleichzeitig durchführen',
-        ];
-
         $result = [];
         foreach ($scopes as $scope) {
+            $label = $languageService->sL(self::LABELS.'scope.'.str_replace('mcp:', '', $scope));
             $result[$scope] = [
                 'key' => $scope,
-                'label' => $descriptions[$scope] ?? $scope,
+                'label' => '' !== $label ? $label : $scope,
             ];
         }
 
@@ -832,100 +640,52 @@ class AuthorizationEndpoint
     private function renderOAuthView(
         string $templateName,
         array $params,
-        ?ServerRequestInterface $request = null,
+        ServerRequestInterface $request,
     ): string {
         return $this->viewFactoryService->renderView(
             $templateName,
             ['EXT:ai_suite_mcp/Resources/Private/Templates/'],
             ['EXT:ai_suite_mcp/Resources/Private/Partials/'],
             ['EXT:ai_suite_mcp/Resources/Private/Layouts/'],
-            array_merge($this->getBackendStyleVariables($request), $params),
+            array_merge($this->getBackendStyleVariables($request), ['labels' => $this->pageLabels($request)], $params, [
+                'clientName' => $this->clientNameFor((string) ($params['clientId'] ?? '')),
+                'redirectHost' => $this->redirectUriPolicy->host((string) ($params['redirectUri'] ?? '')),
+            ]),
             $request,
         );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, string>
      */
-    private function getBackendStyleVariables(?ServerRequestInterface $request = null): array
+    private function pageLabels(ServerRequestInterface $request): array
     {
-        $backendConf = (array) $this->extensionConfiguration->get('backend');
-        $faviconPath = (string) ($backendConf['backendFavicon'] ?? '');
-
-        if ($this->typo3Version->getMajorVersion() >= 14) {
-            [$logoUrl, $faviconUrl, $backgroundImageStyles] = $this->resolveStyles($faviconPath, $request);
-        } else {
-            [$logoUrl, $faviconUrl, $backgroundImageStyles] = $this->resolveStylesLegacy($faviconPath);
+        $languageService = $this->languageServiceFor($request);
+        $labels = [];
+        foreach (self::PAGE_LABELS as $key) {
+            $labels[$key] = $languageService->sL(self::LABELS.'page.'.$key);
         }
 
+        return $labels;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getBackendStyleVariables(ServerRequestInterface $request): array
+    {
+        $styles = $this->loginStyleService->resolve($request);
+
         return [
-            'backgroundImageStyles' => $backgroundImageStyles,
+            'backgroundImageStyles' => $styles['backgroundImageStyles'],
             'highlightColorStyles' => $this->authStyleInfo->getHighlightColorStyles(),
-            'loginLogoUrl' => $logoUrl,
+            'loginLogoUrl' => $styles['logoUrl'],
             'loginLogoAlt' => $this->authStyleInfo->getLogoAlt(),
-            'hasCustomLogo' => '' !== $logoUrl,
-            'faviconUrl' => $faviconUrl,
+            'hasCustomLogo' => '' !== $styles['logoUrl'],
+            'faviconUrl' => $styles['faviconUrl'],
             'footerNote' => $this->authStyleInfo->getFooterNote(),
             'aiSuiteIconUrl' => $this->iconService->getPublicIconUrl('tx-aisuite-extension', $request),
             'siteName' => (string) ($GLOBALS['TYPO3_CONF_VARS']['SYS']['sitename'] ?? 'TYPO3 AI Suite'),
         ];
-    }
-
-    /**
-     * v14+ branch: resolve resources via SystemResourceFactory + SystemResourcePublisher.
-     *
-     * @return array{0: string, 1: string, 2: string}
-     */
-    private function resolveStyles(string $faviconPath, ?ServerRequestInterface $request): array
-    {
-        $factory = GeneralUtility::makeInstance(SystemResourceFactory::class);
-        $publisher = GeneralUtility::makeInstance(SystemResourcePublisherInterface::class);
-
-        $logoUrl = '';
-        $logoResource = $this->authStyleInfo->getLogo();
-        if ($logoResource instanceof PublicResourceInterface) {
-            try {
-                $logoUrl = (string) $publisher->generateUri($logoResource, $request);
-            } catch (\Throwable $e) {
-                $this->logger->warning('MCP OAuth: could not resolve login logo URI', ['exception' => $e]);
-            }
-        }
-
-        $faviconUrl = '';
-        if ('' !== $faviconPath) {
-            try {
-                $faviconResource = $factory->createPublicResource($faviconPath);
-                $faviconUrl = (string) $publisher->generateUri($faviconResource, $request);
-            } catch (\Throwable $e) {
-                $this->logger->warning('MCP OAuth: could not resolve favicon URI', ['exception' => $e, 'path' => $faviconPath]);
-            }
-        }
-
-        $backgroundImageStyles = null !== $request
-            ? $this->authStyleInfo->getBackgroundImageStyles($request)
-            : '';
-
-        return [$logoUrl, $faviconUrl, $backgroundImageStyles];
-    }
-
-    /**
-     * v12/v13 branch: use the legacy AuthenticationStyleInformation API.
-     *
-     * @return array{0: string, 1: string, 2: string}
-     */
-    private function resolveStylesLegacy(string $faviconPath): array
-    {
-        $logoPath = (string) $this->authStyleInfo->{'getLogo'}();
-        $logoUrl = '' !== $logoPath
-            ? (string) $this->authStyleInfo->{'getUriForFileName'}($logoPath)
-            : '';
-
-        $faviconUrl = '' !== $faviconPath
-            ? (string) $this->authStyleInfo->{'getUriForFileName'}($faviconPath)
-            : '';
-
-        $backgroundImageStyles = (string) $this->authStyleInfo->{'getBackgroundImageStyles'}();
-
-        return [$logoUrl, $faviconUrl, $backgroundImageStyles];
     }
 }

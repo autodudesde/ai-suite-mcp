@@ -6,13 +6,16 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool;
 
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\DataHandlerException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RefusedRequestException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\DataHandlerSanitizerService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\SessionTrackerService;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
+use TYPO3\CMS\Core\Site\Entity\SiteLanguage;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -42,9 +45,7 @@ abstract class AbstractAiTool extends AbstractTool
      */
     protected function sendAiRequest(string $endpoint, array $data, array $models = [], string $langIsoCode = '', string $prompt = ''): array
     {
-        if ($this->creditTracker->isInitialized() && $this->creditTracker->isExhausted()) {
-            throw new InsufficientPermissionException($this->creditTracker->exhaustedMessage());
-        }
+        $this->assertCreditBudget();
 
         try {
             $clientAnswer = $this->sendRequestService->sendDataRequest(
@@ -84,6 +85,16 @@ abstract class AbstractAiTool extends AbstractTool
         }
 
         return $body;
+    }
+
+    /**
+     * @throws InsufficientPermissionException
+     */
+    protected function assertCreditBudget(): void
+    {
+        if ($this->creditTracker->isInitialized() && $this->creditTracker->isExhausted()) {
+            throw new InsufficientPermissionException($this->creditTracker->exhaustedMessage());
+        }
     }
 
     /**
@@ -149,7 +160,7 @@ abstract class AbstractAiTool extends AbstractTool
         $existing = BackendUtility::getRecordWSOL($table, $uid);
         $report = $this->dataHandlerSanitizer->sanitizeFieldsWithReport($table, $data, null, is_array($existing) ? $existing : []);
         if ([] !== $report['blocked']) {
-            throw new \RuntimeException(sprintf(
+            throw RefusedRequestException::unsupportedHtml(sprintf(
                 'The changes could not be saved: field(s) %s of %s store raw markup, which is disabled for MCP writes.',
                 implode(', ', $report['blocked']),
                 $table,
@@ -162,13 +173,13 @@ abstract class AbstractAiTool extends AbstractTool
         $dataHandler->process_datamap();
 
         if ([] !== $dataHandler->errorLog) {
-            throw new \RuntimeException(
+            throw (new DataHandlerException(
                 $this->translateOrFallback(
                     'hint.save_issue',
                     [implode(', ', $dataHandler->errorLog)],
                     'The changes could not be saved: '.implode(', ', $dataHandler->errorLog),
                 ),
-            );
+            ))->withErrorContext(['table' => $table, 'uid' => $uid]);
         }
     }
 
@@ -264,6 +275,41 @@ abstract class AbstractAiTool extends AbstractTool
         }
 
         return $page;
+    }
+
+    protected function referencePageId(int $pageId, string ...$isoCodes): int
+    {
+        if ($pageId > 0) {
+            return $pageId;
+        }
+        $needles = array_filter(array_map('strtolower', $isoCodes), static fn (string $isoCode): bool => '' !== $isoCode);
+        $beUser = $this->backendUserService->getBackendUser();
+        $firstAccessible = 0;
+        foreach ($this->siteFinder->getAllSites() as $site) {
+            $rootPageId = $site->getRootPageId();
+            if ($rootPageId <= 0 || null === $beUser || !($beUser->isAdmin() || $beUser->isInWebMount($rootPageId))) {
+                continue;
+            }
+            $languageCodes = array_map(
+                static fn (SiteLanguage $language): string => strtolower($language->getLocale()->getLanguageCode()),
+                $site->getAllLanguages()
+            );
+            if ([] === array_diff($needles, $languageCodes)) {
+                return $rootPageId;
+            }
+            $firstAccessible = $firstAccessible ?: $rootPageId;
+        }
+
+        return $firstAccessible;
+    }
+
+    protected function fileFolderIdentifier(int $fileUid): ?string
+    {
+        try {
+            return $this->resourceFactory->getFileObject($fileUid)->getParentFolder()->getCombinedIdentifier();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     protected function resolveLanguageIsoCode(string $language, int $pageId): string

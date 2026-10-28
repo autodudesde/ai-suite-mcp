@@ -13,15 +13,12 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class BulkReplaceTextTool extends AbstractSafeEditTool
 {
     private const MAX_PAGES = 50;
 
-    // The cost is one DataHandler update per record, so the run is budgeted by records, not pages.
     private const MAX_RECORDS = 1000;
     private const MAX_RECORDS_DRY_RUN = 5000;
     private const MAX_REPLACEMENTS = 200;

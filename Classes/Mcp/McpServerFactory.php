@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp;
 
 use AutoDudes\AiSuite\Service\SendRequestService;
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\ToolAccessContext;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpPromptHandler;
 use AutoDudes\AiSuiteMcp\Mcp\Resource\McpResourceHandler;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
-use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolAccessContext;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolGateway;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\RequestParamsNormalizer;
 use Mcp\Server\Server;

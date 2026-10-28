@@ -53,6 +53,7 @@ class PermissionService
         'generateImage' => 'mcp:image',
 
         'uploadMedia' => 'mcp:media',
+        'moveFile' => 'mcp:media',
         'copyMediaReference' => 'mcp:write',
         'replaceMediaReference' => 'mcp:write',
 
@@ -110,6 +111,27 @@ class PermissionService
         'auditContent' => [
             'tx_aisuite_features:enable_audit',
         ],
+        'generateFileMetadata' => [
+            'tx_aisuite_features:enable_metadata_generation',
+        ],
+        'batchGenerateMetadata' => [
+            'tx_aisuite_features:enable_metadata_generation',
+        ],
+        'batchGenerateFileMetadata' => [
+            'tx_aisuite_features:enable_metadata_generation',
+        ],
+        'translatePage' => [
+            'tx_aisuite_features:enable_translation_whole_page',
+        ],
+        'batchTranslatePage' => [
+            'tx_aisuite_features:enable_translation_whole_page',
+        ],
+        'translateFileMetadata' => [
+            'tx_aisuite_features:enable_translation_sys_file_metadata',
+        ],
+        'batchTranslateFileMetadata' => [
+            'tx_aisuite_features:enable_translation_sys_file_metadata',
+        ],
     ];
 
     /**
@@ -133,7 +155,7 @@ class PermissionService
     /**
      * @return list<string>
      */
-    public static function supportedScopes(): array
+    public function supportedScopes(): array
     {
         return array_keys(self::SCOPE_PERMISSION_MAP);
     }
@@ -144,35 +166,29 @@ class PermissionService
      * @throws InsufficientScopeException
      * @throws InsufficientPermissionException
      */
-    public function validateToolAccess(string $toolName, array $tokenScopes): void
+    public function validateToolAccess(string $toolName, array $tokenScopes, ?ToolPermissionPolicy $policy = null): void
     {
         $requiredScope = $this->getRequiredScope($toolName);
 
         if (!in_array($requiredScope, $tokenScopes, true)) {
-            throw new InsufficientScopeException(
-                $this->translateOrFallback(
-                    'hint.scope_required',
-                    [$requiredScope],
-                    sprintf('To use this feature, your API token needs the "%s" scope.', $requiredScope),
-                ),
-            );
+            throw $this->scopeRequired($requiredScope);
         }
 
-        $this->validatePermissionForScope($requiredScope);
-        $this->validatePermissionForTool($toolName);
+        $this->validatePermissionForScope($requiredScope, $policy);
+        $this->validatePermissionForTool($toolName, $policy);
     }
 
     /**
      * @param list<string> $tokenScopes
      */
-    public function isToolAvailable(string $toolName, array $tokenScopes): bool
+    public function isToolAvailable(string $toolName, array $tokenScopes, ?ToolPermissionPolicy $policy = null): bool
     {
         if ($this->isPointlessOnThisInstallation($toolName)) {
             return false;
         }
 
         try {
-            $this->validateToolAccess($toolName, $tokenScopes);
+            $this->validateToolAccess($toolName, $tokenScopes, $policy);
 
             return true;
         } catch (InsufficientPermissionException|InsufficientScopeException|\LogicException) {
@@ -206,11 +222,15 @@ class PermissionService
     /**
      * @return list<string>
      */
-    public function getAvailableScopes(): array
+    public function getAvailableScopes(?ToolPermissionPolicy $policy = null): array
     {
         $available = [];
 
-        foreach (self::SCOPE_PERMISSION_MAP as $scope => $permissions) {
+        foreach ($this->supportedScopes() as $scope) {
+            $permissions = $this->scopePermissions($scope, $policy);
+            if (null === $permissions) {
+                continue;
+            }
             if (empty($permissions)) {
                 $available[] = $scope;
 
@@ -270,14 +290,38 @@ class PermissionService
         return $this->siteLanguages->isSingleLanguageInstallation();
     }
 
-    private function validatePermissionForScope(string $scope): void
+    /**
+     * @return null|list<string>
+     */
+    private function scopePermissions(string $scope, ?ToolPermissionPolicy $policy): ?array
     {
-        $this->assertAnyPermission(self::SCOPE_PERMISSION_MAP[$scope] ?? []);
+        return null !== $policy ? $policy->scopePermissions($scope) : (self::SCOPE_PERMISSION_MAP[$scope] ?? []);
     }
 
-    private function validatePermissionForTool(string $toolName): void
+    private function validatePermissionForScope(string $scope, ?ToolPermissionPolicy $policy = null): void
     {
-        $this->assertAnyPermission(self::TOOL_PERMISSION_MAP[$toolName] ?? []);
+        $permissions = $this->scopePermissions($scope, $policy);
+        if (null === $permissions) {
+            throw $this->scopeRequired($scope);
+        }
+
+        $this->assertAnyPermission($permissions);
+    }
+
+    private function validatePermissionForTool(string $toolName, ?ToolPermissionPolicy $policy): void
+    {
+        $this->assertAnyPermission(null !== $policy ? $policy->toolPermissions($toolName) : (self::TOOL_PERMISSION_MAP[$toolName] ?? []));
+    }
+
+    private function scopeRequired(string $scope): InsufficientScopeException
+    {
+        return new InsufficientScopeException(
+            $this->translateOrFallback(
+                'hint.scope_required',
+                [$scope],
+                sprintf('To use this feature, your API token needs the "%s" scope.', $scope),
+            ),
+        );
     }
 
     /**

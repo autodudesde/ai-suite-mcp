@@ -58,4 +58,37 @@ class McpSessionStoreService implements SingletonInterface
 
         return max($timeout * self::RETENTION_FACTOR, self::RETENTION_MIN_SECONDS);
     }
+
+    public function deleteExpiredSessions(): int
+    {
+        return $this->deleteFilesOlderThan($this->getDirectory(), $this->getRetentionSeconds());
+    }
+
+    public function deleteLeftoverTaskFiles(int $maxAgeSeconds): int
+    {
+        return $this->deleteFilesOlderThan(Environment::getVarPath().'/mcp_tasks/', $maxAgeSeconds);
+    }
+
+    private function deleteFilesOlderThan(string $path, int $maxAgeSeconds): int
+    {
+        if (!is_dir($path)) {
+            return 0;
+        }
+
+        $deleted = 0;
+        $maxAge = time() - $maxAgeSeconds;
+
+        foreach (new \DirectoryIterator($path) as $file) {
+            if ($file->isDot() || $file->isDir()) {
+                continue;
+            }
+
+            if ($file->getMTime() < $maxAge) {
+                unlink($file->getPathname());
+                ++$deleted;
+            }
+        }
+
+        return $deleted;
+    }
 }

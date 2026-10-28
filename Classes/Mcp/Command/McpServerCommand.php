@@ -8,7 +8,7 @@ use AutoDudes\AiSuite\Command\Trait\CliBackendBootstrapTrait;
 use AutoDudes\AiSuiteMcp\Mcp\McpBackendUserInitializer;
 use AutoDudes\AiSuiteMcp\Mcp\McpServerFactory;
 use AutoDudes\AiSuiteMcp\Mcp\McpUserContext;
-use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpCliAccessService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ServerInstructionsService;
 use AutoDudes\AiSuiteMcp\Mcp\Transport\StdioServerRunner;
 use Psr\Log\LoggerInterface;
@@ -29,7 +29,7 @@ class McpServerCommand extends Command
         private readonly McpServerFactory $serverFactory,
         private readonly McpBackendUserInitializer $backendUserInitializer,
         private readonly McpUserContext $userContext,
-        private readonly PermissionService $permissionService,
+        private readonly McpCliAccessService $cliAccess,
         private readonly ServerInstructionsService $serverInstructions,
         private readonly LoggerInterface $logger,
     ) {
@@ -40,9 +40,9 @@ class McpServerCommand extends Command
     {
         $this
             ->setDescription('Run a local MCP server over stdio (trusted CLI clients only — no OAuth/HTTPS).')
-            ->addOption('user', 'u', InputOption::VALUE_REQUIRED, 'Backend user UID or username', '1')
-            ->addOption('scopes', 's', InputOption::VALUE_OPTIONAL, 'Space-separated scopes (default: all available for the user)')
-            ->addOption('workspace', 'w', InputOption::VALUE_OPTIONAL, 'Workspace UID to operate in (default: resolved from mcpWriteMode)')
+            ->addOption('user', 'u', InputOption::VALUE_REQUIRED, 'Backend user UID or username (required)')
+            ->addOption('scopes', 's', InputOption::VALUE_REQUIRED, 'Space-separated scopes (default: all available for the user)')
+            ->addOption('workspace', 'w', InputOption::VALUE_REQUIRED, 'Workspace UID to operate in (default: resolved from mcpWriteMode)')
         ;
     }
 
@@ -51,6 +51,11 @@ class McpServerCommand extends Command
         $stderr = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
 
         $userInput = (string) $input->getOption('user');
+        if ('' === $userInput) {
+            $stderr->writeln('<error>Name the backend user the server acts as: --user=<uid|username>.</error>');
+
+            return Command::FAILURE;
+        }
         $beUserUid = $this->resolveBackendUserUid($userInput);
         if (0 === $beUserUid) {
             $stderr->writeln(sprintf('<error>Backend user "%s" not found or disabled.</error>', $userInput));
@@ -69,11 +74,16 @@ class McpServerCommand extends Command
             return Command::FAILURE;
         }
 
+        if (null !== ($refusal = $this->cliAccess->refusal($beUserUid))) {
+            $stderr->writeln(sprintf('<error>%s</error>', $refusal));
+
+            return Command::FAILURE;
+        }
+
         $scopeInput = $input->getOption('scopes');
-        if (null !== $scopeInput && '' !== $scopeInput) {
-            $scopes = array_values(array_filter(explode(' ', (string) $scopeInput)));
-        } else {
-            $scopes = array_values($this->permissionService->getAvailableScopes());
+        ['granted' => $scopes, 'dropped' => $dropped] = $this->cliAccess->scopes(null !== $scopeInput ? (string) $scopeInput : null);
+        if ([] !== $dropped) {
+            $stderr->writeln(sprintf('<comment>Not granted, the user lacks the permission or the scope does not exist: %s</comment>', implode(' ', $dropped)));
         }
 
         if ([] === $scopes) {

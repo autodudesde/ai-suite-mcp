@@ -10,6 +10,7 @@ use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RefusedRequestException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
@@ -18,6 +19,7 @@ use TYPO3\CMS\Core\Resource\Exception\NotInMountPointException;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\Folder;
 use TYPO3\CMS\Core\Resource\ResourceFactory;
+use TYPO3\CMS\Core\Resource\ResourceStorage;
 use TYPO3\CMS\Core\Site\SiteFinder;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
@@ -83,14 +85,14 @@ class RecordAccessService
     public function validateTableReadAccess(string $table): void
     {
         if (!$this->tcaCompatibilityService->hasTable($table)) {
-            throw new \RuntimeException(sprintf('Table "%s" does not exist.', $table));
+            throw RefusedRequestException::invalidParameter(sprintf('Table "%s" does not exist.', $table));
         }
         if ($this->excludedTablesService->isExcluded($table)) {
-            throw new \RuntimeException(sprintf('Table "%s" is excluded from MCP access.', $table));
+            throw new InsufficientPermissionException(sprintf('Table "%s" is excluded from MCP access.', $table));
         }
         $beUser = $this->getBackendUser();
         if (null !== $beUser && !$beUser->isAdmin() && !$beUser->check('tables_select', $table)) {
-            throw new \RuntimeException(sprintf('No read access to table "%s".', $table));
+            throw new InsufficientPermissionException(sprintf('No read access to table "%s".', $table));
         }
     }
 
@@ -99,7 +101,7 @@ class RecordAccessService
         $this->validateTableReadAccess($table);
         $beUser = $this->getBackendUser();
         if (null !== $beUser && !$beUser->isAdmin() && !$beUser->check('tables_modify', $table)) {
-            throw new \RuntimeException(sprintf('No write access to table "%s".', $table));
+            throw new InsufficientPermissionException(sprintf('No write access to table "%s".', $table));
         }
     }
 
@@ -147,8 +149,7 @@ class RecordAccessService
             return true;
         }
 
-        $fieldConfig = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
-        if ($fieldConfig['exclude'] ?? false) {
+        if ($this->tcaCompatibilityService->isExcludeField($table, $field)) {
             return $beUser->check('non_exclude_fields', $table.':'.$field);
         }
 
@@ -234,7 +235,6 @@ class RecordAccessService
     {
         $divisor = $this->tcaCompatibilityService->getSubSchemaDivisorFieldName($table);
         if (null === $divisor || !array_key_exists($divisor, $fields)) {
-            // No type column at all, or a partial update that does not touch it.
             return;
         }
 
@@ -334,7 +334,7 @@ class RecordAccessService
             }
             $row = BackendUtility::getRecordWSOL('pages', $pageId);
             if (null === $row) {
-                throw new \RuntimeException(sprintf('Page %d does not exist.', $pageId));
+                throw RefusedRequestException::notFound(sprintf('Page %d does not exist.', $pageId));
             }
 
             return $row;
@@ -349,7 +349,7 @@ class RecordAccessService
         $row = BackendUtility::readPageAccess($pageId, $beUser->getPagePermsClause($perm));
         if (!is_array($row)) {
             throw new InsufficientPermissionException(
-                $this->translateOrFallback('hint.no_page_access', [$pageId], sprintf('No permission to access page %d.', $pageId)),
+                $this->translateOrFallback('hint.no_page_access', [$pageId], sprintf('No permission to access page %d. Whether you may see a page is decided by its page permissions (owner, group, everybody) and by the web mounts of your backend user, not by the workspace. These permissions can neither be read nor changed through this interface; an administrator grants them in the backend.', $pageId)),
             );
         }
 
@@ -416,6 +416,28 @@ class RecordAccessService
         $this->assertPagePerm($pid, $bit);
     }
 
+    public function canReadRecord(string $table, int $uid): bool
+    {
+        try {
+            $this->assertRecordReadAccess($table, $uid);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    public function canEditRecord(string $table, int $uid): bool
+    {
+        try {
+            $this->assertRecordEditAccess($table, $uid);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     public function canReadRecordTitle(string $foreignTable, int $uid): bool
     {
         if ($uid <= 0 || !$this->hasTableReadAccess($foreignTable)) {
@@ -465,10 +487,10 @@ class RecordAccessService
         try {
             $file = $this->resourceFactory->getFileObject($fileUid);
         } catch (\Throwable $e) {
-            throw new \RuntimeException(sprintf('File UID %d not found.', $fileUid), 0, $e);
+            throw RefusedRequestException::notFound(sprintf('File UID %d not found.', $fileUid), $e);
         }
 
-        if (!$beUser->isAdmin() && !$file->checkActionPermission('read')) {
+        if (!$beUser->isAdmin() && (!$this->isStorageInReach($beUser, $file->getStorage()) || !$file->checkActionPermission('read'))) {
             throw new InsufficientPermissionException(
                 $this->translateOrFallback('hint.no_file_access', [$fileUid], sprintf('No permission to read file UID %d.', $fileUid)),
             );
@@ -489,6 +511,8 @@ class RecordAccessService
         }
 
         try {
+            $this->assertStorageInReach($beUser, $combinedIdentifier);
+
             return $this->backendUserService->getReadableFolder($combinedIdentifier);
         } catch (InsufficientFolderAccessPermissionsException|NotInMountPointException $e) {
             throw new InsufficientPermissionException(
@@ -511,6 +535,8 @@ class RecordAccessService
         }
 
         try {
+            $this->assertStorageInReach($beUser, $combinedIdentifier);
+
             return $this->backendUserService->getWriteableFolder($combinedIdentifier);
         } catch (InsufficientFolderAccessPermissionsException|NotInMountPointException $e) {
             throw new InsufficientPermissionException(
@@ -596,6 +622,24 @@ class RecordAccessService
     public function getBackendUser(): ?BackendUserAuthentication
     {
         return $this->backendUserService->getBackendUser();
+    }
+
+    /**
+     * @throws NotInMountPointException
+     */
+    private function assertStorageInReach(BackendUserAuthentication $beUser, string $combinedIdentifier): void
+    {
+        $storage = $this->resourceFactory->getFolderObjectFromCombinedIdentifier($combinedIdentifier)->getStorage();
+        if (!$this->isStorageInReach($beUser, $storage)) {
+            throw new NotInMountPointException(sprintf('Folder "%s" is outside the backend user\'s file storages.', $combinedIdentifier), 1761000001);
+        }
+    }
+
+    private function isStorageInReach(BackendUserAuthentication $beUser, ResourceStorage $storage): bool
+    {
+        return !$storage->isFallbackStorage()
+            && $storage->getEvaluatePermissions()
+            && array_key_exists($storage->getUid(), $beUser->getFileStorages());
     }
 
     /**
@@ -786,26 +830,29 @@ class RecordAccessService
             return $this->assertPagePerm($uid, $bit);
         }
 
+        if ('edit' === $op) {
+            $this->validateTableWriteAccess($table);
+        } else {
+            $this->validateTableReadAccess($table);
+        }
+
         $record = BackendUtility::getRecordWSOL($table, $uid);
         if (null === $record) {
-            throw new \RuntimeException(sprintf('Record %s:%d not found.', $table, $uid));
+            throw RefusedRequestException::notFound(sprintf('Record %s:%d not found.', $table, $uid));
         }
 
         if ($beUser->isAdmin()) {
             return $record;
         }
 
-        $tableCheck = 'edit' === $op ? 'tables_modify' : 'tables_select';
-        if (!$beUser->check($tableCheck, $table)) {
-            throw new InsufficientPermissionException(
-                $this->translateOrFallback('hint.no_record_access', [$table, $uid], sprintf('No permission to access record %s:%d.', $table, $uid)),
-            );
-        }
-
         $pid = (int) ($record['pid'] ?? 0);
         if ($pid > 0) {
             [$bit] = self::RECORD_PERMISSION_MAP[$table][$op] ?? self::DEFAULT_RECORD_PERMISSION[$op];
             $this->assertPagePerm($pid, $bit);
+        } elseif (!$this->tcaCompatibilityService->ignoresRootLevelRestriction($table)) {
+            throw new InsufficientPermissionException(
+                $this->translateOrFallback('hint.no_record_access', [$table, $uid], sprintf('No permission to access record %s:%d.', $table, $uid)),
+            );
         }
         if ('edit' === $op) {
             $allowed = $beUser->recordEditAccessInternals(

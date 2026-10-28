@@ -18,9 +18,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\Workflow\Trait\PageSubtreeSelectionTrait;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class BatchGenerateMetadataTool extends AbstractAiTool
 {
     use PageSubtreeSelectionTrait;
@@ -87,7 +85,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
             return $pageIds;
         }
 
-        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $pageIds[0] ?? 1);
+        $langIsoCode = $this->resolveLanguageIsoCode((string) ($params['language'] ?? ''), $this->referencePageId($pageIds[0] ?? 0));
 
         if ('' === $model) {
             $pageCount = count($pageIds);
@@ -154,6 +152,7 @@ class BatchGenerateMetadataTool extends AbstractAiTool
             return $this->textError('No valid pages found to process.');
         }
 
+        $this->assertCreditBudget();
         $parentUuid = $this->uuidService->generateUuid();
         $languageParts = [strtoupper($langIsoCode), (string) 0];
 

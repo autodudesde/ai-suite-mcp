@@ -9,6 +9,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
+use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
 class RecordPreviewService
 {
@@ -58,7 +59,7 @@ class RecordPreviewService
 
         try {
             $this->recordAccess->validateTableReadAccess($table);
-            $row = BackendUtility::getRecordWSOL($table, $uid);
+            $row = $this->recordAccess->assertRecordReadAccess($table, $uid);
         } catch (\Throwable $e) {
             $this->logger->warning('RecordPreview: cannot read record for preview', [
                 'table' => $table,
@@ -310,9 +311,13 @@ class RecordPreviewService
             return null;
         }
 
-        $page = BackendUtility::getRecordWSOL('pages', $pid);
+        try {
+            $page = $this->recordAccess->assertPagePerm($pid, Permission::PAGE_SHOW);
+        } catch (\Throwable) {
+            return null;
+        }
 
-        return is_array($page) ? $this->recordTitle('pages', $page) : null;
+        return $this->recordTitle('pages', $page);
     }
 
     private function tableLabel(string $table): string

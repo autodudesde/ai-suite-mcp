@@ -7,10 +7,10 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 use AutoDudes\AiSuite\Service\BackendUserService;
 use AutoDudes\AiSuite\Service\TcaCompatibilityService;
 use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RefusedRequestException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Workspaces\Service\WorkspaceService;
 
 class WorkspaceComparisonService
@@ -30,6 +30,7 @@ class WorkspaceComparisonService
         private readonly OutputFormatterService $outputFormatter,
         private readonly RecordRepository $recordRepository,
         private readonly BackendUserService $backendUserService,
+        private readonly WorkspaceService $workspaceService,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -52,7 +53,7 @@ class WorkspaceComparisonService
     {
         $row = $this->loadRaw($table, $uid);
         if (null === $row) {
-            throw new \RuntimeException(sprintf('Record %s:%d not found.', $table, $uid));
+            throw RefusedRequestException::notFound(sprintf('Record %s:%d not found.', $table, $uid));
         }
 
         $rowWsid = (int) ($row['t3ver_wsid'] ?? 0);
@@ -98,14 +99,14 @@ class WorkspaceComparisonService
     public function compareSet(string $table, ?int $pid, array $sanitizedFilters, ?array $allowedPids, int $currentWs, int $limit): array
     {
         $changed = [];
+        $changedCount = 0;
         $added = [];
         $removed = [];
         $truncated = false;
 
         $childPagesOfPid = 'pages' === $table && null !== $pid && $pid > 0;
 
-        $workspaceService = GeneralUtility::makeInstance(WorkspaceService::class);
-        $result = $workspaceService->selectVersionsInWorkspace($currentWs, -99, $pid ?? -1, $childPagesOfPid ? 1 : 0, 'tables_select', null);
+        $result = $this->workspaceService->selectVersionsInWorkspace($currentWs, -99, $pid ?? -1, $childPagesOfPid ? 1 : 0, 'tables_select', null);
         $entries = $result[$table] ?? [];
 
         foreach ($entries as $entry) {
@@ -153,6 +154,7 @@ class WorkspaceComparisonService
                 if ([] === $changes) {
                     continue;
                 }
+                ++$changedCount;
                 if (count($changed) >= $limit) {
                     $truncated = true;
 
@@ -167,7 +169,7 @@ class WorkspaceComparisonService
         if (null !== $pid && [] === $sanitizedFilters) {
             $liveCount = $this->recordRepository->countLiveRecords($table, $pid);
             // `added` records exist only in the workspace, so they were never part of the live count.
-            $unchangedCount = max(0, $liveCount - count($changed) - count($removed));
+            $unchangedCount = max(0, $liveCount - $changedCount - count($removed));
         }
 
         return [
@@ -222,7 +224,29 @@ class WorkspaceComparisonService
             }
         }
 
+        foreach ($this->positionFields($table) as $field) {
+            $old = $this->outputFormatter->scalarize($live[$field] ?? '');
+            $new = $this->outputFormatter->scalarize($ws[$field] ?? '');
+            if (array_key_exists($field, $ws) && $old !== $new) {
+                $changes[$field] = ['old' => $old, 'new' => $new];
+            }
+        }
+
         return $changes;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function positionFields(string $table): array
+    {
+        try {
+            $sortField = (string) ($this->tcaCompatibilityService->getRawConfiguration($table)['sortby'] ?? '');
+        } catch (\Throwable) {
+            $sortField = '';
+        }
+
+        return '' !== $sortField ? ['pid', $sortField] : ['pid'];
     }
 
     /**

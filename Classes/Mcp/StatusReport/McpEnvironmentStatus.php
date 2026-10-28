@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\StatusReport;
 
+use AutoDudes\AiSuite\Service\LocalizationService;
 use Mcp\Server\Server;
 use TYPO3\CMS\Core\Type\ContextualFeedbackSeverity;
 use TYPO3\CMS\Reports\Status;
@@ -12,6 +13,10 @@ use TYPO3\CMS\Reports\StatusProviderInterface;
 class McpEnvironmentStatus implements StatusProviderInterface
 {
     public const REQUIRED_PHP_EXTENSIONS = ['curl', 'json'];
+
+    public function __construct(
+        private readonly LocalizationService $localizationService,
+    ) {}
 
     /**
      * @return list<Status>
@@ -25,30 +30,25 @@ class McpEnvironmentStatus implements StatusProviderInterface
             fn (string $extension): bool => !$this->isPhpExtensionLoaded($extension),
         ));
         if ([] !== $missing) {
-            $problems[] = sprintf(
-                'The PHP extension(s) %s are missing. The MCP server cannot answer requests until they are installed.',
-                implode(', ', $missing),
-            );
+            $problems[] = $this->localizationService->translate('mcp:status.environment.missingExtensions', [implode(', ', $missing)]);
         }
 
         if (!$this->isSdkLoaded()) {
-            $problems[] = 'The MCP SDK (logiscape/mcp-sdk-php) cannot be loaded. Composer installations require the package, '
-                .'classic mode installations ship it in Resources/Private/PHP/ComposerVendor of ai_suite_mcp, '
-                .'so an incompletely uploaded extension is the usual cause.';
+            $problems[] = $this->localizationService->translate('mcp:status.environment.missingSdk');
         }
 
         if ([] === $problems) {
             return [new Status(
-                'MCP Environment',
-                'All requirements met',
-                sprintf('The PHP extensions %s are loaded and the MCP SDK is available.', implode(', ', self::REQUIRED_PHP_EXTENSIONS)),
+                $this->localizationService->translate('mcp:status.environment.title'),
+                $this->localizationService->translate('mcp:status.environment.okValue'),
+                $this->localizationService->translate('mcp:status.environment.okMessage', [implode(', ', self::REQUIRED_PHP_EXTENSIONS)]),
                 ContextualFeedbackSeverity::OK,
             )];
         }
 
         return [new Status(
-            'MCP Environment',
-            'Requirements missing',
+            $this->localizationService->translate('mcp:status.environment.title'),
+            $this->localizationService->translate('mcp:status.environment.missingValue'),
             implode(' ', $problems),
             ContextualFeedbackSeverity::ERROR,
         )];
@@ -56,7 +56,7 @@ class McpEnvironmentStatus implements StatusProviderInterface
 
     public function getLabel(): string
     {
-        return 'AI Suite MCP Environment';
+        return 'LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_mcp.xlf:aiSuite.mcp.status.environment.label';
     }
 
     protected function isPhpExtensionLoaded(string $extension): bool

@@ -9,9 +9,8 @@ use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
+use TYPO3\CMS\Backend\Utility\BackendUtility;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ApplyTaskResultsTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:write';
@@ -86,7 +85,33 @@ class ApplyTaskResultsTool extends AbstractTool
             );
         }
 
-        $result = $this->translationService->applyBatchTranslationResults($tasks);
+        $editable = [];
+        $notEditable = [];
+        foreach ($tasks as $task) {
+            if ($this->recordAccess->canEditRecord((string) $task['table_name'], (int) $task['table_uid'])) {
+                $editable[] = $task;
+            } else {
+                $notEditable[] = sprintf('%s:%d', $task['table_name'], $task['table_uid']);
+            }
+        }
+
+        $blocked = [];
+        $result = $this->translationService->applyBatchTranslationResults(
+            $editable,
+            function (string $table, int $uid, array $fields) use (&$blocked): array {
+                $report = $this->mcpToolContext->dataHandlerSanitizer->sanitizeFieldsWithReport(
+                    $table,
+                    $fields,
+                    null,
+                    BackendUtility::getRecordWSOL($table, $uid) ?? [],
+                );
+                foreach ($report['blocked'] as $field) {
+                    $blocked[] = sprintf('%s:%d.%s', $table, $uid, $field);
+                }
+
+                return $report['data'];
+            },
+        );
 
         $text = sprintf("## Batch translations applied: `%s`\n\n", $taskId);
         $text .= sprintf("**Applied:** %d\n", $result['applied']);
@@ -96,6 +121,12 @@ class ApplyTaskResultsTool extends AbstractTool
         }
         if ($result['failed'] > 0) {
             $text .= sprintf("**Failed:** %d\n", $result['failed']);
+        }
+        if ([] !== $notEditable) {
+            $text .= sprintf("**Not written, you may not edit:** %s\n", implode(', ', array_unique($notEditable)));
+        }
+        if ([] !== $blocked) {
+            $text .= sprintf("**Not written, raw HTML is not allowed through MCP (mcpAllowRawHtmlWrite):** %s\n", implode(', ', $blocked));
         }
 
         if (!empty($result['errors'])) {

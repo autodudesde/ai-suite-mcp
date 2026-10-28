@@ -9,7 +9,7 @@ use AutoDudes\AiSuite\Service\ProvenanceStructureService;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\LinkStyle;
 
 /**
- * @phpstan-type NavigationTarget array{label: string, url: string, download?: bool}
+ * @phpstan-type NavigationTarget array{label: string, url: string, download?: bool, language?: string}
  * @phpstan-type NavigationGroup array{table: string, label: string, targets: list<NavigationTarget>, omitted: int}
  */
 class NavigationTargetCollector
@@ -27,6 +27,7 @@ class NavigationTargetCollector
         private readonly TcaLabelService $tcaLabelService,
         private readonly ProvenanceStructureService $structureService,
         private readonly LocalizationService $localizationService,
+        private readonly RecordLanguageLabelService $recordLanguageLabelService,
     ) {}
 
     /**
@@ -109,7 +110,7 @@ class NavigationTargetCollector
 
             $groups[$table]['omitted'] += $group['omitted'];
             foreach ($group['targets'] as $target) {
-                $this->addTarget($groups[$table], $target['url'], $target['label'], $target['download'] ?? false);
+                $this->addTarget($groups[$table], $target['url'], $target['label'], $target['download'] ?? false, $target['language'] ?? '');
             }
         }
 
@@ -165,6 +166,7 @@ class NavigationTargetCollector
             $group,
             $this->resolver->buildUrl('editRecord', ['table' => $table, 'uid' => $uid], $style),
             $this->recordLabelService->describe($table, $uid),
+            language: $this->recordLanguageLabelService->titleOf($table, $uid),
         );
     }
 
@@ -222,6 +224,7 @@ class NavigationTargetCollector
             $group,
             $this->resolver->buildUrl('openPage', ['pageId' => $pageId], $style),
             $title ?? $this->recordLabelService->describe('pages', $pageId),
+            language: $this->recordLanguageLabelService->titleOf('pages', $pageId),
         );
     }
 
@@ -258,7 +261,7 @@ class NavigationTargetCollector
     /**
      * @param NavigationGroup $group
      */
-    private function addTarget(array &$group, ?string $url, string $label, bool $download = false): void
+    private function addTarget(array &$group, ?string $url, string $label, bool $download = false, string $language = ''): void
     {
         if (null === $url || '' === $url) {
             return;
@@ -273,7 +276,14 @@ class NavigationTargetCollector
 
             return;
         }
-        $group['targets'][] = $download ? ['label' => $label, 'url' => $url, 'download' => true] : ['label' => $label, 'url' => $url];
+        $target = ['label' => $label, 'url' => $url];
+        if ($download) {
+            $target['download'] = true;
+        }
+        if ('' !== $language) {
+            $target['language'] = $language;
+        }
+        $group['targets'][] = $target;
     }
 
     /**

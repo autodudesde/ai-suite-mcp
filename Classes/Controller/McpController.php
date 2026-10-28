@@ -9,8 +9,10 @@ use AutoDudes\AiSuite\Controller\Trait\AjaxResponseTrait;
 use AutoDudes\AiSuite\Service\AiSuiteContext;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TranslationService;
-use AutoDudes\AiSuiteMcp\Domain\Repository\SysWorkspaceRepository;
 use AutoDudes\AiSuiteMcp\Domain\Repository\TokenRepository;
+use AutoDudes\AiSuiteMcp\Mcp\OAuth\CanonicalResource;
+use AutoDudes\AiSuiteMcp\Mcp\Service\BackendCredentialService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\McpWorkspaceOptionsService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Psr\Http\Message\ResponseInterface;
@@ -25,13 +27,13 @@ use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\Response;
 use TYPO3\CMS\Core\Messaging\FlashMessageService;
 use TYPO3\CMS\Core\Page\PageRenderer;
-use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 #[AsController]
 class McpController extends AbstractBackendController
 {
     use AjaxResponseTrait;
+
+    private const CLIENT_NAME_MAX_LENGTH = 100;
 
     public function __construct(
         ModuleTemplateFactory $moduleTemplateFactory,
@@ -46,7 +48,8 @@ class McpController extends AbstractBackendController
         protected readonly ExtensionConfiguration $extensionConfiguration,
         protected readonly OAuthService $oauthService,
         protected readonly TokenRepository $tokenRepository,
-        protected readonly SysWorkspaceRepository $sysWorkspaceRepository,
+        protected readonly McpWorkspaceOptionsService $workspaceOptions,
+        protected readonly BackendCredentialService $credentialService,
         protected readonly LoggerInterface $logger,
     ) {
         parent::__construct(
@@ -75,17 +78,23 @@ class McpController extends AbstractBackendController
         if (null !== ($denied = $this->denyWithoutMcpAccess())) {
             return $denied;
         }
+        if (!(bool) ($this->extensionConfiguration->get('ai_suite_mcp')['enableMcp'] ?? false)) {
+            return $this->tokenError('MCP token requested while enableMcp is off', 'mcp_disabled', 403);
+        }
+
         $body = (array) ($request->getParsedBody() ?? []);
-        $clientName = (string) ($body['clientName'] ?? 'Claude Desktop');
+        $clientName = mb_substr(trim(strip_tags((string) ($body['clientName'] ?? ''))), 0, self::CLIENT_NAME_MAX_LENGTH) ?: 'Claude Desktop';
         $workspaceUid = (int) ($body['workspaceUid'] ?? 0);
         $backendUser = $this->aiSuiteContext->backendUserService->getBackendUser();
         $beUserUid = (int) ($backendUser?->user['uid'] ?? 0);
 
-        if ($workspaceUid > 0 && (null === $backendUser || false === $backendUser->checkWorkspace($workspaceUid))) {
-            $response = new Response();
-            $this->logError('No access to workspace '.$workspaceUid, $response, 403);
+        $confirmedUid = $this->credentialService->authenticate((string) ($backendUser?->user['username'] ?? ''), (string) ($body['password'] ?? ''), $request);
+        if ($beUserUid <= 0 || $confirmedUid !== $beUserUid) {
+            return $this->tokenError('MCP token requested without a valid password confirmation', 'password_invalid', 403);
+        }
 
-            return $response;
+        if ($workspaceUid > 0 && (null === $backendUser || false === $backendUser->checkWorkspace($workspaceUid))) {
+            return $this->tokenError('No access to workspace '.$workspaceUid, 'workspace_denied', 403);
         }
 
         $availableScopes = $this->permissionService->getAvailableScopes();
@@ -95,18 +104,14 @@ class McpController extends AbstractBackendController
                 $beUserUid,
                 $clientName,
                 $availableScopes,
+                CanonicalResource::get($request),
                 $workspaceUid > 0 ? $workspaceUid : null,
             );
         } catch (\Exception $e) {
-            $response = new Response();
-            $this->logError($e->getMessage(), $response, 500);
-
-            return $response;
+            return $this->tokenError('MCP token creation failed: '.$e->getMessage(), 'token_creation_failed', 500);
         }
 
-        /** @var string $requestHost */
-        $requestHost = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST');
-        $baseUrl = rtrim($requestHost, '/');
+        $baseUrl = CanonicalResource::host($request);
 
         $mcpUrl = $baseUrl.'/aisuite-mcp';
 
@@ -119,7 +124,10 @@ class McpController extends AbstractBackendController
                         'mcp-remote',
                         $mcpUrl,
                         '--header',
-                        'Authorization: Bearer '.$tokenResult['access_token'],
+                        'Authorization:${AUTH_HEADER}',
+                    ],
+                    'env' => [
+                        'AUTH_HEADER' => 'Bearer '.$tokenResult['access_token'],
                     ],
                 ],
             ],
@@ -160,12 +168,23 @@ class McpController extends AbstractBackendController
         }
         $body = (array) ($request->getParsedBody() ?? []);
         $tokenUid = (int) ($body['tokenUid'] ?? 0);
+        $beUserUid = (int) ($this->aiSuiteContext->backendUserService->getBackendUser()?->user['uid'] ?? 0);
 
-        if ($tokenUid > 0) {
-            $this->tokenRepository->markDeleted($tokenUid);
+        if ($tokenUid <= 0 || $beUserUid <= 0 || !$this->tokenRepository->markDeletedForUser($tokenUid, $beUserUid)) {
+            $response = new Response();
+            $this->logError('Token '.$tokenUid.' not found for the current user', $response, 404);
+
+            return $response;
         }
 
         return new JsonResponse(['success' => true]);
+    }
+
+    private function tokenError(string $logMessage, string $error, int $status): ResponseInterface
+    {
+        $this->logger->error($logMessage);
+
+        return new JsonResponse(['success' => false, 'status' => $status, 'error' => $error], $status);
     }
 
     private function denyWithoutMcpAccess(): ?ResponseInterface
@@ -184,6 +203,7 @@ class McpController extends AbstractBackendController
         $this->initialize($request);
         $this->pageRenderer->addInlineLanguageLabelFile('EXT:ai_suite_mcp/Resources/Private/Language/locallang_module.xlf');
         $this->pageRenderer->loadJavaScriptModule('@autodudes/ai-suite-mcp/mcp/dashboard.js');
+        $this->pageRenderer->addCssFile('EXT:ai_suite_mcp/Resources/Public/Css/mcp-module.css');
         $extConf = $this->extensionConfiguration->get('ai_suite_mcp');
         $mcpEnabled = (bool) ($extConf['enableMcp'] ?? false);
         $beUserUid = (int) ($this->aiSuiteContext->backendUserService->getBackendUser()?->user['uid'] ?? 0);
@@ -193,17 +213,17 @@ class McpController extends AbstractBackendController
             $tokens = $this->tokenRepository->findActiveTokensForUser($beUserUid);
         }
 
-        /** @var string $requestHost */
-        $requestHost = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST');
-        $baseUrl = rtrim($requestHost, '/');
+        $baseUrl = CanonicalResource::host($request);
         $availableScopes = $this->permissionService->getAvailableScopes();
 
         $allowedOrigins = trim((string) ($extConf['mcpAllowedOrigins'] ?? ''));
         $allowedRedirectUris = trim((string) ($extConf['mcpAllowedRedirectUris'] ?? ''));
 
-        $availableWorkspaces = $this->resolveAvailableWorkspaces();
-        $defaultWorkspaceLabel = $this->resolveDefaultWorkspaceLabel();
-        $tokens = $this->decorateTokensWithWorkspaceTitle($tokens);
+        $backendUser = $this->aiSuiteContext->backendUserService->getBackendUser();
+        $languageService = $this->aiSuiteContext->localizationService->getLanguageService();
+        $availableWorkspaces = $this->workspaceOptions->availableFor($backendUser);
+        $defaultWorkspaceLabel = $this->workspaceOptions->defaultLabel($backendUser, $languageService);
+        $tokens = $this->workspaceOptions->withWorkspaceTitles($tokens, $languageService);
 
         $this->view->assignMultiple([
             'mcpEnabled' => $mcpEnabled,
@@ -219,73 +239,5 @@ class McpController extends AbstractBackendController
         ]);
 
         return $this->view->renderResponse('Mcp/Index');
-    }
-
-    /**
-     * @return list<array{uid: int, title: string}>
-     */
-    private function resolveAvailableWorkspaces(): array
-    {
-        if (!ExtensionManagementUtility::isLoaded('workspaces')) {
-            return [];
-        }
-
-        $beUser = $this->aiSuiteContext->backendUserService->getBackendUser();
-        if (null === $beUser) {
-            return [];
-        }
-
-        $available = [];
-        foreach ($this->sysWorkspaceRepository->findAll() as $row) {
-            if ($beUser->checkWorkspace($row['uid'])) {
-                $available[] = $row;
-            }
-        }
-
-        return $available;
-    }
-
-    private function resolveDefaultWorkspaceLabel(): string
-    {
-        if (!ExtensionManagementUtility::isLoaded('workspaces')) {
-            return 'Live (workspaces not installed)';
-        }
-
-        $beUser = $this->aiSuiteContext->backendUserService->getBackendUser();
-        $defaultWs = (int) ($beUser?->workspace ?? 0);
-
-        return 0 === $defaultWs
-            ? 'User default (Live)'
-            : sprintf('User default (Workspace %d)', $defaultWs);
-    }
-
-    /**
-     * @param list<array<string, mixed>> $tokens
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function decorateTokensWithWorkspaceTitle(array $tokens): array
-    {
-        if ([] === $tokens) {
-            return $tokens;
-        }
-
-        $workspaceUids = array_values(array_unique(array_filter(array_map(
-            static fn (array $t): int => (int) ($t['workspace_uid'] ?? 0),
-            $tokens,
-        ))));
-
-        $titles = [];
-        if ([] !== $workspaceUids && ExtensionManagementUtility::isLoaded('workspaces')) {
-            $titles = $this->sysWorkspaceRepository->findTitlesByUids($workspaceUids);
-        }
-
-        foreach ($tokens as &$token) {
-            $wsUid = (int) ($token['workspace_uid'] ?? 0);
-            $token['workspaceTitle'] = $titles[$wsUid] ?? sprintf('Workspace %d', $wsUid);
-        }
-        unset($token);
-
-        return $tokens;
     }
 }

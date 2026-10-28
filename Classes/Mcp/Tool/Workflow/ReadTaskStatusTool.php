@@ -9,9 +9,7 @@ use AutoDudes\AiSuite\Service\BackgroundTaskService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadTaskStatusTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';

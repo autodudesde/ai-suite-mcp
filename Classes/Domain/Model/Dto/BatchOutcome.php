@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AutoDudes\AiSuiteMcp\Mcp\Dto;
+namespace AutoDudes\AiSuiteMcp\Domain\Model\Dto;
 
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 

@@ -21,6 +21,7 @@ class ElementLabelService
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly RecordRepository $recordRepository,
         private readonly SysFileReferenceRepository $sysFileReferenceRepository,
+        private readonly RecordAccessService $recordAccess,
     ) {}
 
     /**
@@ -74,10 +75,10 @@ class ElementLabelService
      */
     private function fromTcaTitle(string $table, array $rows): array
     {
-        $candidates = $this->existingColumns($table, array_merge(
+        $candidates = $this->readableColumns($table, $this->existingColumns($table, array_merge(
             [$this->tcaCompatibilityService->getLabelField($table)],
             $this->tcaCompatibilityService->getLabelAltFields($table),
-        ));
+        )));
         if ([] === $candidates) {
             return [];
         }
@@ -103,7 +104,7 @@ class ElementLabelService
     {
         $labels = [];
         foreach ($this->groupByType($uids, $typeByUid) as $type => $typeUids) {
-            $columns = $this->existingColumns($table, $this->textFieldsOfType($table, (string) $type));
+            $columns = $this->readableColumns($table, $this->existingColumns($table, $this->textFieldsOfType($table, (string) $type)));
             if ([] === $columns) {
                 continue;
             }
@@ -134,7 +135,11 @@ class ElementLabelService
         foreach ($this->groupByType($uids, $typeByUid) as $type => $typeUids) {
             foreach ($this->inlineRelationsOfType($table, (string) $type) as $relation) {
                 $childLabelField = $this->tcaCompatibilityService->getLabelField($relation['foreign_table']);
-                if ('uid' === $childLabelField) {
+                if ('uid' === $childLabelField
+                    || !$this->recordAccess->canAccessField($table, $relation['field'])
+                    || !$this->recordAccess->hasTableReadAccess($relation['foreign_table'])
+                    || !$this->recordAccess->canAccessField($relation['foreign_table'], $childLabelField)
+                ) {
                     continue;
                 }
                 $found = $this->recordRepository->findFirstChildLabelPerParent(
@@ -174,7 +179,10 @@ class ElementLabelService
         foreach ($this->groupByType($uids, $typeByUid) as $type => $typeUids) {
             foreach ($this->listRelationsOfType($table, (string) $type) as $field => $foreignTable) {
                 $targetLabelField = $this->tcaCompatibilityService->getLabelField($foreignTable);
-                if ('uid' === $targetLabelField) {
+                if ('uid' === $targetLabelField
+                    || !$this->recordAccess->canAccessField($table, $field)
+                    || !$this->recordAccess->canAccessField($foreignTable, $targetLabelField)
+                ) {
                     continue;
                 }
 
@@ -187,6 +195,9 @@ class ElementLabelService
                     $value = (string) ($this->storedRow($table, $uid)[$field] ?? '');
                     $items = array_values(array_filter(array_map('intval', explode(',', $value))));
                     if ([] === $items) {
+                        continue;
+                    }
+                    if (!$this->recordAccess->canReadRecordTitle($foreignTable, $items[0])) {
                         continue;
                     }
                     $firstTargetByUid[$uid] = ['target' => $items[0], 'total' => \count($items)];
@@ -227,6 +238,7 @@ class ElementLabelService
                 : (string) ($config['foreign_table'] ?? '');
 
             if (!\in_array($configType, ['group', 'select'], true)
+                || isset($config['MM'])
                 || '' === $foreignTable
                 || str_contains($foreignTable, ',')
                 || '*' === $foreignTable
@@ -250,9 +262,24 @@ class ElementLabelService
      */
     private function fromMediaReference(string $table, array $uids): array
     {
+        if (!$this->recordAccess->hasTableReadAccess('sys_file_reference')) {
+            return [];
+        }
+
         $labels = [];
-        foreach ($this->sysFileReferenceRepository->findFirstMediaLabelPerParent($table, $uids) as $uid => $label) {
-            $labels[$uid] = $this->shorten($label);
+        foreach ($this->sysFileReferenceRepository->findMediaTextsByParents($table, $uids) as $row) {
+            $parent = (int) $row['uid_foreign'];
+            if (isset($labels[$parent])) {
+                continue;
+            }
+            foreach (['alternative', 'title', 'description', 'name'] as $candidate) {
+                $value = trim((string) ($row[$candidate] ?? ''));
+                if ('' !== $value) {
+                    $labels[$parent] = $this->shorten($value);
+
+                    break;
+                }
+            }
         }
 
         return $labels;
@@ -289,7 +316,7 @@ class ElementLabelService
     }
 
     /**
-     * @return list<array{foreign_table: string, foreign_field: string}>
+     * @return list<array{field: string, foreign_table: string, foreign_field: string}>
      */
     private function inlineRelationsOfType(string $table, string $type): array
     {
@@ -309,7 +336,7 @@ class ElementLabelService
             if ('' !== $showitem && !str_contains($showitem, (string) $field)) {
                 continue;
             }
-            $relations[] = ['foreign_table' => $foreignTable, 'foreign_field' => $foreignField];
+            $relations[] = ['field' => (string) $field, 'foreign_table' => $foreignTable, 'foreign_field' => $foreignField];
         }
 
         return $relations;
@@ -385,5 +412,15 @@ class ElementLabelService
         return mb_strlen($value) > self::MAX_LABEL_LENGTH
             ? mb_substr($value, 0, self::MAX_LABEL_LENGTH).'…'
             : $value;
+    }
+
+    /**
+     * @param list<string> $columns
+     *
+     * @return list<string>
+     */
+    private function readableColumns(string $table, array $columns): array
+    {
+        return array_values(array_filter($columns, fn (string $column): bool => $this->recordAccess->canAccessField($table, $column)));
     }
 }

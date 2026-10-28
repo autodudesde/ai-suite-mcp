@@ -9,9 +9,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
 use Mcp\Types\TextContent;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
-#[AutoconfigureTag('aisuite.mcp.tool')]
 class ReadTaskResultsTool extends AbstractTool
 {
     protected ?string $requiredScope = 'mcp:read';
@@ -97,7 +95,9 @@ class ReadTaskResultsTool extends AbstractTool
         foreach ($tasks as $task) {
             $status = (string) ($task['status'] ?? 'pending');
 
-            if ('finished' === $status && !empty($task['answer'])) {
+            if ('finished' === $status && !empty($task['answer'])
+                && $this->recordAccess->canReadRecord((string) $task['table_name'], (int) $task['table_uid'])
+            ) {
                 $answer = json_decode((string) $task['answer'], true);
                 $key = $task['table_name'].':'.$task['table_uid'];
                 $resultGroups[$key]['table'] = $task['table_name'];

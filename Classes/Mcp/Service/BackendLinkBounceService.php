@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Service;
 
+use AutoDudes\AiSuite\Service\HmacService;
 use AutoDudes\AiSuiteMcp\Mcp\Http\BackendLinkEndpoint;
 use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationExtensionNotConfiguredException;
 use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationPathDoesNotExistException;
@@ -15,6 +16,7 @@ class BackendLinkBounceService
 
     public function __construct(
         private readonly ExtensionConfiguration $extensionConfiguration,
+        private readonly HmacService $hmacService,
     ) {}
 
     public function wrap(string $url): string
@@ -36,7 +38,7 @@ class BackendLinkBounceService
         $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
 
         return $origin.BackendLinkEndpoint::PATH.'?'.http_build_query(
-            ['target' => $target, 'signature' => $this->hmac($target)],
+            ['target' => $target, 'signature' => $this->hmacService->hmac($target, self::HMAC_SECRET)],
             '',
             '&',
             PHP_QUERY_RFC3986,
@@ -49,14 +51,7 @@ class BackendLinkBounceService
             return null;
         }
 
-        return hash_equals($this->hmac($target), $signature) ? $target : null;
-    }
-
-    private function hmac(string $input): string
-    {
-        $encryptionKey = $GLOBALS['TYPO3_CONF_VARS']['SYS']['encryptionKey'] ?? '';
-
-        return hash_hmac('sha1', $input, (\is_string($encryptionKey) ? $encryptionKey : '').self::HMAC_SECRET);
+        return $this->hmacService->validate($target, self::HMAC_SECRET, $signature) ? $target : null;
     }
 
     private function isBackendPath(string $target): bool

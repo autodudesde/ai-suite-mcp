@@ -1,6 +1,6 @@
 <html xmlns:f="http://typo3.org/ns/TYPO3/CMS/Fluid/ViewHelpers">
 <head>
-    <title>{siteName} — MCP MFA</title>
+    <title>{siteName}: {labels.titleMfa}</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <f:if condition="{faviconUrl}">
@@ -185,9 +185,10 @@
 <body class="typo3-login">
     <div class="typo3-login-wrap">
         <div class="client-info">
-            <p><strong>{clientId}</strong></p> <p>two-factor authentication required.</p>
+            <p><strong>{clientName}</strong></p> <p>{labels.mfaRequired}</p>
+            <p>{labels.redirectsTo} <strong>{redirectHost}</strong></p>
             <f:if condition="{isLocalhost}">
-                <p><span class="localhost-badge">&#10003; Local connection</span></p>
+                <p><span class="localhost-badge">&#10003; {labels.localConnection}</span></p>
             </f:if>
         </div>
 
@@ -196,7 +197,7 @@
                 <div class="typo3-login-logo">
                     <f:if condition="{hasCustomLogo}">
                         <f:then>
-                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: 'Logo')}" />
+                            <img src="{loginLogoUrl}" alt="{f:if(condition: loginLogoAlt, then: loginLogoAlt, else: labels.logoAlt)}" />
                         </f:then>
                         <f:else>
                             <svg viewBox="0 0 150 42" width="150" height="52" aria-hidden="true">
@@ -213,7 +214,7 @@
 
                 <f:if condition="{mfaError}">
                     <div class="alert-error">
-                        Verification failed. Please try again.
+                        {labels.mfaError}
                     </div>
                 </f:if>
 
@@ -230,7 +231,7 @@
                         {providerContent -> f:format.raw()}
                     </div>
 
-                    <button type="submit" class="btn-login">Verify</button>
+                    <button type="submit" class="btn-login">{labels.verify}</button>
                 </form>
             </div>
 
@@ -241,11 +242,11 @@
                     </f:then>
                     <f:else>
                         <span class="footer-note">
-                            Powered by
+                            {labels.poweredBy}
                             <f:if condition="{aiSuiteIconUrl}">
                                 <img src="{aiSuiteIconUrl}" alt="" />
                             </f:if>
-                            AI Suite for TYPO3
+                            {labels.product}
                         </span>
                     </f:else>
                 </f:if>

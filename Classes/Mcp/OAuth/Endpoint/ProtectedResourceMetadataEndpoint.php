@@ -9,18 +9,21 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\PermissionService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Core\Http\JsonResponse;
-use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class ProtectedResourceMetadataEndpoint
 {
+    public function __construct(
+        private readonly PermissionService $permissionService,
+    ) {}
+
     public function __invoke(ServerRequestInterface $request): ResponseInterface
     {
-        $baseUrl = rtrim(\is_string($host = GeneralUtility::getIndpEnv('TYPO3_REQUEST_HOST')) ? $host : '', '/');
+        $baseUrl = CanonicalResource::host($request);
 
         return new JsonResponse([
-            'resource' => CanonicalResource::get(),
+            'resource' => CanonicalResource::get($request),
             'authorization_servers' => [$baseUrl],
-            'scopes_supported' => PermissionService::supportedScopes(),
+            'scopes_supported' => $this->permissionService->supportedScopes(),
             'bearer_methods_supported' => ['header'],
         ]);
     }

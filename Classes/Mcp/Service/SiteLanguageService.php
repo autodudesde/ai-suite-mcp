@@ -47,7 +47,6 @@ final class SiteLanguageService implements SingletonInterface
         }
 
         try {
-            // Keys are the ISO codes; SiteService filters by the user's language access.
             $codes = array_keys($this->siteService->getAvailableLanguages());
         } catch (\Throwable $e) {
             // A broken site config must not take the tool schema down with it.

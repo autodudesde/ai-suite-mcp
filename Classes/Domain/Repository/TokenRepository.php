@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Domain\Repository;
 
+use AutoDudes\AiSuite\Domain\Repository\AbstractRepository;
+use AutoDudes\AiSuite\Service\WorkspaceContextService;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
+use TYPO3\CMS\Core\Database\Query\Expression\CompositeExpression;
+use TYPO3\CMS\Core\Database\Query\QueryBuilder;
 
-class TokenRepository
+class TokenRepository extends AbstractRepository
 {
     private const CODE_TABLE = 'tx_aisuite_oauth_codes';
     private const TOKEN_TABLE = 'tx_aisuite_oauth_tokens';
 
     public function __construct(
-        private readonly ConnectionPool $connectionPool,
-    ) {}
+        ConnectionPool $connectionPool,
+        WorkspaceContextService $workspaceContextService,
+    ) {
+        parent::__construct($connectionPool, $workspaceContextService, self::TOKEN_TABLE);
+    }
 
     /**
      * @param array<string, mixed> $data
@@ -58,6 +65,14 @@ class TokenRepository
         ;
 
         return $affectedRows > 0;
+    }
+
+    public function linkCodeToToken(string $codeHash, int $tokenUid): void
+    {
+        $this->connectionPool
+            ->getConnectionForTable(self::CODE_TABLE)
+            ->update(self::CODE_TABLE, ['token_uid' => $tokenUid], ['code' => $codeHash])
+        ;
     }
 
     public function deleteExpiredCodes(): int
@@ -187,6 +202,41 @@ class TokenRepository
         ;
     }
 
+    public function hasLiveTokenInFamily(int $familyId): bool
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
+
+        return (int) $qb
+            ->count('uid')
+            ->from(self::TOKEN_TABLE)
+            ->where(
+                $qb->expr()->or(
+                    $qb->expr()->eq('family_id', $qb->createNamedParameter($familyId, Connection::PARAM_INT)),
+                    $qb->expr()->eq('uid', $qb->createNamedParameter($familyId, Connection::PARAM_INT)),
+                ),
+                $qb->expr()->eq('deleted', 0),
+            )
+            ->executeQuery()
+            ->fetchOne() > 0
+        ;
+    }
+
+    public function markDeletedForUser(int $uid, int $beUserUid): bool
+    {
+        $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
+
+        return $qb
+            ->update(self::TOKEN_TABLE)
+            ->set('deleted', 1)
+            ->where(
+                $qb->expr()->eq('uid', $qb->createNamedParameter($uid, Connection::PARAM_INT)),
+                $qb->expr()->eq('be_user_uid', $qb->createNamedParameter($beUserUid, Connection::PARAM_INT)),
+                $qb->expr()->eq('deleted', 0),
+            )
+            ->executeStatement() > 0
+        ;
+    }
+
     public function markDeletedByHash(string $tokenHash): void
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
@@ -219,19 +269,22 @@ class TokenRepository
     {
         $qb = $this->connectionPool->getQueryBuilderForTable(self::TOKEN_TABLE);
         $rows = $qb
-            ->select('*')
+            ->select('uid', 'client_id', 'workspace_uid', 'created_at', 'last_used_at', 'last_used_ip', 'session_credits_used', 'expires_at', 'refresh_expires_at')
             ->from(self::TOKEN_TABLE)
             ->where(
                 $qb->expr()->eq('be_user_uid', $qb->createNamedParameter($beUserUid, Connection::PARAM_INT)),
                 $qb->expr()->eq('deleted', 0),
-                $qb->expr()->gt('expires_at', $qb->createNamedParameter(time(), Connection::PARAM_INT)),
+                $this->stillUsable($qb),
             )
             ->orderBy('created_at', 'DESC')
             ->executeQuery()
             ->fetchAllAssociative()
         ;
 
-        return array_values($rows);
+        return array_map(
+            static fn (array $row): array => $row + ['valid_until' => max((int) $row['expires_at'], (int) $row['refresh_expires_at'])],
+            array_values($rows),
+        );
     }
 
     public function countActiveTokensForUser(int $beUserUid): int
@@ -243,7 +296,7 @@ class TokenRepository
             ->where(
                 $qb->expr()->eq('be_user_uid', $qb->createNamedParameter($beUserUid, Connection::PARAM_INT)),
                 $qb->expr()->eq('deleted', 0),
-                $qb->expr()->gt('expires_at', $qb->createNamedParameter(time(), Connection::PARAM_INT)),
+                $this->stillUsable($qb),
             )
             ->executeQuery()
             ->fetchOne()
@@ -331,8 +384,21 @@ class TokenRepository
 
         return $qb
             ->delete(self::TOKEN_TABLE)
-            ->where($qb->expr()->lt('expires_at', $qb->createNamedParameter($cutoff, Connection::PARAM_INT)))
+            ->where(
+                $qb->expr()->lt('expires_at', $qb->createNamedParameter($cutoff, Connection::PARAM_INT)),
+                $qb->expr()->lt('refresh_expires_at', $qb->createNamedParameter($cutoff, Connection::PARAM_INT)),
+            )
             ->executeStatement()
         ;
+    }
+
+    private function stillUsable(QueryBuilder $qb): CompositeExpression
+    {
+        $now = $qb->createNamedParameter(time(), Connection::PARAM_INT);
+
+        return $qb->expr()->or(
+            $qb->expr()->gt('expires_at', $now),
+            $qb->expr()->gt('refresh_expires_at', $now),
+        );
     }
 }

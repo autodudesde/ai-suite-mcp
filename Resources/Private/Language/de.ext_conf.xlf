@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+    <file source-language="en" target-language="de" datatype="plaintext" original="messages" date="2026-10-19T12:00:00Z" product-name="ai_suite_mcp">
+        <header/>
+        <body>
+            <trans-unit id="category.server" resname="category.server">
+                <source>Server</source>
+                <target>Server</target>
+            </trans-unit>
+            <trans-unit id="category.access" resname="category.access">
+                <source>Access</source>
+                <target>Zugriff</target>
+            </trans-unit>
+            <trans-unit id="category.writes" resname="category.writes">
+                <source>Writes</source>
+                <target>Schreiben</target>
+            </trans-unit>
+            <trans-unit id="category.tables" resname="category.tables">
+                <source>Tables</source>
+                <target>Tabellen</target>
+            </trans-unit>
+            <trans-unit id="category.media" resname="category.media">
+                <source>Media</source>
+                <target>Medien</target>
+            </trans-unit>
+            <trans-unit id="category.logging" resname="category.logging">
+                <source>Logging</source>
+                <target>Logging</target>
+            </trans-unit>
+            <trans-unit id="subcategory.serverendpoint" resname="subcategory.serverendpoint">
+                <source>Endpoint</source>
+                <target>Endpoint</target>
+            </trans-unit>
+            <trans-unit id="subcategory.accessoauth" resname="subcategory.accessoauth">
+                <source>OAuth clients</source>
+                <target>OAuth-Clients</target>
+            </trans-unit>
+            <trans-unit id="subcategory.accesscors" resname="subcategory.accesscors">
+                <source>Browser clients</source>
+                <target>Browser-Clients</target>
+            </trans-unit>
+            <trans-unit id="subcategory.accessratelimit" resname="subcategory.accessratelimit">
+                <source>Rate limit</source>
+                <target>Rate-Limit</target>
+            </trans-unit>
+            <trans-unit id="subcategory.writestarget" resname="subcategory.writestarget">
+                <source>Write target</source>
+                <target>Schreibziel</target>
+            </trans-unit>
+            <trans-unit id="subcategory.tablesaccess" resname="subcategory.tablesaccess">
+                <source>Table access</source>
+                <target>Tabellenzugriff</target>
+            </trans-unit>
+            <trans-unit id="subcategory.tablessearch" resname="subcategory.tablessearch">
+                <source>Content search</source>
+                <target>Inhaltssuche</target>
+            </trans-unit>
+            <trans-unit id="subcategory.mediaupload" resname="subcategory.mediaupload">
+                <source>Upload target</source>
+                <target>Upload-Ziel</target>
+            </trans-unit>
+            <trans-unit id="subcategory.mediafetch" resname="subcategory.mediafetch">
+                <source>Remote fetch</source>
+                <target>Abruf aus dem Netz</target>
+            </trans-unit>
+            <trans-unit id="subcategory.loggingfiles" resname="subcategory.loggingfiles">
+                <source>Log files</source>
+                <target>Logdateien</target>
+            </trans-unit>
+            <trans-unit id="subcategory.loggingaudit" resname="subcategory.loggingaudit">
+                <source>Audit trail</source>
+                <target>Audit-Trail</target>
+            </trans-unit>
+            <trans-unit id="enableMcp" resname="enableMcp">
+                <source>Enable MCP server: Enable the MCP endpoint at /aisuite-mcp for Claude Desktop, Claude.ai, ChatGPT, and other MCP clients</source>
+                <target>MCP-Server aktivieren: Aktiviert den MCP-Endpoint unter /aisuite-mcp für Claude Desktop, Claude.ai, ChatGPT und andere MCP-Clients</target>
+            </trans-unit>
+            <trans-unit id="mcpAllowHttp" resname="mcpAllowHttp">
+                <source>Allow HTTP (development only): Allow MCP over unencrypted HTTP. Never enable this in production.</source>
+                <target>HTTP erlauben (nur Entwicklung): Erlaubt MCP über unverschlüsseltes HTTP. Schalte das im Produktivbetrieb nie ein.</target>
+            </trans-unit>
+            <trans-unit id="mcpBackendBaseUrl" resname="mcpBackendBaseUrl">
+                <source>Backend base URL: Scheme and host that MCP tool results use for backend links (e.g. https://www.example.com). Empty = derived automatically from the current request, otherwise from the site configuration. Set this when the backend is reached under a different domain than the site base, or when the stdio transport must produce links without a request.</source>
+                <target>Basis-URL des Backends: Schema und Host, die MCP-Tool-Ergebnisse für Backend-Links verwenden (z. B. https://www.example.com). Leer = automatisch aus der aktuellen Anfrage abgeleitet, sonst aus der Site-Konfiguration. Setze sie, wenn das Backend unter einer anderen Domain erreichbar ist als die Site-Basis oder wenn der stdio-Transport Links ohne Anfrage erzeugen muss.</target>
+            </trans-unit>
+            <trans-unit id="mcpBackendLinkBounce" resname="mcpBackendLinkBounce">
+                <source>Open backend links through a bounce page: Backend links in tool results point at /aisuite-mcp/open on the backend host, which continues to the backend from that host. Without it, a link clicked in an external chat (claude.ai, ChatGPT) reaches the backend without the editor's session cookie and ends on the login screen. Links handed out earlier keep opening either way.</source>
+                <target>Backend-Links über eine Zwischenseite öffnen: Backend-Links in Tool-Ergebnissen zeigen auf /aisuite-mcp/open auf dem Backend-Host, der von dort ins Backend weiterleitet. Ohne sie kommt ein Link, der in einem externen Chat (claude.ai, ChatGPT) angeklickt wird, ohne das Session-Cookie des Redakteurs im Backend an und endet auf der Login-Seite. Bereits ausgegebene Links öffnen in beiden Fällen weiter.</target>
+            </trans-unit>
+            <trans-unit id="mcpSessionTimeoutSeconds" resname="mcpSessionTimeoutSeconds">
+                <source>Session timeout (seconds): Drop idle MCP sessions after this many seconds. Lower values free PHP workers and reduce session-store bloat. 0 = SDK default (3600s). Legacy protocol revisions only: MCP 2026-07-28 has no protocol session.</source>
+                <target>Session-Timeout (Sekunden): Inaktive MCP-Sessions werden nach so vielen Sekunden verworfen. Niedrigere Werte geben PHP-Worker frei und halten den Session-Speicher klein. 0 = Standard des SDK (3600 s). Gilt nur für ältere Protokollversionen: MCP 2026-07-28 hat keine Protokoll-Session.</target>
+            </trans-unit>
+            <trans-unit id="mcpTokenLifetimeDays" resname="mcpTokenLifetimeDays">
+                <source>Token lifetime (days): How long a token created in the MCP screen or with the CLI stays valid. These tokens cannot be refreshed. OAuth connections follow the access token, idle and maximum lifetime settings instead.</source>
+                <target>Gültigkeit der Tokens (Tage): Wie lange ein Token gilt, der im MCP-Bildschirm oder mit der CLI erstellt wurde. Diese Tokens lassen sich nicht erneuern. Für OAuth-Verbindungen gelten stattdessen die Einstellungen für Access-Token, Nichtnutzung und Höchstlaufzeit.</target>
+            </trans-unit>
+            <trans-unit id="mcpAccessTokenLifetimeMinutes" resname="mcpAccessTokenLifetimeMinutes">
+                <source>Access token lifetime (minutes): How long an OAuth access token is valid. The connector then gets a new one through its refresh token, without asking the editor. Short-lived tokens limit what a leaked token is worth. 0 = 60 minutes.</source>
+                <target>Gültigkeit der Access-Tokens (Minuten): Wie lange ein OAuth-Access-Token gilt. Danach holt sich der Connector über seinen Refresh-Token einen neuen, ohne die Redakteurin oder den Redakteur zu fragen. Kurze Laufzeiten begrenzen, was ein abgeflossener Token wert ist. 0 = 60 Minuten.</target>
+            </trans-unit>
+            <trans-unit id="mcpRefreshIdleDays" resname="mcpRefreshIdleDays">
+                <source>Idle limit of an OAuth connection (days): A connector that does not refresh its tokens for this many days has to be authorized again. Every refresh starts the period anew. 0 = 30 days.</source>
+                <target>Frist für Nichtnutzung einer OAuth-Verbindung (Tage): Ein Connector, der seine Tokens so viele Tage nicht erneuert, muss neu autorisiert werden. Jeder Refresh startet die Frist neu. 0 = 30 Tage.</target>
+            </trans-unit>
+            <trans-unit id="mcpRefreshMaxLifetimeDays" resname="mcpRefreshMaxLifetimeDays">
+                <source>Maximum connection lifetime (days): A connector refreshes its tokens on its own, but only for this many days after it was authorized; then it has to be authorized again. 0 = 90 days.</source>
+                <target>Maximale Laufzeit einer Verbindung (Tage): Ein Connector erneuert seine Tokens selbst, aber nur so viele Tage nach der Autorisierung; danach muss er neu autorisiert werden. 0 = 90 Tage.</target>
+            </trans-unit>
+            <trans-unit id="mcpMaxCreditsPerSession" resname="mcpMaxCreditsPerSession">
+                <source>Credit budget per token: Stop a connector once it has spent this many AI credits on one token. Counts across every request the token makes, not per conversation, and survives a restart because the total lives on the token row. 0 = no budget, which is the previous behaviour.</source>
+                <target>Credit-Budget pro Token: Stoppt einen Connector, sobald er mit einem Token so viele AI-Credits verbraucht hat. Gezählt wird über alle Anfragen des Tokens, nicht pro Unterhaltung, und die Summe übersteht einen Neustart, weil sie am Token gespeichert ist. 0 = kein Budget, wie bisher.</target>
+            </trans-unit>
+            <trans-unit id="mcpAllowedClientIds" resname="mcpAllowedClientIds">
+                <source>Allowed client IDs: Comma-separated list of allowed OAuth client IDs (empty = all allowed)</source>
+                <target>Erlaubte Client-IDs: Kommagetrennte Liste erlaubter OAuth-Client-IDs (leer = alle erlaubt)</target>
+            </trans-unit>
+            <trans-unit id="mcpAllowedRedirectUris" resname="mcpAllowedRedirectUris">
+                <source>Allowed redirect URIs: Comma-separated list of allowed external OAuth redirect URIs (https). An entry covers every path below its own; localhost is always allowed, and an empty list allows nothing else.</source>
+                <target>Erlaubte Redirect-URIs: Kommagetrennte Liste erlaubter externer OAuth-Redirect-URIs (https). Ein Eintrag deckt jeden Pfad unterhalb seines eigenen ab; localhost ist immer erlaubt, eine leere Liste erlaubt sonst nichts.</target>
+            </trans-unit>
+            <trans-unit id="mcpRateLimitRequests" resname="mcpRateLimitRequests">
+                <source>Requests per token: How many MCP requests one OAuth token may send within the window below. Batch work and agent loops can easily exceed the default of 100 per minute; raise it when a connector hits HTTP 429. 0 = no limit. The OAuth and MFA endpoints keep their own fixed limits regardless of this value.</source>
+                <target>Anfragen pro Token: Wie viele MCP-Anfragen ein OAuth-Token im unten eingestellten Zeitfenster senden darf. Batch-Arbeit und Agent-Schleifen überschreiten den Standard von 100 pro Minute leicht; erhöhe den Wert, wenn ein Connector HTTP 429 bekommt. 0 = kein Limit. Die OAuth- und MFA-Endpoints behalten unabhängig davon ihre eigenen festen Limits.</target>
+            </trans-unit>
+            <trans-unit id="mcpRateLimitWindowSeconds" resname="mcpRateLimitWindowSeconds">
+                <source>Rate limit window (seconds): Length of the window the request count above refers to. Values below 1 count as 1.</source>
+                <target>Zeitfenster des Rate-Limits (Sekunden): Länge des Fensters, auf das sich die Anzahl oben bezieht. Werte unter 1 zählen als 1.</target>
+            </trans-unit>
+            <trans-unit id="mcpRateLimitLockoutSeconds" resname="mcpRateLimitLockoutSeconds">
+                <source>Lockout (seconds): How long a token is refused once it exceeded the limit. The 429 answer carries the remaining time in Retry-After. Values below 1 count as 1.</source>
+                <target>Sperrzeit (Sekunden): Wie lange ein Token abgewiesen wird, nachdem es das Limit überschritten hat. Die Antwort 429 nennt die Restzeit in Retry-After. Werte unter 1 zählen als 1.</target>
+            </trans-unit>
+            <trans-unit id="mcpAllowedOrigins" resname="mcpAllowedOrigins">
+                <source>Allowed CORS origins: Comma-separated list of allowed CORS origins (empty = Development: all allowed, Production: same-origin only)</source>
+                <target>Erlaubte CORS-Origins: Kommagetrennte Liste erlaubter CORS-Origins (leer = Entwicklung: alle erlaubt, Produktivbetrieb: nur Same-Origin)</target>
+            </trans-unit>
+            <trans-unit id="mcpWriteMode" resname="mcpWriteMode">
+                <source>Write mode: How MCP tools write data. Draft workspace (default) = always a draft; if the user has none, a per-user workspace is created automatically (requires ext:workspaces), and a write is refused rather than silently sent to live. Live = always direct to live. ChEddi inherits this by default but can override it with its own chatWriteMode (cheddi).</source>
+                <target>Schreibmodus: Wie MCP-Tools Daten schreiben. Entwurfs-Workspace (Standard) = immer ein Entwurf; hat der Benutzer keinen, wird automatisch ein eigener Workspace angelegt (benötigt ext:workspaces), und ein Schreibvorgang wird abgelehnt statt still nach Live zu gehen. Live = immer direkt nach Live. ChEddi übernimmt diese Einstellung standardmäßig, kann sie aber mit dem eigenen chatWriteMode (cheddi) überschreiben.</target>
+            </trans-unit>
+            <trans-unit id="mcpAllowRawHtmlWrite" resname="mcpAllowRawHtmlWrite">
+                <source>Allow raw HTML write: Allow MCP write tools to store raw markup verbatim in code editor fields (e.g. tt_content.bodytext of CType "html"). TYPO3 renders those fields unfiltered, so an agent, or a prompt injection, can place arbitrary HTML/JavaScript on the site. When disabled, a write that carries markup into such a field is rejected: nothing is stored and the existing value survives. ChEddi inherits this by default and can only tighten it with its own chatAllowRawHtmlWrite (cheddi).</source>
+                <target>Rohes HTML schreiben erlauben: Erlaubt MCP-Schreibwerkzeugen, Markup unverändert in Code-Editor-Felder zu schreiben (z. B. tt_content.bodytext beim CType „html“). TYPO3 gibt diese Felder ungefiltert aus, ein Agent oder eine Prompt-Injection kann also beliebiges HTML und JavaScript auf die Site bringen. Ist die Option aus, wird ein Schreibvorgang mit Markup in einem solchen Feld abgelehnt: Es wird nichts gespeichert und der bisherige Wert bleibt erhalten. ChEddi übernimmt diese Einstellung standardmäßig und kann sie mit dem eigenen chatAllowRawHtmlWrite (cheddi) nur verschärfen.</target>
+            </trans-unit>
+            <trans-unit id="mcpExcludedTables" resname="mcpExcludedTables">
+                <source>Excluded tables: Comma-separated list of tables that MCP tools must not read or write. Entries here are added to a shipped default list that already blocks personal data (fe_users, fe_groups, be_users, be_groups), the editors' chat history, and configuration/system tables; nothing here can unblock a default. This matters because searchContent sweeps every page-bound table that carries text, so a table not named anywhere is searched as well. TYPO3 backend permissions still apply additionally. ChEddi inherits this list and can extend it with its own chatExcludedTables (cheddi).</source>
+                <target>Ausgeschlossene Tabellen: Kommagetrennte Liste von Tabellen, die MCP-Tools weder lesen noch schreiben dürfen. Die Einträge kommen zu einer mitgelieferten Liste hinzu, die bereits personenbezogene Daten (fe_users, fe_groups, be_users, be_groups), den Chatverlauf der Redakteure sowie Konfigurations- und Systemtabellen sperrt; einen Standardeintrag kann diese Liste nicht freigeben. Das ist wichtig, weil searchContent jede seitengebundene Tabelle mit Text durchsucht, also auch Tabellen, die nirgends genannt sind. Die Backend-Rechte von TYPO3 gelten zusätzlich. ChEddi übernimmt diese Liste und kann sie mit dem eigenen chatExcludedTables (cheddi) erweitern.</target>
+            </trans-unit>
+            <trans-unit id="mcpMaxRequestBodyMb" resname="mcpMaxRequestBodyMb">
+                <source>Maximum request size (MB): Upper limit for one MCP request body. The default of 1 MB fits every tool except base64 uploads of larger media: base64 adds a third, so a 3 MB video needs 4 MB here. Raise it only as far as your uploads need, and raise nginx client_max_body_size and PHP post_max_size along with it. Values below 1 count as 1.</source>
+                <target>Maximale Anfragegröße (MB): Obergrenze für den Body einer MCP-Anfrage. Der Standard von 1 MB reicht für jedes Tool außer Base64-Uploads größerer Medien: Base64 macht die Daten ein Drittel größer, ein 3-MB-Video braucht hier also 4 MB. Erhöhe den Wert nur so weit, wie deine Uploads es brauchen, und erhöhe nginx client_max_body_size und PHP post_max_size entsprechend mit. Werte unter 1 zählen als 1.</target>
+            </trans-unit>
+            <trans-unit id="mcpMediaDefaultFolder" resname="mcpMediaDefaultFolder">
+                <source>Default upload folder: FAL combined identifier for the uploadMedia tool when no targetFolder is given (e.g. 1:/user_upload/).</source>
+                <target>Standardordner für Uploads: FAL-Kennung (combined identifier) für das Tool uploadMedia, wenn kein targetFolder angegeben ist (z. B. 1:/user_upload/).</target>
+            </trans-unit>
+            <trans-unit id="mcpMediaMaxSizeMb" resname="mcpMediaMaxSizeMb">
+                <source>Maximum file size (MB): Maximum size for a single uploaded/downloaded media file. Applies to URL downloads and base64 uploads. 0 = no explicit limit (PHP/storage limits still apply).</source>
+                <target>Maximale Dateigröße (MB): Höchstgröße einer einzelnen hochgeladenen oder heruntergeladenen Mediendatei. Gilt für Downloads per URL und für Base64-Uploads. 0 = kein eigenes Limit (die Grenzen von PHP und Speicher gelten weiter).</target>
+            </trans-unit>
+            <trans-unit id="mcpMediaAllowedExtensions" resname="mcpMediaAllowedExtensions">
+                <source>Allowed file extensions: Comma-separated lowercase file extensions the uploadMedia tool may store (URL download / base64). SVG is intentionally excluded by default (XSS). Online-media links (YouTube/Vimeo) are governed by TYPO3's online media helpers, not this list.</source>
+                <target>Erlaubte Dateiendungen: Kommagetrennte Dateiendungen in Kleinbuchstaben, die das Tool uploadMedia speichern darf (Download per URL, Base64). SVG ist standardmäßig bewusst ausgeschlossen (XSS). Links zu Online-Medien (YouTube/Vimeo) regeln die Online-Media-Helper von TYPO3, nicht diese Liste.</target>
+            </trans-unit>
+            <trans-unit id="mcpMediaAllowUrlFetch" resname="mcpMediaAllowUrlFetch">
+                <source>Allow URL fetch: Allow the uploadMedia tool to download files from remote http(s) URLs. When disabled, only base64 upload and online-media links (YouTube/Vimeo) are accepted. URL fetching is SSRF-guarded (private/loopback/link-local targets are always blocked), but you can disable it entirely here.</source>
+                <target>Abruf per URL erlauben: Erlaubt dem Tool uploadMedia, Dateien von entfernten http(s)-URLs herunterzuladen. Ist die Option aus, werden nur Base64-Uploads und Links zu Online-Medien (YouTube/Vimeo) angenommen. Der Abruf per URL ist gegen SSRF abgesichert (private, Loopback- und Link-Local-Ziele sind immer gesperrt), du kannst ihn hier aber ganz abschalten.</target>
+            </trans-unit>
+            <trans-unit id="mcpMediaHostDenylist" resname="mcpMediaHostDenylist">
+                <source>Host denylist: Comma-separated additional hostnames or IP/CIDR ranges that uploadMedia must never fetch from (on top of the always-on private/loopback/link-local block). Example: metadata.internal,10.0.0.0/8</source>
+                <target>Gesperrte Hosts: Kommagetrennte zusätzliche Hostnamen oder IP-/CIDR-Bereiche, von denen uploadMedia nie etwas abrufen darf (zusätzlich zur immer aktiven Sperre privater, Loopback- und Link-Local-Ziele). Beispiel: metadata.internal,10.0.0.0/8</target>
+            </trans-unit>
+            <trans-unit id="mcpLogVerbose" resname="mcpLogVerbose">
+                <source>Verbose INFO log: Write the verbose INFO trace to var/log/aisuite_mcp.log, which contains prompts and content snippets. Off by default; switch it on while debugging. The WARNING+ alert log (var/log/aisuite_mcp_warnings.log) stays active either way, and the Reports module warns while the verbose log is on in Production. ChEddi inherits this by default and can override it with its own chatLogVerbose (cheddi).</source>
+                <target>Ausführliches INFO-Log: Schreibt den ausführlichen INFO-Verlauf nach var/log/aisuite_mcp.log, der Prompts und Inhaltsausschnitte enthält. Standardmäßig aus; schalte es zur Fehlersuche ein. Das Warn-Log ab WARNING (var/log/aisuite_mcp_warnings.log) bleibt in jedem Fall aktiv, und das Berichte-Modul warnt, solange das ausführliche Log in Production eingeschaltet ist. ChEddi übernimmt diese Einstellung standardmäßig und kann sie mit dem eigenen chatLogVerbose (cheddi) überschreiben.</target>
+            </trans-unit>
+            <trans-unit id="mcpLogRedactionPatterns" resname="mcpLogRedactionPatterns">
+                <source>Log redaction patterns: Comma-separated additional regex patterns (without delimiters) whose matches are replaced with [REDACTED] in MCP log entries. Built-in defaults (Bearer tokens, 64-char hex hashes, email addresses) are always applied; these patterns are added on top. The ChEddi log applies them as well, plus its own chatLogRedactionPatterns (cheddi).</source>
+                <target>Muster zum Schwärzen im Log: Kommagetrennte zusätzliche reguläre Ausdrücke (ohne Begrenzer), deren Treffer in MCP-Logeinträgen durch [REDACTED] ersetzt werden. Die eingebauten Standards (Bearer-Tokens, 64-stellige Hex-Hashes, E-Mail-Adressen) gelten immer, diese Muster kommen hinzu. Das ChEddi-Log wendet sie ebenfalls an, dazu sein eigenes chatLogRedactionPatterns (cheddi).</target>
+            </trans-unit>
+            <trans-unit id="mcpTrustedProxies" resname="mcpTrustedProxies">
+                <source>Trusted proxies: Comma-separated list of trusted reverse-proxy IPs/CIDRs (e.g. 10.0.0.0/8,192.168.0.0/16). Only a request from one of them may name the real client IP (X-Forwarded-For) and the original scheme (X-Forwarded-Proto). The resolved IP is what the OAuth rate limits count per client and what the consent and MFA tickets are bound to, and it appears in the audit log. Empty = both headers are ignored.</source>
+                <target>Vertrauenswürdige Proxys: Kommagetrennte Liste vertrauenswürdiger Reverse-Proxy-IPs oder CIDR-Bereiche (z. B. 10.0.0.0/8,192.168.0.0/16). Nur eine Anfrage von einem dieser Proxys darf die echte Client-IP (X-Forwarded-For) und das ursprüngliche Schema (X-Forwarded-Proto) mitteilen. Nach der so ermittelten IP zählen die OAuth-Rate-Limits pro Client, an sie sind die Tickets für Zustimmung und MFA gebunden, und sie steht im Audit-Log. Leer = beide Header werden ignoriert.</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>

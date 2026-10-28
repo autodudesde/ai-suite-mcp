@@ -25,7 +25,6 @@ class ContainerBatchValidator
 
         $registry = $this->tcaLabel->getContainerRegistry();
         if (null === $registry) {
-            // b13/container is not installed: there are no containers to get wrong.
             return;
         }
 

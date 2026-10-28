@@ -27,7 +27,7 @@ class RevocationEndpoint
 
         if ('' !== $token) {
             try {
-                $this->oauthService->revokeToken($token);
+                $this->oauthService->revokeToken($token, (string) ($body['client_id'] ?? ''));
 
                 $this->logger->info('MCP token revoked', [
                     'ip' => $this->clientIpService->resolve($request),

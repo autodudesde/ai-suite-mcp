@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 defined('TYPO3') or exit;
 
 $lll = 'LLL:EXT:ai_suite_mcp/Resources/Private/Language/locallang_tca.xlf:';

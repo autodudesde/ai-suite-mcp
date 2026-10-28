@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\OAuth\Endpoint;
 
+use AutoDudes\AiSuiteMcp\Domain\Model\Dto\RateLimitPolicy;
+use AutoDudes\AiSuiteMcp\Mcp\Exception\RateLimitExceededException;
+use AutoDudes\AiSuiteMcp\Mcp\Log\ThrowableFrames;
 use AutoDudes\AiSuiteMcp\Mcp\OAuth\Exception\InvalidGrantException;
 use AutoDudes\AiSuiteMcp\Mcp\Service\ClientIpService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\OAuthService;
@@ -34,8 +37,8 @@ class TokenEndpoint
         $ip = $this->clientIpService->resolve($request);
 
         try {
-            $this->rateLimiter->checkAndIncrement('token_'.$clientId.'_'.$ip);
-        } catch (\RuntimeException $e) {
+            $this->rateLimiter->checkAndIncrement('token_'.$clientId.'_'.$ip, RateLimitPolicy::oauthEndpoint());
+        } catch (RateLimitExceededException $e) {
             $this->logger->warning('OAuth token endpoint rate limit exceeded', [
                 'client_id' => $clientId,
                 'ip' => $ip,
@@ -45,7 +48,7 @@ class TokenEndpoint
             return new JsonResponse([
                 'error' => 'rate_limit_exceeded',
                 'error_description' => $e->getMessage(),
-            ], 429, ['Retry-After' => '60']);
+            ], 429, ['Retry-After' => (string) $e->retryAfter]);
         }
 
         $grantType = (string) ($body['grant_type'] ?? '');
@@ -73,7 +76,7 @@ class TokenEndpoint
         } catch (\Throwable $e) {
             $this->logger->error('Token endpoint error', [
                 'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace' => ThrowableFrames::of($e),
             ]);
 
             return new JsonResponse(['error' => 'server_error'], 500);

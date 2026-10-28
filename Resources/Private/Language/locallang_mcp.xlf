@@ -36,7 +36,7 @@
 
             <!-- Hints: Permissions (Page / Record / File / Folder / Language / Workspace) -->
             <trans-unit id="aiSuite.mcp.hint.no_page_access">
-                <source>You do not have permission to access page %d.</source>
+                <source>You do not have permission to access page %d. Whether you may see a page is decided by its page permissions (owner, group, everybody) and by the web mounts of your backend user, not by the workspace. These permissions can neither be read nor changed through this interface; an administrator grants them in the backend.</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.no_record_access">
                 <source>You do not have permission to access record %s:%d.</source>
@@ -85,6 +85,114 @@
             </trans-unit>
             <trans-unit id="aiSuite.mcp.navigation.audit.export">
                 <source>Download CSV</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.security.label">
+                <source>AI Suite MCP Security</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.label">
+                <source>AI Suite MCP Environment</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.verboseLog.title">
+                <source>MCP verbose log</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.verboseLog.value">
+                <source>Verbose log active in Production</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.verboseLog.message">
+                <source>var/log/aisuite_mcp.log is written in the Production context (mcpLogVerbose). It holds prompts, content snippets and tool arguments of every request. Set mcpLogVerbose to auto or off unless you are debugging: Extension Configuration → AI Suite → MCP → Verbose INFO log.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.writeLive.title">
+                <source>MCP write mode</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.writeLive.value">
+                <source>AI writes go live</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.writeLive.message">
+                <source>mcpWriteMode is set to live, so MCP clients write straight to the live site instead of a draft workspace that an editor reviews first. Set it back to workspace unless live writes are intended: Extension Configuration → AI Suite → MCP → Write mode.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rateLimitOff.title">
+                <source>MCP rate limit</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rateLimitOff.value">
+                <source>No rate limit per token</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rateLimitOff.message">
+                <source>mcpRateLimitRequests is 0, so a single access token can send any number of requests. A leaked token or a looping agent is then limited by nothing. Set a limit, the default is 100 requests per minute: Extension Configuration → AI Suite → MCP → Rate limit.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rawHtml.title">
+                <source>MCP raw HTML</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rawHtml.value">
+                <source>Raw HTML writes allowed</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rawHtml.message">
+                <source>mcpAllowRawHtmlWrite is on, so MCP clients may write HTML and JavaScript into code editor fields, which the frontend renders unfiltered. Switch it off unless an AI really has to maintain such fields: Extension Configuration → AI Suite → MCP → Allow raw HTML.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.http.title">
+                <source>MCP HTTP Security</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.http.value">
+                <source>HTTP allowed</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.http.message">
+                <source>MCP is configured to accept unencrypted HTTP connections (mcpAllowHttp=1). This exposes Bearer tokens to network interception. Disable this setting in production: Extension Configuration → AI Suite → MCP → Allow HTTP.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cors.title">
+                <source>MCP CORS Configuration</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cors.value">
+                <source>No CORS origins configured</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cors.message">
+                <source>MCP has no CORS origins configured. In production, this means no CORS headers are sent (same-origin only). If browser-based MCP clients need access, configure allowed origins in Extension Configuration → AI Suite → MCP.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.redirect.title">
+                <source>MCP Redirect URI Security</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.redirect.value">
+                <source>No external redirect URIs configured</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.redirect.message">
+                <source>Only localhost redirect URIs are allowed for OAuth. To allow external MCP clients, configure allowed redirect URIs in Extension Configuration → AI Suite → MCP.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.ok.title">
+                <source>MCP Security</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.ok.value">
+                <source>Configuration looks good</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.ok.message">
+                <source>MCP security settings are properly configured.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.title">
+                <source>MCP Session Store</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.value">
+                <source>%d stored session file(s)</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.exceeded">
+                <source>%1$d session files are stored in %2$s. Stateless MCP clients leave one behind per request. Schedule ai-suite-mcp:cleanup: it removes session files older than %3$d seconds.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.ok">
+                <source>Session files in %s are within the expected range. ai-suite-mcp:cleanup keeps them bounded.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.title">
+                <source>MCP Environment</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.okValue">
+                <source>All requirements met</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.okMessage">
+                <source>The PHP extensions %s are loaded and the MCP SDK is available.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.missingValue">
+                <source>Requirements missing</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.missingExtensions">
+                <source>The PHP extension(s) %s are missing. The MCP server cannot answer requests until they are installed.</source>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.missingSdk">
+                <source>The MCP SDK (logiscape/mcp-sdk-php) cannot be loaded. Composer installations require the package, classic mode installations ship it in Resources/Private/PHP/ComposerVendor of ai_suite_mcp, so an incompletely uploaded extension is the usual cause.</source>
             </trans-unit>
         </body>
     </file>

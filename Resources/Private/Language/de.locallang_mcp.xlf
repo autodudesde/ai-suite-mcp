@@ -36,7 +36,7 @@
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.internal_issue">
                 <source>Running "%s" failed unexpectedly. Repeating the identical call will fail again. Re-check the arguments against the tool schema; if they are correct, this needs an administrator.</source>
-                <target>Die Ausführung von „%s“ ist unerwartet fehlgeschlagen. Ein identischer erneuter Aufruf wird wieder fehlschlagen. Prüfe die Argumente gegen das Tool-Schema; wenn sie korrekt sind, muss ein Administrator ran.</target>
+                <target>Die Ausführung von „%s“ ist unerwartet fehlgeschlagen. Ein identischer erneuter Aufruf wird wieder fehlschlagen. Prüfe die Argumente gegen das Tool-Schema. Sind sie korrekt, muss sich ein Administrator darum kümmern.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.page_excluded_from_ai">
                 <source>Page %d has been excluded from AI processing by its administrator. This page's content will not be sent to AI providers.</source>
@@ -45,8 +45,8 @@
 
             <!-- Hints: Permissions (Page / Record / File / Folder / Language / Workspace) -->
             <trans-unit id="aiSuite.mcp.hint.no_page_access">
-                <source>You do not have permission to access page %d.</source>
-                <target>Du hast keine Berechtigung, auf Seite %d zuzugreifen.</target>
+                <source>You do not have permission to access page %d. Whether you may see a page is decided by its page permissions (owner, group, everybody) and by the web mounts of your backend user, not by the workspace. These permissions can neither be read nor changed through this interface; an administrator grants them in the backend.</source>
+                <target>Du hast keine Berechtigung, auf Seite %d zuzugreifen. Ob du eine Seite sehen darfst, entscheiden ihre Seitenrechte (Besitzer, Gruppe, alle) und die Webmounts deines Backend-Benutzers, nicht der Workspace. Diese Rechte lassen sich über diese Schnittstelle weder lesen noch ändern; ein Administrator vergibt sie im Backend.</target>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.hint.no_record_access">
                 <source>You do not have permission to access record %s:%d.</source>
@@ -109,6 +109,150 @@
             <trans-unit id="aiSuite.mcp.navigation.audit.export">
                 <source>Download CSV</source>
                 <target>CSV herunterladen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.security.label">
+                <source>AI Suite MCP Security</source>
+                <target>AI Suite MCP: Sicherheit</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.label">
+                <source>AI Suite MCP Environment</source>
+                <target>AI Suite MCP: Umgebung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.verboseLog.title">
+                <source>MCP verbose log</source>
+                <target>MCP: ausführliches Log</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.verboseLog.value">
+                <source>Verbose log active in Production</source>
+                <target>Ausführliches Log in Production aktiv</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.verboseLog.message">
+                <source>var/log/aisuite_mcp.log is written in the Production context (mcpLogVerbose). It holds prompts, content snippets and tool arguments of every request. Set mcpLogVerbose to auto or off unless you are debugging: Extension Configuration → AI Suite → MCP → Verbose INFO log.</source>
+                <target>var/log/aisuite_mcp.log wird im Kontext Production geschrieben (mcpLogVerbose). Es enthält Prompts, Inhaltsausschnitte und Tool-Argumente jeder Anfrage. Stelle mcpLogVerbose auf auto oder aus, solange du nicht gerade einen Fehler suchst: Extension-Konfiguration → AI Suite → MCP → Verbose INFO log.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.writeLive.title">
+                <source>MCP write mode</source>
+                <target>MCP: Schreibmodus</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.writeLive.value">
+                <source>AI writes go live</source>
+                <target>KI-Schreibzugriffe gehen live</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.writeLive.message">
+                <source>mcpWriteMode is set to live, so MCP clients write straight to the live site instead of a draft workspace that an editor reviews first. Set it back to workspace unless live writes are intended: Extension Configuration → AI Suite → MCP → Write mode.</source>
+                <target>mcpWriteMode steht auf live, MCP-Clients schreiben also direkt auf die Live-Seite statt in einen Entwurfs-Workspace, den eine Redakteurin oder ein Redakteur vorher prüft. Stelle den Wert auf workspace zurück, sofern Live-Schreibzugriffe nicht gewollt sind: Extension-Konfiguration → AI Suite → MCP → Write mode.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rateLimitOff.title">
+                <source>MCP rate limit</source>
+                <target>MCP: Rate-Limit</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rateLimitOff.value">
+                <source>No rate limit per token</source>
+                <target>Kein Rate-Limit pro Token</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rateLimitOff.message">
+                <source>mcpRateLimitRequests is 0, so a single access token can send any number of requests. A leaked token or a looping agent is then limited by nothing. Set a limit, the default is 100 requests per minute: Extension Configuration → AI Suite → MCP → Rate limit.</source>
+                <target>mcpRateLimitRequests ist 0, ein einzelner Access-Token kann also beliebig viele Anfragen senden. Ein abgeflossener Token oder ein Agent in einer Schleife wird dann durch nichts gebremst. Setze ein Limit, der Standard sind 100 Anfragen pro Minute: Extension-Konfiguration → AI Suite → MCP → Rate limit.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rawHtml.title">
+                <source>MCP raw HTML</source>
+                <target>MCP: Raw-HTML</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rawHtml.value">
+                <source>Raw HTML writes allowed</source>
+                <target>Raw-HTML-Schreibzugriffe erlaubt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.rawHtml.message">
+                <source>mcpAllowRawHtmlWrite is on, so MCP clients may write HTML and JavaScript into code editor fields, which the frontend renders unfiltered. Switch it off unless an AI really has to maintain such fields: Extension Configuration → AI Suite → MCP → Allow raw HTML.</source>
+                <target>mcpAllowRawHtmlWrite ist an, MCP-Clients dürfen also HTML und JavaScript in Code-Editor-Felder schreiben, die das Frontend ungefiltert ausgibt. Schalte die Option ab, sofern eine KI solche Felder nicht wirklich pflegen muss: Extension-Konfiguration → AI Suite → MCP → Allow raw HTML.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.http.title">
+                <source>MCP HTTP Security</source>
+                <target>MCP: HTTP-Sicherheit</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.http.value">
+                <source>HTTP allowed</source>
+                <target>HTTP erlaubt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.http.message">
+                <source>MCP is configured to accept unencrypted HTTP connections (mcpAllowHttp=1). This exposes Bearer tokens to network interception. Disable this setting in production: Extension Configuration → AI Suite → MCP → Allow HTTP.</source>
+                <target>MCP nimmt unverschlüsselte HTTP-Verbindungen an (mcpAllowHttp=1). Bearer-Tokens lassen sich so im Netzwerk mitlesen. Schalte die Einstellung im Produktivbetrieb ab: Extension-Konfiguration → AI Suite → MCP → Allow HTTP.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cors.title">
+                <source>MCP CORS Configuration</source>
+                <target>MCP: CORS-Konfiguration</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cors.value">
+                <source>No CORS origins configured</source>
+                <target>Keine CORS-Origins konfiguriert</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cors.message">
+                <source>MCP has no CORS origins configured. In production, this means no CORS headers are sent (same-origin only). If browser-based MCP clients need access, configure allowed origins in Extension Configuration → AI Suite → MCP.</source>
+                <target>Für MCP sind keine CORS-Origins konfiguriert. Im Produktivbetrieb werden deshalb keine CORS-Header gesendet (nur Same-Origin). Brauchen MCP-Clients im Browser Zugriff, trage die erlaubten Origins unter Extension-Konfiguration → AI Suite → MCP ein.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.redirect.title">
+                <source>MCP Redirect URI Security</source>
+                <target>MCP: Redirect-URI-Sicherheit</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.redirect.value">
+                <source>No external redirect URIs configured</source>
+                <target>Keine externen Redirect-URIs konfiguriert</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.redirect.message">
+                <source>Only localhost redirect URIs are allowed for OAuth. To allow external MCP clients, configure allowed redirect URIs in Extension Configuration → AI Suite → MCP.</source>
+                <target>Für OAuth sind nur Redirect-URIs auf localhost erlaubt. Für externe MCP-Clients trage die erlaubten Redirect-URIs unter Extension-Konfiguration → AI Suite → MCP ein.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.ok.title">
+                <source>MCP Security</source>
+                <target>MCP: Sicherheit</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.ok.value">
+                <source>Configuration looks good</source>
+                <target>Konfiguration in Ordnung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.ok.message">
+                <source>MCP security settings are properly configured.</source>
+                <target>Die Sicherheitseinstellungen von MCP sind korrekt konfiguriert.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.title">
+                <source>MCP Session Store</source>
+                <target>MCP: Session-Speicher</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.value">
+                <source>%d stored session file(s)</source>
+                <target>%d gespeicherte Session-Datei(en)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.exceeded">
+                <source>%1$d session files are stored in %2$s. Stateless MCP clients leave one behind per request. Schedule ai-suite-mcp:cleanup: it removes session files older than %3$d seconds.</source>
+                <target>In %2$s liegen %1$d Session-Dateien. Zustandslose MCP-Clients hinterlassen pro Anfrage eine. Plane ai-suite-mcp:cleanup ein: Es entfernt Session-Dateien, die älter als %3$d Sekunden sind.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.sessions.ok">
+                <source>Session files in %s are within the expected range. ai-suite-mcp:cleanup keeps them bounded.</source>
+                <target>Die Session-Dateien in %s liegen im erwarteten Rahmen. ai-suite-mcp:cleanup hält ihre Zahl begrenzt.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.title">
+                <source>MCP Environment</source>
+                <target>MCP: Umgebung</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.okValue">
+                <source>All requirements met</source>
+                <target>Alle Voraussetzungen erfüllt</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.okMessage">
+                <source>The PHP extensions %s are loaded and the MCP SDK is available.</source>
+                <target>Die PHP-Erweiterungen %s sind geladen und das MCP-SDK ist verfügbar.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.missingValue">
+                <source>Requirements missing</source>
+                <target>Voraussetzungen fehlen</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.missingExtensions">
+                <source>The PHP extension(s) %s are missing. The MCP server cannot answer requests until they are installed.</source>
+                <target>Die PHP-Erweiterung(en) %s fehlen. Der MCP-Server kann keine Anfragen beantworten, bis sie installiert sind.</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.environment.missingSdk">
+                <source>The MCP SDK (logiscape/mcp-sdk-php) cannot be loaded. Composer installations require the package, classic mode installations ship it in Resources/Private/PHP/ComposerVendor of ai_suite_mcp, so an incompletely uploaded extension is the usual cause.</source>
+                <target>Das MCP-SDK (logiscape/mcp-sdk-php) lässt sich nicht laden. Composer-Installationen verlangen das Paket, Installationen im Classic Mode bringen es in Resources/Private/PHP/ComposerVendor von ai_suite_mcp mit. Meist ist die Extension unvollständig hochgeladen.</target>
             </trans-unit>
         </body>
     </file>
