@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Record;
 
-use AutoDudes\AiSuiteMcp\Domain\Repository\RecordRepository;
 use AutoDudes\AiSuiteMcp\Mcp\FormEngine\TcaDatabaseRecordForReading;
+use AutoDudes\AiSuiteMcp\Mcp\Service\ChildRecordTemplate;
 use AutoDudes\AiSuiteMcp\Mcp\Service\FieldCurationService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\RecordSelectionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RelationResolutionService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
@@ -19,7 +20,6 @@ use TYPO3\CMS\Backend\Form\FormDataCompiler;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\ServerRequest;
-use TYPO3\CMS\Core\Type\Bitmask\Permission;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class ReadRecordTool extends AbstractDataTool
@@ -47,11 +47,12 @@ class ReadRecordTool extends AbstractDataTool
 
     public function __construct(
         ToolContext $mcpToolContext,
-        private readonly RecordRepository $recordRepository,
         private readonly FieldCurationService $fieldCuration,
         private readonly RelationResolutionService $relationResolver,
         private readonly TranslationFieldAliasNormalizer $translationAliasNormalizer,
         private readonly WorkspaceRecordService $workspaceRecords,
+        private readonly ChildRecordTemplate $childRecordTemplate,
+        private readonly RecordSelectionService $recordSelection,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -127,13 +128,7 @@ class ReadRecordTool extends AbstractDataTool
         }
 
         if (null === $uid && null === $pid && null === $rootPageId && empty($filters)) {
-            return $this->textError(
-                'Provide uid, pid, rootPageId, or filters. rootPageId reads a whole subtree in one call, '
-                .'and a filter of "" finds records whose field is empty, e.g. {"seo_title": ""}.',
-            );
-        }
-        if (null !== $pid && null !== $rootPageId) {
-            return $this->textError('Give either pid (records on that one page) or rootPageId (that page and everything below it), not both.');
+            return $this->textError(RecordSelectionService::MISSING_SCOPE);
         }
 
         $this->recordAccess->validateTableReadAccess($table);
@@ -165,86 +160,17 @@ class ReadRecordTool extends AbstractDataTool
             ));
         }
 
-        $allowedPids = null;
-        $extraWhere = null;
-        if (null !== $pid) {
-            $this->recordAccess->assertPagePerm($pid, Permission::PAGE_SHOW);
-            $beUser = $this->getBackendUser();
-            if ('pages' === $table && null !== $beUser && !$beUser->isAdmin()) {
-                $extraWhere = $beUser->getPagePermsClause(Permission::PAGE_SHOW);
-            }
+        $selection = $this->recordSelection->select($table, $pid, $rootPageId, $filters, $limit + 1, $offset);
+        if (is_string($selection)) {
+            return $this->textError($selection);
         }
-        $pageScopeColumn = 'pid';
-        if (null !== $rootPageId) {
-            $this->recordAccess->assertPagePerm($rootPageId, Permission::PAGE_SHOW);
-
-            $allowedPids = $this->recordAccess->getReadablePageIds($rootPageId);
-            if ([] === $allowedPids) {
-                return $this->textError(sprintf(
-                    'Page %d does not exist or is not readable for you, so the read has no scope. '
-                    .'Use readPageTree to find a page you can reach.',
-                    $rootPageId,
-                ));
-            }
-
-            // getSearchableWebmounts() subtracts hideRecords.pages; permission was asserted above.
-            if (!in_array($rootPageId, $allowedPids, true)) {
-                $allowedPids[] = $rootPageId;
-            }
-
-            $pageScopeColumn = 'pages' === $table ? 'uid' : 'pid';
-        } elseif (null === $pid) {
-            $beUser = $this->getBackendUser();
-            if (null !== $beUser && !$beUser->isAdmin()) {
-                $ignoresRootLevelRestriction = $this->tcaCompatibilityService->ignoresRootLevelRestriction($table);
-                if (!$this->tcaCompatibilityService->canExistOnPages($table)) {
-                    if (!$ignoresRootLevelRestriction) {
-                        return $this->textError(sprintf(
-                            '%s records live at the root level of the installation, which only administrators can read.',
-                            $table,
-                        ));
-                    }
-                } else {
-                    $allowedPids = $this->recordAccess->getReadablePageIds(0, 99);
-                    if (empty($allowedPids)) {
-                        return $this->textResult(sprintf('No %s records accessible in your webmounts.', $table));
-                    }
-                    if ('pages' === $table) {
-                        $extraWhere = $beUser->getPagePermsClause(Permission::PAGE_SHOW);
-                        $pageScopeColumn = 'uid';
-                    } elseif ($ignoresRootLevelRestriction && $this->tcaCompatibilityService->isRootLevel($table)) {
-                        $allowedPids[] = 0;
-                    }
-                }
-            }
+        if (null !== $selection['note']) {
+            return $this->textResult($selection['note']);
         }
 
-        $sanitizedFilters = [];
-        foreach ($filters as $field => $value) {
-            if (is_string($field) && $this->recordAccess->canAccessField($table, $field)) {
-                $sanitizedFilters[$field] = $value;
-            }
-        }
-
-        $uids = $this->recordRepository->findUidsByCriteria(
-            $table,
-            $pid,
-            $sanitizedFilters,
-            $allowedPids,
-            $extraWhere,
-            $this->tcaCompatibilityService->getSortField($table),
-            $limit + 1,
-            $offset,
-            $pageScopeColumn,
-        );
-
-        $uids = $this->visibleUids($table, $uids);
-
-        $context = match (true) {
-            null !== $pid => sprintf('on page %d', $pid),
-            null !== $rootPageId => sprintf('in the subtree of page %d (%d pages)', $rootPageId, count($allowedPids ?? [])),
-            default => 'matching filters',
-        };
+        $uids = $selection['uids'];
+        $sanitizedFilters = $selection['filters'];
+        $context = $selection['context'];
 
         if (empty($uids)) {
             return $this->textResult(sprintf('No %s records %s.', $table, $context));
@@ -318,21 +244,6 @@ class ReadRecordTool extends AbstractDataTool
         return array_values(array_unique(array_filter($names, static fn (string $n): bool => '' !== $n)));
     }
 
-    /**
-     * @param list<int> $uids
-     *
-     * @return list<int>
-     */
-    private function visibleUids(string $table, array $uids): array
-    {
-        $visible = [];
-        foreach ($this->workspaceRecords->overlay($table, $uids) as $row) {
-            $visible[] = (int) ($row['uid'] ?? 0);
-        }
-
-        return $visible;
-    }
-
     private function loadAndFormatRecord(string $table, int $uid, ?int $maxLength, bool $raw, bool $includeEmpty, bool $includeSystem, bool $listMode): ?string
     {
         if ($raw) {
@@ -399,6 +310,7 @@ class ReadRecordTool extends AbstractDataTool
         $text = $this->headerLine($table, $uid, (string) $label, $rawRecord);
 
         $htmlStripped = false;
+        $fileFields = [];
         foreach ($columnsToProcess as $field) {
             if (!$this->recordAccess->canAccessField($table, $field)) {
                 continue;
@@ -427,6 +339,10 @@ class ReadRecordTool extends AbstractDataTool
 
             if (!$listMode) {
                 $value = $this->relationResolver->resolveFileField($table, (string) $field, $rawRecord) ?? $value;
+                $config = $this->tcaCompatibilityService->getFieldConfiguration($table, (string) $field);
+                if ('file' === ($config['type'] ?? '') || ('inline' === ($config['type'] ?? '') && '' !== (string) ($config['foreign_selector'] ?? ''))) {
+                    $fileFields[(string) $field] = $config;
+                }
             }
 
             $display = $this->outputFormatter->displayValue($value, $maxLength);
@@ -439,11 +355,31 @@ class ReadRecordTool extends AbstractDataTool
             $text .= $this->renderWorkspaceState($table, $rawRecord);
         }
         $text .= $this->renderContainerContext($table, $databaseRow);
+        $text .= $this->renderFileFieldHint($table, $uid, (int) ($rawRecord['pid'] ?? 0), $fileFields);
         if ($htmlStripped) {
             $text .= self::HTML_STRIPPED_NOTE;
         }
 
         return $text;
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $fileFields
+     */
+    private function renderFileFieldHint(string $table, int $uid, int $pid, array $fileFields): string
+    {
+        if ([] === $fileFields) {
+            return '';
+        }
+
+        $names = array_keys($fileFields);
+        $fieldname = 1 === count($names) ? $names[0] : '<one of: '.implode(', ', $names).'>';
+
+        return sprintf(
+            "  To add a file to %s, write a record of its own (nesting it into the field works only when this record is created): %s\n",
+            implode(', ', array_map(static fn (string $name): string => '`'.$name.'`', $names)),
+            $this->childRecordTemplate->render($table, $uid, $pid, reset($fileFields), $fieldname),
+        );
     }
 
     private function formDataRequest(): ServerRequestInterface

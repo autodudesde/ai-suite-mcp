@@ -9,13 +9,42 @@ use AutoDudes\AiSuiteMcp\Mcp\Exception\InsufficientPermissionException;
 use AutoDudes\AiSuiteMcp\Mcp\Exception\InvalidParameterException;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
+use TYPO3\CMS\Core\Site\SiteFinder;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class RecordPreviewService
 {
     private const DEFAULT_MAX_VALUE_LENGTH = 300;
 
     private const MAX_TITLE_LENGTH = 70;
+
+    private const CHECKBOX_STATES = [
+        'LLL:EXT:core/Resources/Private/Language/locallang_common.xlf:no',
+        'LLL:EXT:core/Resources/Private/Language/locallang_common.xlf:yes',
+    ];
+
+    private const ALL_LANGUAGES = 'LLL:EXT:core/Resources/Private/Language/locallang_general.xlf:LGL.allLanguages';
+
+    private const DEFAULT_LANGUAGE = 'LLL:EXT:core/Resources/Private/Language/locallang_general.xlf:LGL.default_value';
+
+    private const RELATION_POINTER_KEYS = ['foreign_field', 'foreign_table_field', 'foreign_sortby'];
+
+    private const HIDDEN_CTRL_KEYS = ['sortby', 'transOrigPointerField', 'translationSource', 'transOrigDiffSourceField'];
+
+    private const FLEXFORM_STRUCTURE_KEYS = ['data', 'lDEF', 'el', 'vDEF'];
+
+    /**
+     * @var array<int, string>
+     */
+    private array $batchTitles = [];
+
+    /**
+     * @var array<string, array<string, true>>
+     */
+    private array $hiddenFieldsByTable = [];
+
+    private ?int $currentPid = null;
 
     public function __construct(
         private readonly RecordAccessService $recordAccess,
@@ -24,6 +53,9 @@ class RecordPreviewService
         private readonly DataHandlerSanitizerService $sanitizer,
         private readonly RecordTypeAliasNormalizer $typeAliasNormalizer,
         private readonly TranslationFieldAliasNormalizer $translationAliasNormalizer,
+        private readonly RelationResolutionService $relations,
+        private readonly NestedChildExpanderService $nestedChildExpander,
+        private readonly SiteFinder $siteFinder,
         private readonly LoggerInterface $logger,
     ) {}
 
@@ -35,6 +67,13 @@ class RecordPreviewService
     public function describeWrite(array $records, int $maxValueLength = self::DEFAULT_MAX_VALUE_LENGTH): array
     {
         $records = $this->typeAliasNormalizer->normalize($records);
+
+        $this->batchTitles = [];
+        foreach (array_values($records) as $index => $record) {
+            if (is_array($record) && is_array($record['fields'] ?? null)) {
+                $this->batchTitles[$index] = $this->recordTitle((string) ($record['table'] ?? ''), $record['fields']);
+            }
+        }
 
         $described = [];
         foreach ($records as $record) {
@@ -80,6 +119,27 @@ class RecordPreviewService
     }
 
     /**
+     * @param array<string, mixed> $fields
+     */
+    public function labelFor(string $table, array $fields): string
+    {
+        if ('' === $table) {
+            return '';
+        }
+
+        $labelField = $this->tcaCompatibilityService->getLabelField($table);
+        $labelValue = $fields[$labelField] ?? null;
+        if (is_scalar($labelValue) && '' !== (string) $labelValue) {
+            $titles = $this->relationTitles($table, $labelField, (string) $labelValue, $this->fieldConfiguration($table, $labelField));
+            if (null !== $titles) {
+                return $titles;
+            }
+        }
+
+        return $this->recordTitle($table, $fields);
+    }
+
+    /**
      * @param array<string, mixed> $record
      *
      * @return array<string, mixed>
@@ -112,6 +172,7 @@ class RecordPreviewService
             $fields = $this->translationAliasNormalizer->normalizeFields($table, $fields)['fields'];
             $fields = $this->recordAccess->filterAccessibleFields($table, $fields);
             $this->recordAccess->assertKnownRecordType($table, $fields);
+            $this->nestedChildExpander->validate($record);
         } catch (InsufficientPermissionException $e) {
             $this->logger->warning('RecordPreview: skipping record, insufficient permission', [
                 'table' => $table,
@@ -168,6 +229,7 @@ class RecordPreviewService
         $descriptor['pageLabel'] = $this->pageLabel(
             is_int($descriptor['pid']) ? $descriptor['pid'] : null,
         );
+        $this->currentPid = is_int($descriptor['pid']) ? $descriptor['pid'] : null;
         $descriptor['fields'] = $this->describeFields($table, $report['data'], $existing, $maxValueLength);
         $descriptor['translations'] = $this->plannedTranslationLanguages($record);
 
@@ -185,7 +247,10 @@ class RecordPreviewService
         $described = [];
         foreach ($sanitized as $field => $value) {
             $field = (string) $field;
-            $new = $this->displayValue($table, $field, $value, $maxValueLength);
+            if (isset($this->hiddenFields($table)[$field])) {
+                continue;
+            }
+            $new = $this->displayValue($table, $field, $this->resultingFlexForm($table, $field, $value, $existing), $maxValueLength);
 
             $old = null;
             if (null !== $existing && array_key_exists($field, $existing)) {
@@ -204,6 +269,21 @@ class RecordPreviewService
         }
 
         return $described;
+    }
+
+    /**
+     * @param null|array<string, mixed> $existing
+     */
+    private function resultingFlexForm(string $table, string $field, mixed $value, ?array $existing): mixed
+    {
+        $stored = $existing[$field] ?? null;
+        if (!is_array($value) || !is_string($stored) || 'flex' !== ($this->fieldConfiguration($table, $field)['type'] ?? '')) {
+            return $value;
+        }
+
+        $storedValues = GeneralUtility::xml2array($stored);
+
+        return is_array($storedValues) ? array_replace_recursive($storedValues, $value) : $value;
     }
 
     /**
@@ -233,15 +313,25 @@ class RecordPreviewService
      */
     private function displayValue(string $table, string $field, mixed $value, int $maxValueLength): array
     {
-        if (is_array($value)) {
-            $raw = (string) json_encode($value);
-            $text = sprintf('%d nested item(s)', count($value));
+        $config = $this->fieldConfiguration($table, $field);
+        $isFlexForm = 'flex' === ($config['type'] ?? '');
 
-            return ['text' => $this->truncate($text, $maxValueLength)['text'], 'raw' => $raw, 'truncated' => false];
+        if (is_array($value)) {
+            $text = $isFlexForm ? $this->flexFormText($value) : $this->childrenText($config, $value);
+            $truncated = $this->truncate($text, $maxValueLength);
+
+            return ['text' => $truncated['text'], 'raw' => (string) json_encode($value), 'truncated' => $truncated['truncated']];
         }
 
         $raw = is_scalar($value) || null === $value ? (string) $value : (string) json_encode($value);
-        $text = $this->resolveItemLabel($table, $field, $raw);
+        $text = match (true) {
+            1 === preg_match('/^\$ref:(\d+)$/', $raw, $ref) => $this->batchReferenceText((int) $ref[1]),
+            $isFlexForm && str_starts_with(ltrim($raw), '<') => $this->flexFormText(GeneralUtility::xml2array($raw)),
+            in_array($config['type'] ?? '', ['inline', 'file'], true) && is_numeric($raw) => 0 === (int) $raw ? '' : sprintf('%d item(s)', (int) $raw),
+            is_numeric($raw) && $field === $this->tcaCompatibilityService->getLanguageFieldName($table) => $this->languageTitle((int) $raw),
+            $this->isSingleCheckbox($config) => $this->checkboxText($config, $raw),
+            default => $this->relationTitles($table, $field, $raw, $config) ?? $this->resolveItemLabel($table, $field, $raw),
+        };
 
         if (str_contains($text, '<')) {
             $text = $this->sanitizer->toPlainText($text);
@@ -250,6 +340,175 @@ class RecordPreviewService
         $truncated = $this->truncate($text, $maxValueLength);
 
         return ['text' => $truncated['text'], 'raw' => $raw, 'truncated' => $truncated['truncated']];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fieldConfiguration(string $table, string $field): array
+    {
+        try {
+            return $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function isSingleCheckbox(array $config): bool
+    {
+        return 'check' === ($config['type'] ?? '') && count(is_array($config['items'] ?? null) ? $config['items'] : [[]]) <= 1;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function checkboxText(array $config, string $value): string
+    {
+        if ('' === $value || !is_numeric($value)) {
+            return $value;
+        }
+
+        $item = is_array($config['items'][0] ?? null) ? $config['items'][0] : [];
+        $state = (bool) ((int) $value & 1);
+        if (true === ($item['invertStateDisplay'] ?? false)) {
+            $state = !$state;
+        }
+
+        return $this->tcaLabel->resolveLabel(self::CHECKBOX_STATES[(int) $state]);
+    }
+
+    private function batchReferenceText(int $index): string
+    {
+        $title = $this->batchTitles[$index] ?? '';
+
+        return '' === $title ? sprintf('new record #%d of this batch', $index + 1) : sprintf('%s (new)', $title);
+    }
+
+    /**
+     * @param array<mixed>         $children
+     * @param array<string, mixed> $config
+     */
+    private function childrenText(array $config, array $children): string
+    {
+        $foreignTable = (string) ($config['foreign_table'] ?? '');
+        $labels = [];
+        foreach ($children as $child) {
+            if (!is_array($child)) {
+                $labels[] = is_scalar($child) ? '#'.$child : '';
+
+                continue;
+            }
+            $fields = is_array($child['fields'] ?? null) ? $child['fields'] : $child;
+            $labels[] = $this->labelFor($foreignTable, $fields);
+        }
+        $labels = array_values(array_filter($labels, static fn (string $label): bool => '' !== $label));
+
+        return [] === $labels ? sprintf('%d item(s)', count($children)) : implode(', ', $labels);
+    }
+
+    /**
+     * @param array<mixed>|string $flexForm
+     */
+    private function flexFormText(array|string $flexForm): string
+    {
+        if (!is_array($flexForm)) {
+            return '';
+        }
+
+        $values = [];
+        $this->collectFlexFormValues($flexForm, '', $values);
+
+        $pairs = [];
+        foreach ($values as $name => $value) {
+            $pairs[] = sprintf('%s: %s', $name, $value);
+        }
+
+        return implode(' · ', $pairs);
+    }
+
+    /**
+     * @param array<mixed>          $node
+     * @param array<string, string> $values
+     */
+    private function collectFlexFormValues(array $node, string $name, array &$values): void
+    {
+        foreach ($node as $key => $child) {
+            $key = (string) $key;
+            $childName = in_array($key, self::FLEXFORM_STRUCTURE_KEYS, true) || is_numeric($key) ? $name : $key;
+            if ('vDEF' === $key && is_scalar($child)) {
+                $values[(string) preg_replace('/^settings\./', '', $name)] = trim(strip_tags((string) $child));
+            } elseif (is_array($child)) {
+                $this->collectFlexFormValues($child, $childName, $values);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function relationTitles(string $table, string $field, string $raw, array $config): ?string
+    {
+        if ('' === $raw || [] === $config || !$this->tcaCompatibilityService->isRelationalFieldConfig($config)) {
+            return null;
+        }
+
+        return $this->relations->resolveTitles($table, $field, $raw);
+    }
+
+    private function languageTitle(int $languageId): string
+    {
+        if (-1 === $languageId) {
+            return $this->tcaLabel->resolveLabel(self::ALL_LANGUAGES);
+        }
+
+        try {
+            return $this->siteFinder->getSiteByPageId((int) $this->currentPid)->getLanguageById($languageId)->getTitle();
+        } catch (\Throwable) {
+            return 0 === $languageId ? $this->tcaLabel->resolveLabel(self::DEFAULT_LANGUAGE) : (string) $languageId;
+        }
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function hiddenFields(string $table): array
+    {
+        if (isset($this->hiddenFieldsByTable[$table])) {
+            return $this->hiddenFieldsByTable[$table];
+        }
+
+        $hidden = [];
+
+        try {
+            $ctrl = $this->tcaCompatibilityService->getRawConfiguration($table);
+            foreach (self::HIDDEN_CTRL_KEYS as $key) {
+                if (is_string($ctrl[$key] ?? null) && '' !== $ctrl[$key]) {
+                    $hidden[$ctrl[$key]] = true;
+                }
+            }
+            foreach ($this->tcaCompatibilityService->getAllTableNames() as $parentTable) {
+                foreach ($this->tcaCompatibilityService->getColumnConfigs($parentTable) as $config) {
+                    if (!in_array($config['type'] ?? '', ['inline', 'file'], true) || $table !== ($config['foreign_table'] ?? '')) {
+                        continue;
+                    }
+                    foreach (self::RELATION_POINTER_KEYS as $key) {
+                        if (is_string($config[$key] ?? null) && '' !== $config[$key]) {
+                            $hidden[$config[$key]] = true;
+                        }
+                    }
+                    foreach (array_keys(is_array($config['foreign_match_fields'] ?? null) ? $config['foreign_match_fields'] : []) as $matchField) {
+                        $hidden[(string) $matchField] = true;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('RecordPreview: could not derive the relation pointer fields', ['table' => $table, 'reason' => $e->getMessage()]);
+        }
+
+        return $this->hiddenFieldsByTable[$table] = $hidden;
     }
 
     private function resolveItemLabel(string $table, string $field, string $value): string

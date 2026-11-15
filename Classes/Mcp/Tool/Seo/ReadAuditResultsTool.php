@@ -8,6 +8,7 @@ use AutoDudes\AiSuite\Domain\Repository\AuditResultRepository;
 use AutoDudes\AiSuite\Utility\AuditScoreUtility;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\AuditIssueLines;
 use Mcp\Types\CallToolResult;
 use TYPO3\CMS\Core\Type\Bitmask\Permission;
 
@@ -23,6 +24,8 @@ class ReadAuditResultsTool extends AbstractTool
         'cluster' => 'Topic clusters',
         'competitors' => 'Competitors',
     ];
+
+    private const MAX_ANALYSIS_CHARS = 8000;
 
     protected ?string $requiredScope = 'mcp:read';
     protected bool $readOnlyHint = true;
@@ -112,11 +115,16 @@ class ReadAuditResultsTool extends AbstractTool
     {
         $stored = $this->auditResults->findLatest($pageId, $auditType, $languageUid);
         if (null === $stored) {
-            return $this->textError(sprintf(
-                'No "%s" audit has been stored for page %d in this language. Starting one costs credits (3, auditContent 2 to 3).',
+            return $this->structuredResult(sprintf(
+                'No "%s" audit has been stored for page %d in this language yet. Starting one is a separate request and costs credits (3, auditContent 2 to 3).',
                 $auditType,
                 $pageId,
-            ));
+            ), [
+                'pageId' => $pageId,
+                'auditType' => $auditType,
+                'languageUid' => $languageUid,
+                'stored' => false,
+            ]);
         }
         $text = sprintf(
             "## Stored %s audit for page %d (run %s)\n%s",
@@ -125,6 +133,7 @@ class ReadAuditResultsTool extends AbstractTool
             date('Y-m-d H:i', $stored['runTs']),
             $this->overviewLine($auditType, $stored),
         );
+        $text .= "\n".$this->findingsOf($auditType, $stored['result']);
 
         return $this->structuredResult($text, [
             'pageId' => $pageId,
@@ -134,6 +143,41 @@ class ReadAuditResultsTool extends AbstractTool
             'keyword' => $stored['keyword'],
             'result' => $stored['result'],
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     */
+    private function findingsOf(string $auditType, array $result): string
+    {
+        if (!in_array($auditType, ['seo', 'a11y'], true)) {
+            return $this->analysisOf($result);
+        }
+
+        $audit = is_array($result['audit'] ?? null) ? $result['audit'] : [];
+        $issues = is_array($audit['issues'] ?? null) ? $audit['issues'] : [];
+        $fixedIds = array_values(array_map('strval', is_array($result['fixedIssues'] ?? null) ? $result['fixedIssues'] : []));
+        $lines = 'a11y' === $auditType ? AuditIssueLines::accessibilityGroups($audit['a11y']['topIssues'] ?? null) : [];
+        array_push($lines, ...AuditIssueLines::findings($issues, $fixedIds));
+        if (count($issues) > AuditIssueLines::MAX_FINDINGS) {
+            $lines[] = sprintf('%d more findings are listed in the Audit module.', count($issues) - AuditIssueLines::MAX_FINDINGS);
+        }
+        $lines[] = 'The audit measured the published page at that time. A change shows in it only after publishing and a new audit.';
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     */
+    private function analysisOf(array $result): string
+    {
+        $json = (string) json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (mb_strlen($json) <= self::MAX_ANALYSIS_CHARS) {
+            return $json;
+        }
+
+        return mb_substr($json, 0, self::MAX_ANALYSIS_CHARS)."\n[Cut here. The full result is in the Audit module.]";
     }
 
     /**

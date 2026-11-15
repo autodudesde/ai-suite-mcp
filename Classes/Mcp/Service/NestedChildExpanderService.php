@@ -19,6 +19,8 @@ final class NestedChildExpanderService
 
     public function __construct(
         private readonly TcaCompatibilityService $tcaCompatibilityService,
+        private readonly RecordAccessService $recordAccess,
+        private readonly ChildRecordTemplate $childRecordTemplate,
     ) {}
 
     /**
@@ -62,6 +64,11 @@ final class NestedChildExpanderService
         }
 
         return $expanded;
+    }
+
+    public function validate(mixed $record): void
+    {
+        $this->planRecord($record);
     }
 
     /**
@@ -132,12 +139,16 @@ final class NestedChildExpanderService
 
             if (isset($record['uid'])) {
                 throw new InvalidParameterException(sprintf(
-                    'Nested children in `%s` are only expanded when the parent is created. To attach children to the existing record %s:%d, write each child as its own record with `%s`: %d and its own `pid`.',
+                    'Nested children in `%s` are only expanded when the parent is created. To attach one to the existing record %s:%d, write it as its own record in `records`: %s',
                     $field,
                     $table,
                     (int) $record['uid'],
-                    $parentField,
-                    (int) $record['uid'],
+                    $this->childRecordTemplate->render(
+                        $table,
+                        (int) $record['uid'],
+                        (int) ($this->recordAccess->assertRecordEditAccess($table, (int) $record['uid'])['pid'] ?? 0),
+                        $config,
+                    ),
                 ));
             }
             if (!isset($record['pid'])) {

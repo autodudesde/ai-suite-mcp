@@ -57,6 +57,23 @@ class RelationResolutionService
         return $this->processedFallback($table, $field, $rawValue, $fullRow);
     }
 
+    public function resolveTitles(string $table, string $field, mixed $rawValue): ?string
+    {
+        try {
+            $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $foreignTable = [] === $config ? null : $this->resolveForeignTable($config);
+        $uids = null === $foreignTable ? [] : $this->extractUids($rawValue);
+        if (null === $foreignTable || [] === $uids) {
+            return null;
+        }
+
+        return implode(', ', array_map(fn (int $uid): string => $this->renderSingleTitle($foreignTable, $uid, false), $uids));
+    }
+
     public function isEmptyRelation(string $table, string $field, mixed $rawValue): bool
     {
         if (\is_array($rawValue) || !\is_scalar($rawValue)) {
@@ -191,9 +208,9 @@ class RelationResolutionService
         return implode(', ', $rendered);
     }
 
-    private function renderSingleTitle(string $foreignTable, int $uid): string
+    private function renderSingleTitle(string $foreignTable, int $uid, bool $withUid = true): string
     {
-        $cacheKey = $foreignTable.':'.$uid;
+        $cacheKey = $foreignTable.':'.$uid.($withUid ? '' : ':plain');
         if (isset($this->titleCache[$cacheKey])) {
             return $this->titleCache[$cacheKey];
         }
@@ -208,9 +225,11 @@ class RelationResolutionService
         }
 
         $title = trim((string) BackendUtility::getRecordTitle($foreignTable, $record));
-        $rendered = '' !== $title
-            ? sprintf('%s (%d)', $title, $uid)
-            : sprintf('#%d', $uid);
+        $rendered = match (true) {
+            '' === $title => sprintf('#%d', $uid),
+            $withUid => sprintf('%s (%d)', $title, $uid),
+            default => $title,
+        };
 
         return $this->titleCache[$cacheKey] = $rendered;
     }

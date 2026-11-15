@@ -223,8 +223,8 @@ class BatchTranslatePageTool extends AbstractAiTool
         }
 
         $text .= sprintf(
-            "\nProcessing happens in the background, and nothing is written yet. Poll "
-            .'**readTaskStatus(taskId: "%s")**; once it reports finished, **applyTaskResults(taskId: "%s")** '
+            "\nProcessing happens in the background, and nothing is written yet. When the "
+            .'user wants the result now, check **readTaskStatus(taskId: "%s")** once; when it reports finished, **applyTaskResults(taskId: "%s")** '
             .'writes the translations.',
             $parentUuid,
             $parentUuid,

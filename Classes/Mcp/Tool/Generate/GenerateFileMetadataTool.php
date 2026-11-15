@@ -163,7 +163,7 @@ class GenerateFileMetadataTool extends AbstractAiTool
         $text = "Available models:\n\n";
         $i = 1;
         foreach ($filtered as $library) {
-            $text .= sprintf("%d. %s\n", $i, $library['model_identifier']);
+            $text .= $this->modelListLine($i, $library);
             ++$i;
         }
         $text .= "\nEach generation costs at least one credit.";

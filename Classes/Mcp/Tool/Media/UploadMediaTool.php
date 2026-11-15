@@ -60,7 +60,7 @@ class UploadMediaTool extends AbstractTool
             'properties' => [
                 'media' => [
                     'type' => 'array',
-                    'description' => 'The media items to bring into FAL. Each: {url?, content?, fileName?, targetFolder?, onConflict?, createFolder?, title?, alternative?, description?}. Exactly one source per item: `url` for a remote http(s) file (downloaded), `content` for base64 / a data-URI (direct upload, needs fileName), or a YouTube/Vimeo link in `url` (stored as an online-media reference, not downloaded). Never give both url and content. Prefer url or an online-media link for videos — base64 is impractical for large files.',
+                    'description' => 'The media items to bring into FAL. Each: {url?, content?, fileName?, targetFolder?, onConflict?, createFolder?, allowSameNameFolder?, title?, alternative?, description?}. Exactly one source per item: `url` for a remote http(s) file (downloaded), `content` for base64 / a data-URI (direct upload, needs fileName), or a YouTube/Vimeo link in `url` (stored as an online-media reference, not downloaded). Never give both url and content. Prefer url or an online-media link for videos — base64 is impractical for large files.',
                     'items' => ['type' => 'object'],
                 ],
                 'targetFolder' => [
@@ -77,6 +77,11 @@ class UploadMediaTool extends AbstractTool
                     'type' => 'boolean',
                     'default' => false,
                     'description' => 'Create a missing target folder (and missing parents) instead of failing. Default for all items without their own createFolder.',
+                ],
+                'allowSameNameFolder' => [
+                    'type' => 'boolean',
+                    'default' => false,
+                    'description' => 'Only when the editor explicitly asked for a second folder of the same name: create it although one exists at the storage root or in the default upload folder. Default for all items without their own allowSameNameFolder.',
                 ],
             ],
             'required' => ['media'],
@@ -96,12 +101,13 @@ class UploadMediaTool extends AbstractTool
             : $config['defaultFolder'];
         $batchConflictMode = $this->preflight->resolveConflictMode($params['onConflict'] ?? 'rename');
         $batchCreateFolder = (bool) ($params['createFolder'] ?? false);
+        $batchAllowSameNameFolder = (bool) ($params['allowSameNameFolder'] ?? false);
 
         /** @var list<Content> $previews */
         $previews = [];
 
-        $outcome = $this->batchResultBuilder->build($media, 'media item(s)', function (mixed $item) use (&$previews, $batchFolder, $batchConflictMode, $batchCreateFolder, $config): array {
-            $plan = $this->preflight->plan($item, $batchFolder, $batchConflictMode, $batchCreateFolder);
+        $outcome = $this->batchResultBuilder->build($media, 'media item(s)', function (mixed $item) use (&$previews, $batchFolder, $batchConflictMode, $batchCreateFolder, $batchAllowSameNameFolder, $config): array {
+            $plan = $this->preflight->plan($item, $batchFolder, $batchConflictMode, $batchCreateFolder, $batchAllowSameNameFolder);
             $stored = $this->processItem($plan, (array) $item, $config);
             $file = $stored->file;
 

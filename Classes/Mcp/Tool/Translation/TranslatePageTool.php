@@ -193,7 +193,7 @@ class TranslatePageTool extends AbstractTranslateTool implements SelfTranslating
             );
         }
 
-        $this->refreshTranslatedPageSlugs($cleanedResults);
+        $this->refreshTranslatedSlugs($cleanedResults);
 
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: Page %d → %s\n\n", $pageId, $targetLanguage);

@@ -254,8 +254,8 @@ class BatchGenerateFileMetadataTool extends AbstractAiTool
         }
 
         $text .= sprintf(
-            "\nProcessing happens in the background, and nothing is written yet. Poll "
-            .'**readTaskStatus(taskId: "%s")**; once it reports finished, read the suggestions with '
+            "\nProcessing happens in the background, and nothing is written yet. When the "
+            .'user wants the result now, check **readTaskStatus(taskId: "%s")** once; when it reports finished, read the suggestions with '
             .'**readTaskResults(taskId: "%s")** and persist the ones you keep with **writeRecords**.',
             $parentUuid,
             $parentUuid,

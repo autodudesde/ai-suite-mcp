@@ -7,6 +7,7 @@ namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Media;
 use AutoDudes\AiSuiteMcp\Domain\Repository\SysFileReferenceRepository;
 use AutoDudes\AiSuiteMcp\Mcp\Enum\McpErrorType;
 use AutoDudes\AiSuiteMcp\Mcp\Service\BatchResultBuilderService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\MediaReferenceSource;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\Record\AbstractDataTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
@@ -21,6 +22,7 @@ class CopyMediaReferenceTool extends AbstractDataTool
         private readonly RecordWriteService $recordWrite,
         private readonly BatchResultBuilderService $batchResultBuilder,
         private readonly SysFileReferenceRepository $fileReferenceRepository,
+        private readonly MediaReferenceSource $mediaReferenceSource,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -62,20 +64,24 @@ class CopyMediaReferenceTool extends AbstractDataTool
         $targetUid = (int) $params['targetUid'];
         $targetField = (string) $params['targetField'];
 
-        $this->recordAccess->assertRecordReadAccess($sourceTable, $sourceUid);
         $this->recordAccess->validateTableWriteAccess($targetTable);
         $targetRecord = $this->recordAccess->assertRecordEditAccess($targetTable, $targetUid);
         $this->recordAccess->filterAccessibleFields($targetTable, [$targetField => '']);
+        $targetPid = 'pages' === $targetTable ? $targetUid : (int) ($targetRecord['pid'] ?? 0);
+
+        $refusal = $this->mediaReferenceSource->fileAsSourceRefusal($sourceTable, $sourceUid, $targetTable, $targetUid, $targetField, $targetPid);
+        if (null !== $refusal) {
+            return $this->textError($refusal);
+        }
+        $this->recordAccess->assertRecordReadAccess($sourceTable, $sourceUid);
 
         $references = $this->fileReferenceRepository->findReferences($sourceTable, $sourceUid, $sourceField);
         if ([] === $references) {
             return $this->textError(
-                sprintf('No file reference found on %s:%d field "%s".', $sourceTable, $sourceUid, $sourceField),
+                sprintf(MediaReferenceSource::NO_REFERENCE, $sourceTable, $sourceUid, $sourceField),
                 McpErrorType::NotFound,
             );
         }
-
-        $targetPid = 'pages' === $targetTable ? $targetUid : (int) ($targetRecord['pid'] ?? 0);
 
         return $this->batchResultBuilder->run(
             $references,

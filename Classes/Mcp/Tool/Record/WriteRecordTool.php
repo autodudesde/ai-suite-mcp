@@ -16,7 +16,7 @@ use AutoDudes\AiSuiteMcp\Mcp\Service\ContainerBatchValidator;
 use AutoDudes\AiSuiteMcp\Mcp\Service\NestedChildExpanderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordTypeAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\RecordWriteService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationExpanderService;
 use AutoDudes\AiSuiteMcp\Mcp\Service\TranslationFieldAliasNormalizer;
 use AutoDudes\AiSuiteMcp\Mcp\Service\WorkspaceRecordService;
@@ -46,7 +46,7 @@ class WriteRecordTool extends AbstractDataTool
         private readonly TranslationExpanderService $translationExpander,
         private readonly RecordRepository $recordRepository,
         private readonly WorkspaceRecordService $workspaceRecords,
-        private readonly TranslatedPageSlugService $translatedPageSlugs,
+        private readonly TranslatedSlugService $translatedSlugs,
         private readonly TranslationService $translationService,
     ) {
         parent::__construct($mcpToolContext);
@@ -380,7 +380,7 @@ class WriteRecordTool extends AbstractDataTool
 
         $result = $this->recordWrite->update($table, $uid, $fields);
         $createdUids[$zeroBased] = $uid;
-        $slugHint = 'pages' === $table && $this->translatedPageSlugs->refreshInheritedSlug($uid, $fields)
+        $slugHint = $this->translatedSlugs->refreshInheritedSlugs($table, $uid, $fields)
             ? ', slug rebuilt for this language'
             : '';
 
@@ -485,7 +485,7 @@ class WriteRecordTool extends AbstractDataTool
             $result = $this->recordWrite->update($table, $translationUid, $writeFields);
             $strippedHint = $this->strippedHint($result);
             $divergenceHint = $this->divergenceHint($table, $translationUid, $writeFields);
-            if ('pages' === $table && $this->translatedPageSlugs->refreshInheritedSlug($translationUid, $writeFields)) {
+            if ($this->translatedSlugs->refreshInheritedSlugs($table, $translationUid, $writeFields)) {
                 $slugHint = ', slug rebuilt for this language';
             }
         }

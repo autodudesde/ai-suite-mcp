@@ -174,7 +174,9 @@ class GenerateImageTool extends AbstractAiTool
             $content[] = $preview;
         }
 
-        return $this->appendCreditInfo(new CallToolResult($content), $result);
+        return $this->appendCreditInfo(new CallToolResult($content, structuredContent: [
+            'batch' => ['total' => 1, 'succeededUids' => [$newFile->getUid()], 'failedCount' => 0, 'skippedCount' => 0],
+        ]), $result);
     }
 
     private function listModels(): CallToolResult

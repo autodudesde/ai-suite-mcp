@@ -73,6 +73,34 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
         ];
     }
 
+    /**
+     * @param array<string, mixed> $params
+     *
+     * @return list<array{uid: int, value: string}>
+     */
+    public function plannedChanges(array $params): array
+    {
+        $childTable = (string) ($params['childTable'] ?? '');
+        $field = (string) ($params['field'] ?? '');
+        $this->dryRun = true;
+        $this->normalizeWhitespace = (bool) ($params['normalizeWhitespace'] ?? true);
+
+        $replacements = $this->resolveReplacements($params, (bool) ($params['all'] ?? false));
+        $this->recordAccess->validateTableWriteAccess($childTable);
+        $this->recordAccess->filterAccessibleFields($childTable, [$field => '']);
+
+        $planned = [];
+        foreach ($this->collectUids($params, $childTable) as $uid) {
+            try {
+                $planned[] = ['uid' => $uid, 'value' => $this->replacedValue($childTable, $uid, $field, $replacements)['value']];
+            } catch (SkippedItemException) {
+                continue;
+            }
+        }
+
+        return $planned;
+    }
+
     protected function doExecute(array $params): CallToolResult
     {
         $childTable = (string) $params['childTable'];
@@ -114,6 +142,34 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
      */
     private function applyToRecord(string $childTable, int $childUid, string $field, array $replacements): array
     {
+        $replaced = $this->replacedValue($childTable, $childUid, $field, $replacements);
+        $value = $replaced['value'];
+        $total = $replaced['count'];
+
+        $this->persist($childTable, $childUid, [$field => $value]);
+
+        return [
+            'message' => sprintf(
+                '%s:%d — %d replacement(s) in `%s`%s',
+                $childTable,
+                $childUid,
+                $total,
+                $field,
+                $this->dryRun ? ' (not written)' : '',
+            ),
+            'uid' => $childUid,
+            'table' => $childTable,
+            'action' => $this->dryRun ? 'preview' : 'update',
+        ];
+    }
+
+    /**
+     * @param list<array{search: string, replace: string, all: bool}> $replacements
+     *
+     * @return array{value: string, count: int}
+     */
+    private function replacedValue(string $childTable, int $childUid, string $field, array $replacements): array
+    {
         $record = $this->recordAccess->assertRecordEditAccess($childTable, $childUid);
         $value = array_key_exists($field, $record) ? (string) $record[$field] : '';
 
@@ -151,21 +207,7 @@ class BulkReplaceTextTool extends AbstractSafeEditTool
             ));
         }
 
-        $this->persist($childTable, $childUid, [$field => $value]);
-
-        return [
-            'message' => sprintf(
-                '%s:%d — %d replacement(s) in `%s`%s',
-                $childTable,
-                $childUid,
-                $total,
-                $field,
-                $this->dryRun ? ' (not written)' : '',
-            ),
-            'uid' => $childUid,
-            'table' => $childTable,
-            'action' => $this->dryRun ? 'preview' : 'update',
-        ];
+        return ['value' => $value, 'count' => $total];
     }
 
     /**

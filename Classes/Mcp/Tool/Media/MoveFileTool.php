@@ -51,6 +51,7 @@ class MoveFileTool extends AbstractTool
                 'fileUids' => ['type' => 'array', 'items' => ['type' => 'integer'], 'description' => 'sys_file UIDs to move.'],
                 'targetFolder' => ['type' => 'string', 'description' => 'Target folder as combined identifier, e.g. "1:/user_upload/ai-images/".'],
                 'createFolder' => ['type' => 'boolean', 'default' => false, 'description' => 'Create a missing target folder (and missing parents) instead of failing.'],
+                'allowSameNameFolder' => ['type' => 'boolean', 'default' => false, 'description' => 'Only when the editor explicitly asked for a second folder of the same name: create it although one exists at the storage root or in the default upload folder.'],
             ],
             'required' => ['fileUids', 'targetFolder'],
         ];
@@ -66,7 +67,7 @@ class MoveFileTool extends AbstractTool
             return $this->textError('fileUids must name at least one sys_file UID.');
         }
 
-        $plan = $this->preflight->resolveTargetFolder((string) $params['targetFolder'], (bool) ($params['createFolder'] ?? false));
+        $plan = $this->preflight->resolveTargetFolder((string) $params['targetFolder'], (bool) ($params['createFolder'] ?? false), (bool) ($params['allowSameNameFolder'] ?? false));
         $targetFolder = null;
 
         $outcome = $this->batchResultBuilder->build($fileUids, 'file(s)', function (mixed $fileUid) use ($plan, &$targetFolder): array {

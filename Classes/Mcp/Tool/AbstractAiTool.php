@@ -76,7 +76,12 @@ abstract class AbstractAiTool extends AbstractTool
         $body = $clientAnswer->getResponseData();
 
         if ('Error' === $clientAnswer->getType()) {
-            throw new \RuntimeException($body['message'] ?? 'Unknown server error');
+            $message = (string) ($body['message'] ?? 'Unknown server error');
+            if (is_string($data['url'] ?? null) && '' !== $data['url']) {
+                $message .= sprintf("\nAddress sent to the AI Suite Server: %s", $data['url']);
+            }
+
+            throw new \RuntimeException($message);
         }
 
         $totalCredits = (int) ($body['totalCredits'] ?? 0);
@@ -132,6 +137,20 @@ abstract class AbstractAiTool extends AbstractTool
         }
 
         return $url;
+    }
+
+    /**
+     * @param array<string, mixed> $library
+     */
+    protected function modelListLine(int $position, array $library): string
+    {
+        $identifier = (string) $library['model_identifier'];
+        $name = trim((string) ($library['name'] ?? ''));
+        if ('' === $name || $name === $identifier) {
+            return sprintf("%d. %s\n", $position, $identifier);
+        }
+
+        return sprintf("%d. %s (model: \"%s\")\n", $position, $name, $identifier);
     }
 
     /**
@@ -384,7 +403,7 @@ abstract class AbstractAiTool extends AbstractTool
             $text .= $label.":\n";
             $i = 1;
             foreach ($filtered as $library) {
-                $text .= sprintf("%d. %s\n", $i, $library['model_identifier']);
+                $text .= $this->modelListLine($i, $library);
                 ++$i;
             }
             $text .= "\n";

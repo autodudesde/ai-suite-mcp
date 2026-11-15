@@ -102,7 +102,7 @@ class MoveRecordTool extends AbstractDataTool
         $table = (string) ($move['table'] ?? '');
         $uid = (int) ($move['uid'] ?? 0);
         $targetPid = isset($move['targetPid']) ? (int) $move['targetPid'] : null;
-        $afterUid = isset($move['afterUid']) ? (int) $move['afterUid'] : null;
+        $afterUid = (int) ($move['afterUid'] ?? 0) > 0 ? (int) $move['afterUid'] : null;
 
         if ('' === $table || $uid <= 0) {
             throw RefusedRequestException::invalidParameter('Provide table and uid.');

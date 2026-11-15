@@ -24,6 +24,24 @@ class OperatingGuidelines
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public static function chatSections(): array
+    {
+        return [
+            'targetPage' => self::targetPage(),
+            'defaults' => self::defaults(),
+            'discoverFields' => self::discoverFields(),
+            'rules' => self::rules(),
+            'credits' => self::credits(false),
+            'smallEdits' => self::smallEdits(),
+            'workspace' => self::workspace(),
+            'batchVsSingle' => self::singleToolsForChat(),
+            'bulkOps' => self::bulkOps(false),
+        ];
+    }
+
     public static function get(): string
     {
         return implode("\n\n", self::sections());
@@ -36,7 +54,7 @@ class OperatingGuidelines
 
     public static function contentRulesForChat(): string
     {
-        return self::get();
+        return implode("\n\n", self::chatSections());
     }
 
     private static function targetPage(): string
@@ -93,11 +111,14 @@ class OperatingGuidelines
             SECTION;
     }
 
-    private static function credits(): string
+    private static function credits(bool $batchTools = true): string
     {
-        return <<<'SECTION'
-            ## Tools that cost credits
-            generateFileMetadata, generateImage, translateFileMetadata, the batch* tools and the audit tools (auditSeo, auditAccessibility, auditContent) call the AI Suite Server and consume credits; translatePage and translateRecord do so only when you pass a model. Reach for them for what only they can do:
+        $tools = $batchTools
+            ? 'generateFileMetadata, generateImage, translateFileMetadata, the batch* tools and the audit tools'
+            : 'generateFileMetadata, generateImage, translateFileMetadata and the audit tools';
+
+        return '## Tools that cost credits'."\n".$tools.<<<'SECTION'
+             (auditSeo, auditAccessibility, auditContent) call the AI Suite Server and consume credits; translatePage and translateRecord do so only when you pass a model. Reach for them for what only they can do:
             - generateImage — creates an image. It writes to FAL directly; no preview exists.
             - generateFileMetadata — inspects the file itself (AI vision), which is what makes alt text useful.
             - translateFileMetadata — DeepL plus the glossary of the site named by `pageId`, for consistent terminology; files belong to no site, so without `pageId` no glossary applies. It writes the translation directly; do not call writeRecords afterwards.
@@ -123,8 +144,18 @@ class OperatingGuidelines
     private static function workspace(): string
     {
         return <<<'SECTION'
-            ## Working in a non-live workspace
-            If this session is bound to a workspace (check readServerInfo for the active workspace), use compareWithLive to see what your draft changes against the live site — a per-record field-level diff (changed/added/removed). Other read tools show the workspace-overlaid state, not the diff.
+            ## Comparing the draft with live
+            Unless the active write mode is live, your writes go into a draft workspace. compareWithLive shows what the draft changes against the live site, field by field (changed, added, removed); the other read tools show the draft as it stands, not the difference. For the content elements of a page pass table tt_content and the page as pid; for the page's own fields pass table pages and the page as uid. With table pages, pid compares the subpages of that page, not the page itself.
+            SECTION;
+    }
+
+    private static function singleToolsForChat(): string
+    {
+        return <<<'SECTION'
+            ## Single tools for one record
+            - SEO metadata for 1 page → there is no single tool for this, and you do not need one. Read the page with readPageContent, look up the fields with readRecordSchema(table: "pages"), write seo_title / description / og_* / twitter_* yourself and persist them with writeRecords. This costs no credits.
+            - 1 file → generateFileMetadata (it looks at the image itself; you only ever see a thumbnail).
+            - 1 page to translate → translatePage.
             SECTION;
     }
 
@@ -141,7 +172,7 @@ class OperatingGuidelines
             Batch tools run asynchronously and return a task ID:
             1. Call batch tool → returns task ID.
             2. Save the task ID locally. Tell the user a batch is running, then continue with other work.
-            3. Do NOT poll readTaskStatus automatically or loop on it — only check when the user asks about it. If tasks are still pending, say so and continue.
+            3. When the user asked for the finished result in this conversation, check readTaskStatus once and continue with step 4 as soon as it reports completed. Otherwise check only when the user asks. Never call readTaskStatus in a loop: if the task is still pending, say so and continue.
             4. Once status is "completed" → retrieve results via readTaskResults (paginate with offset/limit if needed).
             5. For translation batches: show the results, then call applyTaskResults(taskId) to write the translations.
             6. For metadata batches: show the results, then persist them via writeRecords.
@@ -149,15 +180,17 @@ class OperatingGuidelines
             SECTION;
     }
 
-    private static function bulkOps(): string
+    private static function bulkOps(bool $batchTools = true): string
     {
-        return <<<'SECTION'
+        $text = <<<'SECTION'
             ## Site-wide / bulk operations — do NOT loop one page at a time
             For tasks that span many pages, discover and act in bulk instead of calling a per-page tool in a loop:
             - Reading/auditing content across a subtree (consistency or tone checks, find-and-replace, preparing a bulk edit): call readContentTree(rootPageId, depth, language?) — it returns every element (with its UID) across the subtree, paginated by page. Do NOT call readPageContent per page. Page through with offset.
             - Editing the same thing on many pages/elements: collect the target UIDs (from readContentTree), then write them all in a SINGLE writeRecords call — its records array takes one entry per record, each with its own uid/pid. Same for inserting a new element on many pages (one record per page, each with its pid).
-            - Finding records whose field is empty (missing SEO/OG title, missing alt text, ...): call readRecords with an empty-string filter, e.g. readRecords(table: "pages", filters: {og_title: ""}) or readRecords(table: "sys_file_reference", filters: {alternative: ""}). Scope it to a branch by taking the page UIDs from readPageTree(rootPageId, depth) first. Collect the resulting UIDs and feed them into batchTranslatePage / batchGenerateMetadata / batchGenerateFileMetadata in ONE call instead of handling pages individually.
+            - Finding records whose field is empty (missing SEO/OG title, missing alt text, ...): call readRecords with an empty-string filter, e.g. readRecords(table: "pages", filters: {og_title: ""}) or readRecords(table: "sys_file_reference", filters: {alternative: ""}). Scope it to a branch by taking the page UIDs from readPageTree(rootPageId, depth) first.%BATCH%
             - Finding where a term/string occurs: searchContent(query). Use readContentTree when you need the full text of a subtree rather than keyword hits.
             SECTION;
+
+        return str_replace('%BATCH%', $batchTools ? ' Collect the resulting UIDs and feed them into batchTranslatePage / batchGenerateMetadata / batchGenerateFileMetadata in ONE call instead of handling pages individually.' : '', $text);
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Seo;
 
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\AuditIssueLines;
 use Mcp\Types\CallToolResult;
 
 class SeoAuditTool extends AbstractAiTool
@@ -93,15 +94,7 @@ class SeoAuditTool extends AbstractAiTool
             ));
         }
 
-        foreach (array_slice(is_array($audit['issues'] ?? null) ? $audit['issues'] : [], 0, 12) as $issue) {
-            $lines[] = sprintf(
-                '- [%s/%s] %s: %s',
-                (string) ($issue['severity'] ?? ''),
-                (string) ($issue['fixability'] ?? ''),
-                (string) ($issue['id'] ?? ''),
-                (string) ($issue['message'] ?? ''),
-            );
-        }
+        array_push($lines, ...AuditIssueLines::findings($audit['issues'] ?? null));
 
         $market = is_array($body['keyword'] ?? null) ? $body['keyword'] : null;
         if (null !== $market) {

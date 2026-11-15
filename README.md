@@ -4,7 +4,7 @@
 
 An MCP (Model Context Protocol) server for **TYPO3**. It connects Claude Desktop, Claude.ai, ChatGPT, MCP Inspector and other MCP-compatible clients directly to your TYPO3 backend, so the model can walk the page tree, read and search content, and create or edit records through DataHandler, as the logged-in backend user, with that user's permissions.
 
-[AI Suite](https://www.autodudes.de/) is the technical foundation this builds on: it ships the extension infrastructure, the backend-group permission model, the TYPO3 version-compatibility layer and the shared services. It is a hard dependency (`autodudes/ai-suite` `^12.24.1 || ^13.18.1 || ^14.6.1`) and Composer pulls it in for you.
+[AI Suite](https://www.autodudes.de/) is the technical foundation this builds on: it ships the extension infrastructure, the backend-group permission model, the TYPO3 version-compatibility layer and the shared services. It is a hard dependency (`autodudes/ai-suite` `^12.26.0 || ^13.20.0 || ^14.8.0`) and Composer pulls it in for you.
 
 **What it is not is a paywall.** The MCP server is useful on its own, with no AI Suite account, no API key and no credits: your MCP client already brings the model that does the thinking. AI Suite's own AI providers (OpenAI, Anthropic, Mittwald AI, IONOS AI Model Hub incl. Flux, DeepL, Google Translate, Midjourney, …) are an *optional* add-on for the twelve tools that generate, translate or audit server-side.
 
@@ -71,7 +71,7 @@ Beyond the AI-powered tools above, MCP also ships **discovery and editing tools*
 
 - TYPO3 12.4.11 to 14.3.99
 - PHP 8.1+
-- `autodudes/ai-suite` `^12.24.1 || ^13.18.1 || ^14.6.1` (`ext_emconf`: `12.24.1-14.99.99`): required, and installed automatically. It provides the extension infrastructure, the BE-group permission model, the TYPO3 version-compatibility layer and shared services. An AI Suite **account, API key or credits** are a separate matter and only needed for the twelve server-side tools listed above.
+- `autodudes/ai-suite` `^12.26.0 || ^13.20.0 || ^14.8.0` (`ext_emconf`: `12.26.0-14.99.99`): required, and installed automatically. It provides the extension infrastructure, the BE-group permission model, the TYPO3 version-compatibility layer and shared services. An AI Suite **account, API key or credits** are a separate matter and only needed for the twelve server-side tools listed above.
 - `typo3/cms-reports` `^12.4.11 || ^13.4.1 || ^14.3.0`
 - `logiscape/mcp-sdk-php` `^2.0` (bundled for classic mode, see below)
 - `symfony/clock` `^6.4 || ^7.0 || ^8.0` (shipped by the TYPO3 core)
@@ -91,7 +91,7 @@ Then make sure the webserver passes the `Authorization` header on to PHP, see [W
 
 ### Classic mode (no Composer)
 
-The extension also runs in TYPO3 12, 13 and 14 installations without Composer. The one library TYPO3 does not ship, `logiscape/mcp-sdk-php`, is bundled in `Resources/Private/PHP/ComposerVendor`. TYPO3 v14 loads it through `providesPackages` in `composer.json`, v12 and v13 through the `autoload` section of `ext_emconf.php`. Nothing has to be copied by hand.
+The extension also runs in TYPO3 12, 13 and 14 installations without Composer. The one library TYPO3 does not ship, `logiscape/mcp-sdk-php`, is bundled in `Resources/Private/PHP/ComposerVendor`. TYPO3 v14 loads it through `providesPackages` in `composer.json`, v12 and v13 through the `autoload` section of `ext_emconf.php` or, when that section is missing as after a download from TER in the Extension Manager, through the bundle's own autoloader. Nothing has to be copied by hand.
 
 1. Activate the system extensions `workspaces` and `reports`.
 2. Install and activate `ai_suite`, then `ai_suite_mcp` (Extension Manager upload or TER), in that order.
@@ -115,13 +115,13 @@ All settings live under **Admin Tools → Settings → Extension Configuration �
 | `mcpAccessTokenLifetimeMinutes` | `60` | Lifetime of an OAuth access token in minutes. The connector then gets a new one through its refresh token, without asking the editor; a leaked access token is worth an hour, not weeks. `0` = 60 minutes. |
 | `mcpRefreshIdleDays` | `30` | A connector that does not refresh for this many days has to be authorized again; every refresh starts the period anew. `0` = 30 days. |
 | `mcpRefreshMaxLifetimeDays` | `90` | Maximum lifetime of one authorization in days. Refreshing rotates the tokens but never extends a connection beyond this many days after its authorization; then the connector has to be authorized again. `0` = 90 days. |
-| `mcpAllowedOrigins` | _(empty)_ | Comma-separated allowlist of browser origins. Requests without an `Origin` header, from the site's own host, from `localhost` or from `*.ddev.site` are always accepted; any other origin must be listed, otherwise the request is rejected with `403 forbidden_origin`. In the Development context every origin is accepted regardless of this list. |
+| `mcpAllowedOrigins` | _(empty)_ | Comma-separated allowlist of browser origins. Requests without an `Origin` header, from the site's own host, from `localhost` or from `*.ddev.site` are accepted outside the Production context; any other origin must be listed, otherwise the request is rejected with `403 forbidden_origin`. In the Development context every origin is accepted regardless of this list. |
 | `mcpAllowedClientIds` | _(empty)_ | Comma-separated allowlist of OAuth `client_id` values. Empty = all clients allowed. Checked at `/oauth/authorize`; a client that registers itself gets a random `mcp-…` id at registration, so a non-empty list admits only ids agreed in advance. |
 | `mcpMaxCreditsPerSession` | `0` | Credit budget per access token. Once a token has spent this many AI credits, AI tools send no further requests with it; the call that crosses the limit still returns its result, with a note attached. The total is stored on the token, so neither a new conversation nor a restart resets it; a newly issued token starts from zero. `0` = no budget. |
 | `mcpRateLimitRequests` | `100` | MCP requests one access token may send within `mcpRateLimitWindowSeconds`. Batch work and agent loops can exceed the default; raise it when a connector receives `429 rate_limit_exceeded`. `0` = no limit. The OAuth and MFA endpoints and ChEddi keep their own fixed limits, see [Security](#security). |
 | `mcpRateLimitWindowSeconds` | `60` | Window the request count above refers to. Values below `1` count as `1`. |
 | `mcpRateLimitLockoutSeconds` | `60` | How long a token is refused after exceeding the limit. The `429` answer carries the remaining time in `Retry-After`. Values below `1` count as `1`. |
-| `mcpAllowHttp` | `0` | Allow the MCP endpoint over unencrypted HTTP. **Never** enable this in production: Bearer tokens would travel in clear text. Localhost and `*.ddev.site` are always exempted from HTTPS enforcement. |
+| `mcpAllowHttp` | `0` | Allow the MCP endpoint over unencrypted HTTP. **Never** enable this in production: Bearer tokens would travel in clear text. Localhost and `*.ddev.site` are exempted from HTTPS enforcement outside the Production context. |
 | `mcpWriteMode` | `workspace` | How write tools persist data, see [Write modes](#write-modes). |
 | `mcpSessionTimeoutSeconds` | `1800` | Drop idle MCP sessions after N seconds. `0` = SDK default (3600). Lower values free PHP workers and reduce session-store bloat. Applies to the legacy protocol era only: MCP `2026-07-28` has no protocol session. |
 | `mcpAllowedRedirectUris` | _(empty)_ | Comma-separated allowlist of external OAuth redirect URIs (https only). An entry matches the same scheme, host and port and every path at or below its own path (`https://claude.ai` covers `https://claude.ai/api/mcp/auth_callback`, never `https://claude.ai.example.org`); an entry with a query must match exactly. Any `http` or `https` redirect URI on `localhost`, `127.0.0.1` or `[::1]` is always accepted. Empty allows only those, in every context. |
@@ -161,15 +161,7 @@ as the link label `Landing page (English)`), because a page and its translation 
 block asks the assistant to pass the links on, so an editor gets them with the answer instead of
 having to ask for them.
 
-Links are grouped by table, because a page and the content elements on it are different destinations:
-
-```json
-"links": [
-  {"table": "pages", "label": "Page", "targets": [{"label": "Landing page", "url": "https://…"}], "omitted": 0},
-  {"table": "tt_content", "label": "Page Content", "targets": [{"label": "Header", "url": "https://…"}], "omitted": 2}
-]
-```
-
+Links are grouped by table, because a page and the content elements on it are different destinations.
 `pages` comes first, the remaining tables in the order they were touched. The cap of six is **per
 group**, so a written page is never pushed out of the list by the content elements written onto it;
 `omitted` reports how many the cap dropped, so a truncated group cannot be mistaken for a complete
@@ -232,7 +224,7 @@ Copy these into `mcpAllowedRedirectUris` / `mcpAllowedOrigins` for every client 
 | **Open WebUI** (self-hosted) | `https://<your-openwebui-host>/oauth/` | `https://<your-openwebui-host>` |
 
 **Notes**
-- An entry in `mcpAllowedRedirectUris` covers every path below its own, so `https://claude.ai` covers any sub-path Claude may send, while a host that merely starts the same way does not match (see `RedirectUriPolicy`).
+- An entry in `mcpAllowedRedirectUris` covers every path below its own, so `https://claude.ai` covers any sub-path Claude may send, while a host that merely starts the same way does not match.
 - An empty `mcpAllowedRedirectUris` allows only the localhost redirect URIs, in every context: a remote connector needs its callback listed, also on Development and staging instances. The origin check is relaxed in the **Development** context only (see `mcpAllowedOrigins`).
 - A client registers its redirect URIs once (`/aisuite-mcp/oauth/register`); the registration is stored, and an authorization request whose `redirect_uri` the client did not register is refused without a redirect. The login and consent pages name the client and the host the code will be sent to. A connector authorized before the registry existed is registered on its next authorization, provided its `redirect_uri` is allowed. `ai-suite-mcp:cleanup` removes registrations unused for 30 days that hold no active token.
 - `mcpAllowedOrigins` only affects browser-based clients (CORS). CLI and desktop-native clients ignore it.
@@ -283,7 +275,7 @@ its dialog on:
 |---|---|---|
 | `readOnlyHint` | Reads only, never writes | all `read*` / `list*` tools, `searchContent`, `previewRecords`, `compareWithLive` |
 | `idempotentHint` | Repeating the call changes nothing further | the same read tools, plus `replaceMediaReference` (repointing a reference at the same file twice leaves the same rows) |
-| `destructiveHint` | Not undoable by discarding a workspace | `deleteRecords`, `uploadMedia`, `moveFile`, `generateImage`, `applyTaskResults` |
+| `destructiveHint` | Removes or overwrites existing content, or writes to live where discarding a workspace does not undo it | `deleteRecords` (removes), `applyTaskResults` (replaces existing translations and metadata), `uploadMedia`, `moveFile`, `generateImage` (live in every write mode) |
 | `openWorldHint` | Reaches a system outside this TYPO3 | every tool that calls the AI Suite Server (the twelve credit-spending tools), plus `uploadMedia` |
 
 The three `audit*` tools are deliberately **neither** read-only **nor** idempotent: each call spends credits and stores its report in `tx_aisuite_audit_result`, so a client that runs read-only tools or retries without asking would otherwise start paid audits on its own. `readTaskStatus` stays read-only: it only refreshes the stored status of a batch from the server, free of charge, and repeating it changes nothing further.
@@ -411,7 +403,7 @@ A useful starter sequence:
 
 ## OAuth scopes
 
-Each tool requires a scope, and each scope is only granted to users whose BE group has at least one of the matching AI Suite feature flags. See `PermissionService::SCOPE_PERMISSION_MAP`.
+Each tool requires a scope, and each scope is only granted to users whose BE group has at least one of the matching AI Suite feature flags (see [BE-group permissions](#be-group-permissions)).
 
 | Scope | Required BE-group permission(s) | Covers |
 |---|---|---|
@@ -441,7 +433,7 @@ over MCP, and there is no management scope at all. An unknown scope is ignored: 
 | `auditSeo` | Full SEO audit for a page, named by `pageId` (its public URL is resolved here) or by `url` for a page outside this installation (on-page checks, Lighthouse/CrUX, GEO signals; optional focus keyword adds SERP position, top-10 and search volume); needs `enable_audit` (see [Per-tool permissions](#per-tool-permissions)), costs 3 credits |
 | `auditAccessibility` | WCAG 2.1 AA audit for a page, named by `pageId` or `url` (axe-core + HTML_CodeSniffer, summary + top issue groups); needs `enable_audit` (see [Per-tool permissions](#per-tool-permissions)), costs 3 credits |
 | `auditContent` | What a page (`pageId`, or `url` for one outside this installation) does not yet cover, rated answered/partial/open against its content. `type` picks the angle: `questions` (People-also-ask + AI-derived, 2 credits), `gap` (weak rankings), `cluster` (subtopics around a keyword), `competitors` (keyword gap vs. the strongest competitor). Needs `enable_audit`, 3 credits unless stated |
-| `readAuditResults` | The audit results already stored for a page (all six types, scores/coverage, optional full details per type), including audits run through MCP or ChEddi on a URL of this installation; free, no new audit is started; needs no extra flag, only read access to the page |
+| `readAuditResults` | The audit results already stored for a page (all six types, scores/coverage, the stored findings in the result text with `auditType`; a type with no stored audit returns an empty result (`stored: false`), not an error), including audits run through MCP or ChEddi on a URL of this installation; free, no new audit is started; needs no extra flag, only read access to the page |
 | `readEditorialGuidelines` | The tone / target audience / style the editors configured for a page subtree |
 | `readChildren` | List a record's container / IRRE children, grouped by relation |
 | `searchContent` | Full-text search across `pages`, `tt_content` and every other page-bound table with a text column, unless the denylist blocks it. Every hit carries `languageUid` and, where the page belongs to a site, its ISO `language` |
@@ -461,14 +453,14 @@ over MCP, and there is no management scope at all. An unknown scope is ignored: 
 | `readRecords` | Read records of a table: one by `uid`, all on a page (`pid`), a page subtree (`rootPageId`) or by exact-match `filters` |
 | `compareWithLive` | Diff workspace draft vs live (changed/added/removed fields; a move or reorder shows as a change of `pid` or `sorting`), requires a non-live workspace session |
 | `writeRecords` | Create / update records via DataHandler (workspace-aware). A top-level `table` fills in for entries that carry none, and a `translations` object writes the linked translations along with the record (see [Writing translations](#writing-translations)) |
-| `copyRecords` | Copy one or more records (single params, or a `copies` batch array) |
-| `moveRecords` | Move one or more records (single params, or a `moves` batch array). A moved page whose slug was generated gets a slug under its new parent, and its subpages follow; a slug set by hand stays |
+| `copyRecords` | Copy one or more records (`copies` array; one entry for a single copy) |
+| `moveRecords` | Move one or more records (`moves` array, an optional top-level `table` is the default; `afterUid: 0` counts as no anchor). A moved page whose slug was generated gets a slug under its new parent, and its subpages follow; a slug set by hand stays |
 | `localizeRecord` | Localize a record into a target language (creates the translation with the field values of the source; no AI, no credits) |
 | `deleteRecords` | Soft-delete records, annotated `destructiveHint`, so the client raises its approval dialog |
 | `savePageTree` | Persist a generated page tree |
 | `patchText` | Several replacements in one field, applied atomically |
-| `bulkReplaceText` | The same replacement across all child records of a parent |
-| `copyMediaReference` | Copy a file reference from a source field onto a target field |
+| `bulkReplaceText` | The same replacement across all child records of a parent, or every record of a table on given pages (`pageIds`) |
+| `copyMediaReference` | Copy a file reference from a source field onto a target field; a file (`sys_file`) as the source is refused with the reference record to write instead |
 | `replaceMediaReference` | Swap the file behind an existing file reference |
 
 #### Code editor fields
@@ -557,16 +549,17 @@ table genuinely has is never rewritten.
 
 `uploadMedia` takes a `media` array; each item carries exactly one source (`url` **or** `content`) plus optional `fileName`, `targetFolder` and metadata (`title`, `alternative`, `description`). Items are processed independently; one failing item does not abort the batch. Each successful item names the new file UID (the value `uid_local` of a file reference takes) and links its metadata record (`sys_file_metadata`) as a backend edit link.
 
-Two switches, per item or as the batch default:
+Three switches, per item or as the batch default:
 
 - `onConflict` decides what happens when the file name already exists in the target folder. `rename` (default) stores the upload under a suffixed name. `replace` overwrites the existing file's content in place through `ResourceStorage::replaceFile()`: the uid stays, so every content element, page property and reference shows the new file at once. Given metadata overwrites the stored one; empty fields leave it untouched.
 - `createFolder: true` creates a missing target folder, parents included. Write permission is checked on the deepest folder that already exists. Without it, a missing folder fails that item and names the switch.
+- `allowSameNameFolder: true` creates a new folder although one of the same name already exists at the storage root or in the default upload folder. Without it such a folder is refused, and the error names the existing path.
 
 Each result line says whether the file was `created`, `renamed` or `replaced`.
 
-`moveFile` takes `fileUids`, a `targetFolder` and `createFolder` (same meaning as above); the target folder is checked once before the first file moves. A name already taken in the target folder gets a suffix, never an overwrite, and the result line names the new name. A file that already sits in the target folder is skipped. The core's own FAL checks apply on top of the flag: `move` permission on the file and write permission on the target folder, both within the file mounts. `listFiles` with `includeFolders: true` returns the subfolders next to the files (every level below with `recursive`), which is how a client picks or checks an upload target.
+`moveFile` takes `fileUids`, a `targetFolder`, `createFolder` and `allowSameNameFolder` (same meaning as above); the target folder is checked once before the first file moves. A name already taken in the target folder gets a suffix, never an overwrite, and the result line names the new name. A file that already sits in the target folder is skipped. The core's own FAL checks apply on top of the flag: `move` permission on the file and write permission on the target folder, both within the file mounts. `listFiles` with `includeFolders: true` returns the subfolders next to the files (every level below with `recursive`), which is how a client picks or checks an upload target.
 
-**Security.** Remote URL fetching is the sensitive part and is SSRF-guarded by `RemoteMediaService`: only `http`/`https`, every resolved IP must be public (private, loopback, link-local incl. the `169.254.169.254` cloud-metadata endpoint, and reserved ranges are rejected, IPv4 + IPv6), redirects are followed manually and re-validated per hop, and the download is streamed with a hard size cap. Blocked targets are logged at WARNING. Beyond the OAuth scope + `enable_mcp_media_upload` flag, FAL filemount permissions on the target folder still apply. Tunables (`ext_conf`): `mcpMediaDefaultFolder` (default `1:/user_upload/`), `mcpMediaMaxSizeMb` (`50`), `mcpMediaAllowedExtensions` (`jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg`; SVG excluded by default, XSS risk), `mcpMediaAllowUrlFetch` (`1`, kill-switch for URL downloads), `mcpMediaHostDenylist` (empty). Large videos should be supplied via `url` or an online-media link rather than base64; a base64 upload has to fit into one request, see `mcpMaxRequestBodyMb`.
+**Security.** Remote URL fetching is the sensitive part and is SSRF-guarded: only `http`/`https`, every resolved IP must be public (private, loopback, link-local incl. the `169.254.169.254` cloud-metadata endpoint, and reserved ranges are rejected, IPv4 + IPv6), redirects are followed manually and re-validated per hop, and the download is streamed with a hard size cap. Blocked targets are logged at WARNING. Beyond the OAuth scope + `enable_mcp_media_upload` flag, FAL filemount permissions on the target folder still apply. Tunables (`ext_conf`): `mcpMediaDefaultFolder` (default `1:/user_upload/`), `mcpMediaMaxSizeMb` (`50`), `mcpMediaAllowedExtensions` (`jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg`; SVG excluded by default, XSS risk), `mcpMediaAllowUrlFetch` (`1`, kill-switch for URL downloads), `mcpMediaHostDenylist` (empty). Large videos should be supplied via `url` or an online-media link rather than base64; a base64 upload has to fit into one request, see `mcpMaxRequestBodyMb`.
 
 ### Workflow (`mcp:workflow`; polling `mcp:read`, applying `mcp:write`)
 Batch tools run asynchronously and return a task ID. Poll via `readTaskStatus`, retrieve results via `readTaskResults`.
@@ -603,7 +596,7 @@ they asked from, which is a `type` enum rather than four tools; the enum values 
 types, so results written by the old names stay readable through `readAuditResults`. The two folder
 tools only resolved a folder to file UIDs and then delegated. `replaceText` was the one-entry case of
 `patchText`. Every tool carries its schema on every turn, so the count is what costs context: the
-catalogue went from 52 tools to 46.
+merges took seven tools out and added one.
 
 `translateRecord` also changed shape rather than name: its result now reports `translation.records`
 where it used to report `translation.fields`, because the tool carries the inline children of a
@@ -623,54 +616,24 @@ Nine sections are sent, in this order:
 | `rules` | The host confirms changes, `previewRecords` is an optional diff, backend links are passed on |
 | `credits` | Which tools spend credits |
 | `smallEdits` | Prefer `patchText` over resending whole fields |
-| `workspace` | In a non-live workspace, `compareWithLive` shows the draft against live |
+| `workspace` | Unless the write mode is live, writes go into a draft; `compareWithLive` shows the draft against live and how its scope works |
 | `batchVsSingle` | When to use a `batch*` tool instead of looping |
 | `bulkOps` | Bulk operations across many records |
 
-**Approval is the host's job, not the model's.** The guidelines deliberately contain no rule telling the model to wait for confirmation before writing: measured against a benchmark, gpt-5.4-nano and gpt-oss-120b obeyed such a rule literally: they previewed, then waited forever for a human who was not there. Confirmation happens outside the model: MCP clients raise their own approval dialog, and ChEddi stops write/destructive calls with `needsConfirm`. `previewRecords` is offered as a read-only old→new diff, but nothing enforces it server-side; what guarantees reversibility is the write mode (see [Write modes](#write-modes)).
+ChEddi receives the same sections without the batch route; `batchVsSingle` becomes the rule to use single tools for one record.
+
+**Approval is the host's job, not the model's.** The guidelines deliberately contain no rule telling the model to wait for confirmation before writing: models follow such a rule literally and wait for a human who is not there. Confirmation happens outside the model: MCP clients raise their own approval dialog, and ChEddi stops write/destructive calls with `needsConfirm`. `previewRecords` is offered as a read-only old→new diff, but nothing enforces it server-side; what guarantees reversibility is the write mode (see [Write modes](#write-modes)).
 
 Batch tools never auto-persist: they return suggestions, which `applyTaskResults` (translation batches) or `writeRecords` (metadata batches) persists only when called.
 
 ## Custom tools
 
-Need a tool that doesn't exist yet: pulling data from a project-specific table, kicking off a domain workflow, exposing a sitepackage helper to the model? You can extend the MCP server from your own extension.
-
-### Anatomy of a tool
-
-Every tool implements `AutoDudes\AiSuiteMcp\Mcp\Tool\ToolInterface`:
-
-```php
-public function getName(): string;           // unique tool name, used by the LLM
-public function getDescription(): string;    // shown to the model when picking tools
-public function getSchema(): array;          // JSON Schema for the input arguments
-public function getAnnotations(): array;     // MCP behavioural hints (readOnlyHint, destructiveHint, …)
-public function execute(array $params): CallToolResult;
-public function getRequiredScope(): ?string; // informational; the enforced scope comes from TOOL_SCOPE_MAP
-public function getCreditCost(): ?int;       // fixed credit cost per call if known; null = no fixed cost (not necessarily free)
-```
-
-`ToolInterface` carries `#[AutoconfigureTag('aisuite.mcp.tool')]`, so any service implementing it is picked up automatically by `ToolRegistry`: no manual `Services.yaml` wiring needed, just make sure your extension's `Configuration/Services.php` autowires + autoconfigures the namespace.
-
-### Trust boundary
-
-`ToolRegistry::validateToolOrigin()` enforces a hard rule: a tool is only registered when its class lives under one of the allowed namespaces `AutoDudes\AiSuiteMcp\`, `AutoDudes\AiSuite\` or `AutoDudes\Cheddi\`. Every other tool is rejected at boot time and logged as a warning to `aisuite_mcp_warnings.log`, whether it extends `AbstractTool` or implements `ToolInterface` directly.
-
-Third-party tools are meant to extend `AbstractCustomTool` once it ships: its `final doExecute()` will route calls through the AI Suite Server so credit accounting and the central security policy stay in place. Don't bypass the boundary; it's there to prevent custom code from siphoning AI provider calls outside the credits pipeline.
-
-> ⚠️ **Status:** `AbstractCustomTool` is the planned public extension API. It does not exist yet: `Classes/Mcp/CustomTool/` is an empty placeholder directory, and until the class ships, third-party tools cannot register. If you have a use case that doesn't fit any of the built-in tools, [open a feedback issue](#feedback), we'd like to know what shape the API needs to take before we freeze it.
-
-### Adding a tool inside this extension
-
-For tools that legitimately belong here (built-in tools), the pattern is:
-
-1. Create a class under `Classes/Mcp/Tool/<Category>/MyNewTool.php` extending `AbstractTool` (or `AbstractAiTool` / `AbstractTranslateTool` for AI-powered tools that need credit accounting and model routing).
-2. Add `#[AutoconfigureTag('aisuite.mcp.tool')]` if your class doesn't pick it up via `ToolInterface` (in practice it does automatically).
-3. Implement `getName()`, `getDescription()` and `getSchema()`, set `$requiredScope`, and implement `doExecute()`: never `execute()`, which is `final` on `AbstractTool` and runs the validation / permissions / error-handling pipeline.
-4. Inject any extra services through your own constructor; the bundled context (`ToolContext`) already covers the common ones (`McpUserContext`, `PermissionService`, logger, `LocalizationService`, `BackendUserService`, …).
-5. Add the tool name to `PermissionService::TOOL_SCOPE_MAP` (mandatory: the map is fail-closed, a tool missing there is hidden from `tools/list`, fails when called and breaks `ToolScopeMapCompletenessTest`), and to `TOOL_PERMISSION_MAP` if it needs its own flag.
-6. Map your scope to the right BE-group flag in `PermissionService::SCOPE_PERMISSION_MAP` if you introduce a new scope.
-
-Verify the tool shows up in `tools/list`, for example in the [MCP Inspector](Connectors/mcp-inspector.md).
+A public API for tools of your own extension is planned but not available yet: only tools from the
+AutoDudes namespaces (`AutoDudes\AiSuiteMcp\`, `AutoDudes\AiSuite\`, `AutoDudes\Cheddi\`) are
+registered, and every other tool is rejected at boot time with a warning in
+`aisuite_mcp_warnings.log`. If you have a use case that doesn't fit any of the built-in tools,
+[open a feedback issue](#feedback); we'd like to know what shape the API needs to take before we
+freeze it.
 
 ## Console commands
 
@@ -699,6 +662,7 @@ Both commands need `--user`; there is no default account. They refuse while `ena
 - revoked tokens created more than 30 days ago (hard delete)
 - session files under `var/aisuite_mcp_sessions/` older than twice `mcpSessionTimeoutSeconds`, at least one hour (one hour at the default of 1800 s)
 - leftover background task files under `var/mcp_tasks/` older than 30 days (task results now live in the database)
+- client registrations unused for 30 days that hold no active token
 
 Schedule it via the TYPO3 Scheduler or cron. How many session files are lying around is reported by
 `readServerInfo` and, for admins, as the *MCP Session Store* entry in the Reports module.
@@ -778,6 +742,7 @@ logged to `var/log/aisuite_mcp.log` as usual.
 |---|---|
 | `tx_aisuite_oauth_codes` | Short-lived authorization codes (PKCE challenge + redirect URI) |
 | `tx_aisuite_oauth_tokens` | Access + refresh tokens, client metadata, last-used IP, credit usage |
+| `tx_aisuite_oauth_clients` | Registered OAuth clients (dynamic client registration): name and allowed redirect URIs |
 
 ## Security
 
@@ -810,7 +775,7 @@ The settings, security gates, and connector flows above are sufficient to *run* 
 ### Reverse proxy & load balancer
 
 - **HTTPS detection:** `McpServerMiddleware::enforceHttps()` honors `X-Forwarded-Proto: https` in addition to the request scheme, but **only from a proxy listed in `mcpTrustedProxies`**. If your CDN or load balancer terminates TLS and forwards plain HTTP to the origin, set this header on the proxy and list the proxy; a direct client sending the header itself is still asked for HTTPS.
-- **Client IP:** the OAuth rate limits per client, the IP binding of consent and MFA tickets and the OAuth audit-log entries (token revocations, rate-limit hits, invalid MFA or consent tickets) all use the IP resolved by `ClientIpService`. Behind a proxy without `mcpTrustedProxies`, that is the proxy for every client, so all clients share one rate-limit bucket. By default that is the peer IP (`REMOTE_ADDR`), which behind a proxy is the proxy IP, not the end-user IP. Set `mcpTrustedProxies` to your proxy IPs / CIDRs and the service walks the `X-Forwarded-For` chain from the right, skipping trusted hops, and logs the first untrusted address (the real client). When `mcpTrustedProxies` is empty, `X-Forwarded-For` is ignored entirely, so a client cannot spoof its IP in the audit log by sending the header itself.
+- **Client IP:** the OAuth rate limits per client, the IP binding of consent and MFA tickets and the OAuth audit-log entries (token revocations, rate-limit hits, invalid MFA or consent tickets) all use the same resolved client IP. Behind a proxy without `mcpTrustedProxies`, that is the proxy for every client, so all clients share one rate-limit bucket. By default that is the peer IP (`REMOTE_ADDR`), which behind a proxy is the proxy IP, not the end-user IP. Set `mcpTrustedProxies` to your proxy IPs / CIDRs and the extension walks the `X-Forwarded-For` chain from the right, skipping trusted hops, and logs the first untrusted address (the real client). When `mcpTrustedProxies` is empty, `X-Forwarded-For` is ignored entirely, so a client cannot spoof its IP in the audit log by sending the header itself.
 
 ### Webserver setup
 
@@ -953,6 +918,7 @@ A `403` here means an env-flag guard (Apache step 2) or a host-level dot-path bl
 - **revoked tokens created more than 30 days ago**: hard-deleted from `tx_aisuite_oauth_tokens` to meet GDPR right-to-erasure expectations. Until then revoked entries (`deleted = 1`) stay, so refresh-token reuse detection can still recognise a rotated token; after that window the signal is moot
 - session files under `var/aisuite_mcp_sessions/` older than twice `mcpSessionTimeoutSeconds`, at least one hour (one hour at the default of 1800 s)
 - leftover background-task files under `var/mcp_tasks/` older than 30 days (task results now live in the database)
+- client registrations unused for 30 days that hold no active token
 
 Watch the session directory in particular: a stateless MCP client leaves one file behind **per request**, so the count climbs quickly on a busy site. The Reports module shows it as *MCP Session Store* and turns to a warning above 500 files; `readServerInfo` reports the same number and logs a warning at WARNING level once the threshold is crossed.
 
@@ -960,7 +926,7 @@ Without it, the authorization-code table grows unbounded, the on-disk session di
 
 ### Runtime & scaling
 
-- **PHP runtime:** the extension targets a classic **PHP-FPM / mod_php** request lifecycle (one request per process). It is **not** validated on persistent-worker runtimes such as **FrankenPHP** or **RoadRunner**: an in-process, per-instance cache (`AbstractTool::$readablePageIdsCache`) assumes the process ends with the request, and reusing it across users in a long-lived worker could leak read-access decisions between backend users. Do not run the MCP server on a persistent-worker SAPI until that cache is moved to request scope.
+- **PHP runtime:** the extension targets a classic **PHP-FPM / mod_php** request lifecycle (one request per process). It is **not** validated on persistent-worker runtimes such as **FrankenPHP** or **RoadRunner**: an in-process, per-instance cache (`RecordAccessService::$readablePageIdsCache`) assumes the process ends with the request, and reusing it across users in a long-lived worker could leak read-access decisions between backend users. Do not run the MCP server on a persistent-worker SAPI until that cache is moved to request scope.
 - **Multi-host / load-balanced setups:** MCP transport sessions (`var/aisuite_mcp_sessions/`) live on the **local filesystem**. Across multiple app nodes you therefore need either **sticky sessions** (pin a client to one node) or a **shared filesystem** for that directory. OAuth state and background-task results live in the database and are shared automatically; only the on-disk session state needs this treatment.
 
 ### Logging & retention

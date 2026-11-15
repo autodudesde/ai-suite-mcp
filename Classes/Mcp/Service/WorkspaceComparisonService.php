@@ -24,6 +24,8 @@ class WorkspaceComparisonService
         't3ver_oid', 't3ver_wsid', 't3ver_state', 't3ver_stage', 't3ver_count', 't3ver_timestamp', 't3ver_label', 't3_origuid',
     ];
 
+    private const TRANSLATION_CTRL_KEYS = ['transOrigDiffSourceField', 'transOrigPointerField', 'translationSource'];
+
     public function __construct(
         private readonly TcaCompatibilityService $tcaCompatibilityService,
         private readonly RecordAccessService $recordAccess,
@@ -219,7 +221,7 @@ class WorkspaceComparisonService
             }
             $old = $this->outputFormatter->scalarize($live[$field] ?? '');
             $new = $this->outputFormatter->scalarize($ws[$field] ?? '');
-            if ($old !== $new) {
+            if ($this->comparable($table, $field, $old) !== $this->comparable($table, $field, $new)) {
                 $changes[$field] = ['old' => $old, 'new' => $new];
             }
         }
@@ -233,6 +235,21 @@ class WorkspaceComparisonService
         }
 
         return $changes;
+    }
+
+    private function comparable(string $table, string $field, string $value): string
+    {
+        if ('0' !== $value) {
+            return $value;
+        }
+
+        try {
+            $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+        } catch (\Throwable) {
+            return $value;
+        }
+
+        return $this->tcaCompatibilityService->isRelationalFieldConfig($config) ? '' : $value;
     }
 
     /**
@@ -282,6 +299,12 @@ class WorkspaceComparisonService
             $deleteField = $this->tcaCompatibilityService->getDeleteField($table);
             if ('' !== $deleteField) {
                 $skip[] = $deleteField;
+            }
+            $ctrl = $this->tcaCompatibilityService->getRawConfiguration($table);
+            foreach (self::TRANSLATION_CTRL_KEYS as $key) {
+                if (is_string($ctrl[$key] ?? null) && '' !== $ctrl[$key]) {
+                    $skip[] = $ctrl[$key];
+                }
             }
         } catch (\Throwable $e) {
             $this->logger->warning('WorkspaceComparisonService: delete-field lookup failed, comparing without it', [

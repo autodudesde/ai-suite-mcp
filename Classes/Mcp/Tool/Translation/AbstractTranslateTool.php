@@ -11,7 +11,7 @@ use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\SendRequestService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use Mcp\Types\CallToolResult;
@@ -29,7 +29,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
         protected readonly TranslationService $translationService,
         protected readonly GlossarService $glossarService,
         protected readonly GlobalInstructionService $globalInstructionService,
-        protected readonly TranslatedPageSlugService $translatedPageSlugs,
+        protected readonly TranslatedSlugService $translatedSlugs,
     ) {
         parent::__construct($mcpToolContext);
     }
@@ -183,12 +183,16 @@ abstract class AbstractTranslateTool extends AbstractAiTool
     /**
      * @param array<array-key, mixed> $translatedRecords
      */
-    protected function refreshTranslatedPageSlugs(array $translatedRecords): void
+    protected function refreshTranslatedSlugs(array $translatedRecords): void
     {
-        $pages = \is_array($translatedRecords['pages'] ?? null) ? $translatedRecords['pages'] : [];
-        foreach ($pages as $pageUid => $fields) {
-            if (\is_array($fields)) {
-                $this->translatedPageSlugs->refreshInheritedSlug((int) $pageUid, $fields);
+        foreach ($translatedRecords as $table => $records) {
+            if (!\is_array($records)) {
+                continue;
+            }
+            foreach ($records as $uid => $fields) {
+                if (\is_array($fields)) {
+                    $this->translatedSlugs->refreshInheritedSlugs((string) $table, (int) $uid, $fields);
+                }
             }
         }
     }
@@ -351,7 +355,7 @@ abstract class AbstractTranslateTool extends AbstractAiTool
             );
         }
 
-        $this->refreshTranslatedPageSlugs($cleanedResults);
+        $this->refreshTranslatedSlugs($cleanedResults);
 
         $text = $this->appendDataFlowInfo('', $model);
         $text .= sprintf("## Translation complete: %s:%d → %s\n\n", $table, $uid, $targetLanguage);

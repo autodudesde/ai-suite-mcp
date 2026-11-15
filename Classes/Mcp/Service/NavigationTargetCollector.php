@@ -83,6 +83,11 @@ class NavigationTargetCollector
                 }
             }
         }
+        foreach (\is_array($structured['foundOmitted'] ?? null) ? $structured['foundOmitted'] : [] as $table => $count) {
+            if (isset($groups[(string) $table]) && is_numeric($count)) {
+                $groups[(string) $table]['omitted'] += (int) $count;
+            }
+        }
 
         return $this->sorted($groups);
     }

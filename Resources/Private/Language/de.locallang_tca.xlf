@@ -34,13 +34,13 @@
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableAudit">
-                <source>Enable SEO and accessibility audits</source>
-                <target>SEO- und Barrierefreiheits-Audits aktivieren</target>
+                <source>Enable SEO, accessibility and content audits</source>
+                <target>SEO-, Barrierefreiheits- und Inhalts-Audits aktivieren</target>
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableAuditDescription">
-                <source>Allows running SEO and WCAG accessibility audits for public page URLs via the AutoDudes audit infrastructure (page URL and content leave the TYPO3 instance).</source>
-                <target>Erlaubt SEO- und WCAG-Barrierefreiheits-Audits für öffentliche Seiten-URLs über die AutoDudes-Audit-Infrastruktur (Seiten-URL und Inhalt verlassen die TYPO3-Instanz).</target>
+                <source>Allows running SEO, WCAG accessibility and content audits for public page URLs via the AutoDudes audit infrastructure (page URL and content leave the TYPO3 instance).</source>
+                <target>Erlaubt SEO-, WCAG-Barrierefreiheits- und Inhalts-Audits für öffentliche Seiten-URLs über die AutoDudes-Audit-Infrastruktur (Seiten-URL und Inhalt verlassen die TYPO3-Instanz).</target>
             </trans-unit>
         </body>
     </file>

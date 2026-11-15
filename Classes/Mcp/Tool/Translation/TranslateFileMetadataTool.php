@@ -10,7 +10,7 @@ use AutoDudes\AiSuite\Service\GlossarService;
 use AutoDudes\AiSuite\Service\LibraryService;
 use AutoDudes\AiSuite\Service\TranslationService;
 use AutoDudes\AiSuite\Service\UuidService;
-use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedPageSlugService;
+use AutoDudes\AiSuiteMcp\Mcp\Service\TranslatedSlugService;
 use AutoDudes\AiSuiteMcp\Mcp\Tool\ToolContext;
 use AutoDudes\AiSuiteMcp\Mcp\Utility\DescriptionSnippets;
 use Mcp\Types\CallToolResult;
@@ -27,10 +27,10 @@ class TranslateFileMetadataTool extends AbstractTranslateTool
         TranslationService $translationService,
         GlossarService $glossarService,
         GlobalInstructionService $globalInstructionService,
-        TranslatedPageSlugService $translatedPageSlugs,
+        TranslatedSlugService $translatedSlugs,
         private readonly SysFileMetadataRepository $sysFileMetadataRepository,
     ) {
-        parent::__construct($mcpToolContext, $libraryService, $uuidService, $translationService, $glossarService, $globalInstructionService, $translatedPageSlugs);
+        parent::__construct($mcpToolContext, $libraryService, $uuidService, $translationService, $glossarService, $globalInstructionService, $translatedSlugs);
     }
 
     public function getName(): string

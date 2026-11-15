@@ -258,10 +258,17 @@ abstract class AbstractTool implements ToolInterface
             return $result;
         }
 
+        $omitted = [];
+        foreach (\array_slice($found, self::MAX_FOUND_RECORDS) as $record) {
+            $omitted[$record['table']] = ($omitted[$record['table']] ?? 0) + 1;
+        }
+
         return new CallToolResult(
             $result->content,
             isError: $result->isError,
-            structuredContent: ($result->structuredContent ?? []) + ['found' => \array_slice($found, 0, self::MAX_FOUND_RECORDS)],
+            structuredContent: ($result->structuredContent ?? [])
+                + ['found' => \array_slice($found, 0, self::MAX_FOUND_RECORDS)]
+                + ([] === $omitted ? [] : ['foundOmitted' => $omitted]),
         );
     }
 

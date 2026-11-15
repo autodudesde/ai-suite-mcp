@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\Tool\Accessibility;
 
 use AutoDudes\AiSuiteMcp\Mcp\Tool\AbstractAiTool;
+use AutoDudes\AiSuiteMcp\Mcp\Utility\AuditIssueLines;
 use Mcp\Types\CallToolResult;
 
 class AccessibilityAuditTool extends AbstractAiTool
@@ -90,17 +91,7 @@ class AccessibilityAuditTool extends AbstractAiTool
             (int) ($audit['a11y']['issueGroups'] ?? 0),
         );
 
-        $topIssues = $audit['a11y']['topIssues'] ?? [];
-        foreach (array_slice(is_array($topIssues) ? $topIssues : [], 0, 10) as $issue) {
-            $lines[] = sprintf(
-                '- %dx %s (%s): %s — e.g. `%s`',
-                (int) ($issue['count'] ?? 0),
-                (string) ($issue['code'] ?? ''),
-                (string) ($issue['impact'] ?? $issue['type'] ?? ''),
-                (string) ($issue['message'] ?? ''),
-                (string) ($issue['sampleSelector'] ?? ''),
-            );
-        }
+        array_push($lines, ...AuditIssueLines::accessibilityGroups($audit['a11y']['topIssues'] ?? null));
 
         return implode("\n", $lines);
     }

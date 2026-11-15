@@ -23,10 +23,10 @@
                 <source>Enable MCP Rendered Page Read</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.permissions.enableAudit">
-                <source>Enable SEO and accessibility audits</source>
+                <source>Enable SEO, accessibility and content audits</source>
             </trans-unit>
             <trans-unit id="aiSuite.mcp.permissions.enableAuditDescription">
-                <source>Allows running SEO and WCAG accessibility audits for public page URLs via the AutoDudes audit infrastructure (page URL and content leave the TYPO3 instance).</source>
+                <source>Allows running SEO, WCAG accessibility and content audits for public page URLs via the AutoDudes audit infrastructure (page URL and content leave the TYPO3 instance).</source>
             </trans-unit>
 
             <trans-unit id="aiSuite.mcp.permissions.enableMcpRenderedPageReadDescription">

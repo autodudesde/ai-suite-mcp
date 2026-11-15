@@ -39,6 +39,7 @@ class RecordRepository extends AbstractRepository
         int $limit,
         int $offset,
         string $pageScopeColumn = 'pid',
+        ?string $translationOriginField = null,
     ): array {
         $qb = $this->connectionPool->getQueryBuilderForTable($table);
         $this->withoutFrontendRestrictions($qb);
@@ -50,7 +51,10 @@ class RecordRepository extends AbstractRepository
         if (null !== $pid) {
             $query->where($qb->expr()->eq('pid', $qb->createNamedParameter($pid, Connection::PARAM_INT)));
         } elseif (null !== $allowedPids && [] !== $allowedPids) {
-            $query->andWhere($qb->expr()->in($scopeColumn, $qb->createNamedParameter($allowedPids, Connection::PARAM_INT_ARRAY)));
+            $inScope = $qb->expr()->in($scopeColumn, $qb->createNamedParameter($allowedPids, Connection::PARAM_INT_ARRAY));
+            $query->andWhere('uid' === $scopeColumn && null !== $translationOriginField
+                ? $qb->expr()->or($inScope, $qb->expr()->in($translationOriginField, $qb->createNamedParameter($allowedPids, Connection::PARAM_INT_ARRAY)))
+                : $inScope);
         }
         if (null !== $extraWhere) {
             $query->andWhere($extraWhere);
