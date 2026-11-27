@@ -110,10 +110,10 @@ class WriteRecordTool extends AbstractDataTool
 
         $records = $this->typeAliasNormalizer->normalize($records);
 
-        $records = $this->nestedChildExpander->expand($records);
-
-        // After the children, so a translation is never interleaved into its parent's child block.
+        // Before the children, so a translation follows the child block of its origin.
         $records = $this->translationExpander->expand($records);
+
+        $records = $this->nestedChildExpander->expand($records);
 
         $this->containerBatchValidator->assertContainersHaveChildren(
             $records,

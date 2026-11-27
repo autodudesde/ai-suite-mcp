@@ -46,6 +46,9 @@ final class NestedChildExpanderService
             if (is_array($record) && isset($record['fields']) && is_array($record['fields'])) {
                 $record['fields'] = BatchIndexRemapper::remap($record['fields'], $indexMap);
             }
+            if (is_array($record) && is_array($record[TranslationExpanderService::LOCALIZE_KEY] ?? null)) {
+                $record[TranslationExpanderService::LOCALIZE_KEY] = BatchIndexRemapper::remap($record[TranslationExpanderService::LOCALIZE_KEY], $indexMap);
+            }
 
             $parentIndex = count($expanded);
             $expanded[] = $record;
@@ -170,7 +173,15 @@ final class NestedChildExpanderService
 
             unset($fields[$field]);
 
+            $language = $this->languageOf($table, $fields);
+            $childLanguageField = 0 !== $language ? $this->tcaCompatibilityService->getLanguageFieldName($childTable) : null;
+
             foreach ($value as $childFields) {
+                $childFields = $this->unwrapChildFields($childFields);
+                if (null !== $childLanguageField && !array_key_exists($childLanguageField, $childFields)) {
+                    $childFields[$childLanguageField] = $language;
+                }
+
                 $index = count($children);
                 $children[] = [
                     'table' => $childTable,
@@ -182,7 +193,7 @@ final class NestedChildExpanderService
                 ];
                 $children[$index]['fields'] = $this->collectChildren(
                     $childTable,
-                    $this->unwrapChildFields($childFields),
+                    $childFields,
                     ['pid' => $record['pid']],
                     $index + 1,
                     $depth + 1,
@@ -192,6 +203,19 @@ final class NestedChildExpanderService
         }
 
         return $fields;
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     */
+    private function languageOf(string $table, array $fields): int
+    {
+        $languageField = $this->tcaCompatibilityService->getLanguageFieldName($table);
+        if (null === $languageField || !is_numeric($fields[$languageField] ?? null)) {
+            return 0;
+        }
+
+        return (int) $fields[$languageField];
     }
 
     /**

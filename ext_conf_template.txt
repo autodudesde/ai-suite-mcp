@@ -86,7 +86,7 @@ mcpMediaMaxSizeMb = 50
 mcpMediaAllowedExtensions = jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg
 
 # cat=media/mediafetch; type=boolean; label=LLL:EXT:ai_suite_mcp/Resources/Private/Language/ext_conf.xlf:mcpMediaAllowUrlFetch
-mcpMediaAllowUrlFetch = 1
+mcpMediaAllowUrlFetch = 0
 
 # cat=media/mediafetch; type=string; label=LLL:EXT:ai_suite_mcp/Resources/Private/Language/ext_conf.xlf:mcpMediaHostDenylist
 mcpMediaHostDenylist =

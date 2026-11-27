@@ -29,7 +29,7 @@ class BackendCredentialService
         private readonly LoggerInterface $logger,
     ) {}
 
-    public function authenticate(string $username, string $password, ServerRequestInterface $request): ?int
+    public function authenticate(string $username, #[\SensitiveParameter] string $password, ServerRequestInterface $request): ?int
     {
         if ('' === $username || '' === $password) {
             return null;

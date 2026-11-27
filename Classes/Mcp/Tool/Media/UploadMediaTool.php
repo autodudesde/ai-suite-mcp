@@ -146,7 +146,7 @@ class UploadMediaTool extends AbstractTool
             $stored = $onlineMedia instanceof File ? new StoredMedia($onlineMedia, StoredMedia::CREATED) : null;
             if (!$stored instanceof StoredMedia) {
                 if (!$config['allowUrlFetch']) {
-                    throw new InsufficientPermissionException('Downloading media from remote URLs is disabled by configuration (only base64 upload and online-media links are allowed).');
+                    throw new InsufficientPermissionException('Downloading media from remote URLs is disabled on this installation (mcpMediaAllowUrlFetch). Send the file as base64 "content" or as a YouTube/Vimeo link instead; only an administrator can enable URL downloads.');
                 }
                 $stored = $this->storeFetched(
                     $this->remoteMediaService->fetch($plan->url, $config['maxBytes'], $config['hostDenylist']),

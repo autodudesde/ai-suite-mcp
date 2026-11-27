@@ -6,7 +6,22 @@
   "license": [
     "GPL-2.0-or-later"
   ],
-  "version": "0.13.0",
+  "authors": [
+    {
+      "name": "AutoDudes",
+      "role": "Developer",
+      "homepage": "https://www.autodudes.de",
+      "email": "service@autodudes.de"
+    }
+  ],
+  "support": {
+    "email": "service@autodudes.de",
+    "issues": "https://github.com/autodudesde/ai-suite-mcp/issues",
+    "source": "https://github.com/autodudesde/ai-suite-mcp",
+    "docs": "https://www.autodudes.de/en/documentation/ai-suite-mcp",
+    "security": "https://github.com/autodudesde/ai-suite-mcp/security/policy"
+  },
+  "version": "0.13.1",
   "keywords": [
     "TYPO3 CMS",
     "MCP",

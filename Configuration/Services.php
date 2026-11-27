@@ -10,14 +10,13 @@ use AutoDudes\AiSuiteMcp\Mcp\Command\McpCleanupCommand;
 use AutoDudes\AiSuiteMcp\Mcp\Command\McpCreateTokenCommand;
 use AutoDudes\AiSuiteMcp\Mcp\Command\McpServerCommand;
 use AutoDudes\AiSuiteMcp\Mcp\Hooks\PasswordChangeHook;
-use Mcp\Server\Server;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 return function (ContainerConfigurator $configurator, ContainerBuilder $containerBuilder) {
-    ClassicModeBundle::register(dirname(__DIR__), Server::class);
+    ClassicModeBundle::register(dirname(__DIR__));
 
     $services = $configurator->services();
 

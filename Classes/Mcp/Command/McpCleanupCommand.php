@@ -11,13 +11,19 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use TYPO3\CMS\Core\Registry;
 
 class McpCleanupCommand extends Command
 {
+    public const REGISTRY_NAMESPACE = 'ai_suite_mcp';
+    public const REGISTRY_LAST_RUN = 'cleanup.lastRun';
+    public const MAX_AGE_SECONDS = 2 * 86400;
+
     public function __construct(
         private readonly TokenRepository $tokenRepository,
         private readonly McpSessionStoreService $sessionStore,
         private readonly OAuthClientRepository $clientRepository,
+        private readonly Registry $registry,
     ) {
         parent::__construct();
     }
@@ -57,6 +63,7 @@ class McpCleanupCommand extends Command
         $deletedTasks = $this->sessionStore->deleteLeftoverTaskFiles(30 * 86400);
         $io->writeln(sprintf('Deleted %d completed task files', $deletedTasks));
 
+        $this->registry->set(self::REGISTRY_NAMESPACE, self::REGISTRY_LAST_RUN, time());
         $io->success('MCP cleanup completed');
 
         return Command::SUCCESS;

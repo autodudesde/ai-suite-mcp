@@ -518,7 +518,7 @@ class AiSuiteMcpEndpoint
         return substr($authHeader, 7);
     }
 
-    private function validateBackendUserStatus(TokenData $tokenData, string $rawToken): void
+    private function validateBackendUserStatus(TokenData $tokenData, #[\SensitiveParameter] string $rawToken): void
     {
         if (!$this->oauthService->isBackendUserActive($tokenData->beUserUid)) {
             $this->oauthService->revokeToken($rawToken);

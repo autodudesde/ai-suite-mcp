@@ -559,7 +559,7 @@ Each result line says whether the file was `created`, `renamed` or `replaced`.
 
 `moveFile` takes `fileUids`, a `targetFolder`, `createFolder` and `allowSameNameFolder` (same meaning as above); the target folder is checked once before the first file moves. A name already taken in the target folder gets a suffix, never an overwrite, and the result line names the new name. A file that already sits in the target folder is skipped. The core's own FAL checks apply on top of the flag: `move` permission on the file and write permission on the target folder, both within the file mounts. `listFiles` with `includeFolders: true` returns the subfolders next to the files (every level below with `recursive`), which is how a client picks or checks an upload target.
 
-**Security.** Remote URL fetching is the sensitive part and is SSRF-guarded: only `http`/`https`, every resolved IP must be public (private, loopback, link-local incl. the `169.254.169.254` cloud-metadata endpoint, and reserved ranges are rejected, IPv4 + IPv6), redirects are followed manually and re-validated per hop, and the download is streamed with a hard size cap. Blocked targets are logged at WARNING. Beyond the OAuth scope + `enable_mcp_media_upload` flag, FAL filemount permissions on the target folder still apply. Tunables (`ext_conf`): `mcpMediaDefaultFolder` (default `1:/user_upload/`), `mcpMediaMaxSizeMb` (`50`), `mcpMediaAllowedExtensions` (`jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg`; SVG excluded by default, XSS risk), `mcpMediaAllowUrlFetch` (`1`, kill-switch for URL downloads), `mcpMediaHostDenylist` (empty). Large videos should be supplied via `url` or an online-media link rather than base64; a base64 upload has to fit into one request, see `mcpMaxRequestBodyMb`.
+**Security.** Remote URL fetching is the sensitive part and is SSRF-guarded: only `http`/`https`, every resolved IP must be public (private, loopback, link-local incl. the `169.254.169.254` cloud-metadata endpoint, and reserved ranges are rejected, IPv4 + IPv6), redirects are followed manually and re-validated per hop, and the download is streamed with a hard size cap. Blocked targets are logged at WARNING. Beyond the OAuth scope + `enable_mcp_media_upload` flag, FAL filemount permissions on the target folder still apply. Tunables (`ext_conf`): `mcpMediaDefaultFolder` (default `1:/user_upload/`), `mcpMediaMaxSizeMb` (`50`), `mcpMediaAllowedExtensions` (`jpg,jpeg,png,gif,webp,avif,mp4,webm,ogg`; SVG excluded by default, XSS risk), `mcpMediaAllowUrlFetch` (`0`; URL downloads are off until an administrator enables them, base64 and online-media links work either way), `mcpMediaHostDenylist` (empty). Large videos should be supplied via `url` (with `mcpMediaAllowUrlFetch = 1`) or an online-media link rather than base64; a base64 upload has to fit into one request, see `mcpMaxRequestBodyMb`.
 
 ### Workflow (`mcp:workflow`; polling `mcp:read`, applying `mcp:write`)
 Batch tools run asynchronously and return a task ID. Poll via `readTaskStatus`, retrieve results via `readTaskResults`.
@@ -911,7 +911,7 @@ A `403` here means an env-flag guard (Apache step 2) or a host-level dot-path bl
 
 ### Scheduled maintenance
 
-`ai-suite-mcp:cleanup` is **required** in production, not optional. Run it via TYPO3 Scheduler or system cron at least **hourly**. It removes:
+`ai-suite-mcp:cleanup` is **required** in production, not optional. Run it via TYPO3 Scheduler or system cron at least **hourly**. The Reports module (*MCP cleanup (last run)*) warns while MCP is enabled and the command has not completed in the last two days. It removes:
 
 - authorization codes older than 10 min
 - tokens whose access and refresh token both expired more than 37 days ago (a fixed cutoff, independent of the lifetime settings)
@@ -966,9 +966,96 @@ The log files are not rotated by TYPO3. Keep them bounded with the system's logr
 MCP tools that use AI (`generate*`, `translate*`, `batch*`, `audit*`) inherit the network configuration of the parent `autodudes/ai-suite` extension. Outbound HTTPS is required to:
 
 - the AI Suite Server configured in AI Suite (`aiSuiteServer`); it reaches the AI providers, also with your own keys, so TYPO3 itself does not call provider hosts
-- every remote URL `uploadMedia` is asked to download, unless `mcpMediaAllowUrlFetch = 0`
+- every remote URL `uploadMedia` is asked to download, if `mcpMediaAllowUrlFetch = 1` (off by default)
 
 In hardened environments with strict egress firewalls, allowlist the AI Suite Server host, and decide deliberately whether `uploadMedia` may fetch from the internet.
+
+## Product and security information
+
+User information under the EU Cyber Resilience Act (Regulation (EU) 2024/2847, Annex II).
+
+### Manufacturer and product
+
+- **Manufacturer:** AutoDudes GmbH & Co. KG, Ringstr. 24, 95191 Leupoldsgrün, Germany,
+  [service@autodudes.de](mailto:service@autodudes.de), <https://www.autodudes.de>
+- **Product:** AI Suite MCP, Composer package `autodudes/ai-suite-mcp`, extension key
+  `ai_suite_mcp`. The installed version is shown in the Extension Manager and in `composer.lock`.
+- **Vulnerabilities:** report them to [security@autodudes.de](mailto:security@autodudes.de), see
+  [SECURITY.md](SECURITY.md).
+- **Support period:** while AI Suite MCP is in beta (0.x), only the latest release receives security
+  fixes. The five-year support period starts with the first stable major, see
+  [SECURITY.md](SECURITY.md#supported-versions).
+- **Software bill of materials:** available on request at security@autodudes.de.
+
+### Intended purpose and security properties
+
+AI Suite MCP lets MCP clients (AI assistants such as Claude or ChatGPT) read and change TYPO3 content
+on behalf of a backend user, with exactly that user's permissions. Access needs `enableMcp`, the
+backend-group flag `enable_mcp_access` and an OAuth 2.1 authorization by the user; the protections
+are listed under [Security](#security).
+
+### Risks to know before use
+
+- **A token acts with the editor's rights.** Until it expires or is revoked, whoever controls the
+  connected client, or the account it runs in, can do what the editor can.
+- **The client's model can be steered by the content it reads** (prompt injection): text on a page,
+  in a file or on a web page can ask it to change other records. Keep the default workspace
+  [write mode](#write-modes) and the approval in the client, so every change stays a draft that a
+  person publishes.
+- **The verbose log holds content.** `mcpLogVerbose` writes prompts and content snippets to
+  `var/log/aisuite_mcp.log`; keep it off in production, see [Logging & retention](#logging--retention).
+- **Tokens from the MCP screen or the CLI live 30 days** (`mcpTokenLifetimeDays`) and cannot be
+  refreshed. Revoke the ones nobody uses.
+- **No credit budget per token by default** (`mcpMaxCreditsPerSession = 0`): a connector stuck in a
+  loop spends credits until the rate limit or the key's quota stops it.
+- **Outside the Production context the origin and HTTPS checks are looser** (localhost and
+  `*.ddev.site` are accepted). Run public sites in the Production context.
+- **Behind a reverse proxy without `mcpTrustedProxies`** every client has the proxy's IP address:
+  the OAuth rate limits then count all clients together, and the audit log records the proxy.
+- **Unsupported runtimes:** do not run the endpoint on persistent-worker SAPIs, see
+  [Runtime & scaling](#runtime--scaling).
+
+### Secure use
+
+- Keep HTTPS on (`mcpAllowHttp` off) and set the allowlists of redirect URIs and client ids.
+- Grant `enable_mcp_access` and the scopes only to the groups that need them.
+- Set `mcpMaxCreditsPerSession` for connectors that run unattended, and `mcpTrustedProxies` behind a
+  reverse proxy, see [Reverse proxy & load balancer](#reverse-proxy--load-balancer).
+- Run `ai-suite-mcp:cleanup` at least hourly, see [Scheduled maintenance](#scheduled-maintenance).
+- Enable `mcpMediaAllowUrlFetch` only if editors need `uploadMedia` to download from the internet, and
+  add internal hosts the server can reach to `mcpMediaHostDenylist`.
+- Check **System → Reports → AI Suite MCP Security** after every configuration change.
+
+### Updates
+
+Security fixes are released as new versions. Install them with
+`composer update autodudes/ai-suite-mcp` or through the Extension Manager, then run
+**Admin Tools → Maintenance → Analyze Database Structure** and flush the caches. AI Suite MCP never
+installs updates by itself, so there is no automatic update to switch off.
+
+A known vulnerability in the installed version shows up for admins in **System → Reports**
+(*AI Suite security updates*) and in the system information menu of the toolbar. AI Suite
+provides that report; see its README.
+
+AI Suite MCP depends on the TYPO3 Core and on packages that Composer installs alongside it. Their
+security fixes come from the TYPO3 Security Team and the package maintainers, not from AutoDudes:
+follow the [TYPO3 security advisories](https://typo3.org/help/security-advisories) and keep TYPO3 on
+the latest patch level of your major (`composer update "typo3/*"`). For TYPO3 12, Core security
+fixes from 12.4.46 on require TYPO3 Extended Long Term Support (ELTS). The minimum versions in
+`composer.json` are technical requirements, not a statement that older patch levels are safe.
+
+### Decommissioning
+
+1. Switch `enableMcp` off; the endpoint refuses every request from then on.
+2. Remove the connector from every MCP client that was connected.
+3. Remove the Scheduler task that runs `ai-suite-mcp:cleanup`.
+4. Uninstall the extension (`composer remove autodudes/ai-suite-mcp`, or deactivate and delete it in
+   the Extension Manager). Remove ChEddi first if it is installed.
+5. Run **Analyze Database Structure** twice: the first run renames the
+   [OAuth tables](#database-tables) to `zzz_deleted_…`, the second drops them with all codes, tokens
+   and client registrations.
+6. Delete `var/aisuite_mcp_sessions/`, `var/mcp_tasks/` and the log files
+   `var/log/aisuite_mcp*.log`, and the `ai_suite_mcp` entry under `EXTENSIONS` in `settings.php`.
 
 ## Feedback
 

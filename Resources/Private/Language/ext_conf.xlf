@@ -124,7 +124,7 @@
                 <source>Allowed file extensions: Comma-separated lowercase file extensions the uploadMedia tool may store (URL download / base64). SVG is intentionally excluded by default (XSS). Online-media links (YouTube/Vimeo) are governed by TYPO3's online media helpers, not this list.</source>
             </trans-unit>
             <trans-unit id="mcpMediaAllowUrlFetch" resname="mcpMediaAllowUrlFetch">
-                <source>Allow URL fetch: Allow the uploadMedia tool to download files from remote http(s) URLs. When disabled, only base64 upload and online-media links (YouTube/Vimeo) are accepted. URL fetching is SSRF-guarded (private/loopback/link-local targets are always blocked), but you can disable it entirely here.</source>
+                <source>Allow URL fetch (off by default): Allow the uploadMedia tool to download files from remote http(s) URLs. When disabled, only base64 upload and online-media links (YouTube/Vimeo) are accepted. URL fetching is SSRF-guarded (private/loopback/link-local targets are always blocked), but you can disable it entirely here.</source>
             </trans-unit>
             <trans-unit id="mcpMediaHostDenylist" resname="mcpMediaHostDenylist">
                 <source>Host denylist: Comma-separated additional hostnames or IP/CIDR ranges that uploadMedia must never fetch from (on top of the always-on private/loopback/link-local block). Example: metadata.internal,10.0.0.0/8</source>

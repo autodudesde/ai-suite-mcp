@@ -122,7 +122,7 @@ final class TranslationExpanderService
 
         $planned = [];
         foreach ($translations as $language => $fields) {
-            $planned[$this->assertLanguageKey($language)] = $this->assertTranslationFields($language, $fields);
+            $planned[$this->assertLanguageKey($language)] = $this->assertTranslationFields($table, $language, $fields);
         }
 
         return ['record' => $record, 'translations' => $planned];
@@ -156,7 +156,7 @@ final class TranslationExpanderService
     /**
      * @return array<string, mixed>
      */
-    private function assertTranslationFields(mixed $language, mixed $fields): array
+    private function assertTranslationFields(string $table, mixed $language, mixed $fields): array
     {
         if (!is_array($fields)) {
             throw new InvalidParameterException(sprintf(
@@ -175,7 +175,31 @@ final class TranslationExpanderService
             }
         }
 
+        foreach (array_keys($fields) as $field) {
+            $this->assertNoChildCollection($table, (string) $field);
+        }
+
         return $fields;
+    }
+
+    private function assertNoChildCollection(string $table, string $field): void
+    {
+        $config = $this->tcaCompatibilityService->getFieldConfiguration($table, $field);
+        $childTable = (string) ($config['foreign_table'] ?? '');
+        $parentField = (string) ($config['foreign_field'] ?? '');
+        if (!in_array($config['type'] ?? '', ['inline', 'file'], true) || '' === $childTable || '' === $parentField) {
+            return;
+        }
+
+        throw (new InvalidParameterException(sprintf(
+            '`%1$s` is a child collection and cannot be written inside `%2$s`. '
+                .'The translation takes over the `%1$s` children of the original when it is created, so leave the field out. '
+                .'To give the translation a different one, write it in a second call as its own `%3$s` record with `%4$s` set to the translation UID from this result.',
+            $field,
+            self::TRANSLATIONS_KEY,
+            $childTable,
+            $parentField,
+        )))->withErrorContext(['table' => $table, 'field' => $field]);
     }
 
     private function isLanguageAware(string $table): bool

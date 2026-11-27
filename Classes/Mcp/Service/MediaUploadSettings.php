@@ -36,7 +36,7 @@ final class MediaUploadSettings
             'defaultFolder' => $this->readConfig('mcpMediaDefaultFolder', '1:/user_upload/'),
             'maxBytes' => $maxSizeMb > 0 ? $maxSizeMb * 1024 * 1024 : 0,
             'allowedExtensions' => $allowed,
-            'allowUrlFetch' => '0' !== $this->readConfig('mcpMediaAllowUrlFetch', '1'),
+            'allowUrlFetch' => '1' === $this->readConfig('mcpMediaAllowUrlFetch', '0'),
             'hostDenylist' => $denylist,
         ];
     }

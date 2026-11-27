@@ -230,6 +230,14 @@
                 <source>Session files in %s are within the expected range. ai-suite-mcp:cleanup keeps them bounded.</source>
                 <target>Die Session-Dateien in %s liegen im erwarteten Rahmen. ai-suite-mcp:cleanup hält ihre Zahl begrenzt.</target>
             </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cleanup.title">
+                <source>MCP cleanup (last run)</source>
+                <target>MCP-Bereinigung (letzter Lauf)</target>
+            </trans-unit>
+            <trans-unit id="aiSuite.mcp.status.cleanup.message">
+                <source>ai-suite-mcp:cleanup has not run in the last two days. Without it, expired and revoked OAuth tokens stay in the database beyond their 30-day retention, together with unused client registrations and old session files. Schedule it daily, in the Scheduler or as a cron job.</source>
+                <target>ai-suite-mcp:cleanup ist in den letzten zwei Tagen nicht gelaufen. Ohne diesen Befehl bleiben abgelaufene und widerrufene OAuth-Tokens über ihre Löschfrist von 30 Tagen hinaus in der Datenbank, ebenso ungenutzte Client-Registrierungen und alte Session-Dateien. Plane ihn täglich ein, im Scheduler oder als Cronjob.</target>
+            </trans-unit>
             <trans-unit id="aiSuite.mcp.status.environment.title">
                 <source>MCP Environment</source>
                 <target>MCP: Umgebung</target>

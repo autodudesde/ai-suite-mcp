@@ -82,7 +82,9 @@ class OAuthService
      * @throws InvalidGrantException
      */
     public function exchangeCodeForToken(
+        #[\SensitiveParameter]
         string $rawCode,
+        #[\SensitiveParameter]
         string $codeVerifier,
         string $clientId,
         string $redirectUri,
@@ -164,7 +166,7 @@ class OAuthService
     /**
      * @throws InvalidTokenException
      */
-    public function validateToken(string $rawToken, string $canonicalResource, ?ServerRequestInterface $request = null): TokenData
+    public function validateToken(#[\SensitiveParameter] string $rawToken, string $canonicalResource, ?ServerRequestInterface $request = null): TokenData
     {
         $tokenHash = hash('sha256', $rawToken);
         $record = $this->tokenRepository->findByTokenHash($tokenHash);
@@ -206,7 +208,7 @@ class OAuthService
      *
      * @throws InvalidGrantException
      */
-    public function refreshAccessToken(string $rawRefreshToken, string $clientId, string $resource = ''): array
+    public function refreshAccessToken(#[\SensitiveParameter] string $rawRefreshToken, string $clientId, string $resource = ''): array
     {
         $refreshHash = hash('sha256', $rawRefreshToken);
         $existing = $this->tokenRepository->findByRefreshTokenHash($refreshHash);
@@ -250,7 +252,7 @@ class OAuthService
         );
     }
 
-    public function revokeToken(string $rawToken, string $clientId = ''): void
+    public function revokeToken(#[\SensitiveParameter] string $rawToken, string $clientId = ''): void
     {
         $tokenHash = hash('sha256', $rawToken);
         $row = $this->tokenRepository->findByTokenHash($tokenHash) ?? $this->tokenRepository->findByRefreshTokenHash($tokenHash);
@@ -281,7 +283,7 @@ class OAuthService
         return $starttime <= $now && (0 === $endtime || $endtime > $now);
     }
 
-    public function validatePkce(string $codeVerifier, string $codeChallenge): bool
+    public function validatePkce(#[\SensitiveParameter] string $codeVerifier, string $codeChallenge): bool
     {
         if ('' === $codeVerifier || '' === $codeChallenge) {
             return false;

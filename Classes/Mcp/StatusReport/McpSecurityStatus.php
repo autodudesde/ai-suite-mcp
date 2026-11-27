@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace AutoDudes\AiSuiteMcp\Mcp\StatusReport;
 
 use AutoDudes\AiSuite\Service\LocalizationService;
+use AutoDudes\AiSuiteMcp\Mcp\Command\McpCleanupCommand;
 use AutoDudes\AiSuiteMcp\Mcp\Service\McpSessionStoreService;
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Core\Environment;
+use TYPO3\CMS\Core\Registry;
 use TYPO3\CMS\Core\Type\ContextualFeedbackSeverity;
 use TYPO3\CMS\Reports\Status;
 use TYPO3\CMS\Reports\StatusProviderInterface;
@@ -18,6 +20,7 @@ class McpSecurityStatus implements StatusProviderInterface
         private readonly ExtensionConfiguration $extensionConfiguration,
         private readonly McpSessionStoreService $sessionStore,
         private readonly LocalizationService $localizationService,
+        private readonly Registry $registry,
     ) {}
 
     /**
@@ -67,6 +70,7 @@ class McpSecurityStatus implements StatusProviderInterface
         }
 
         $statuses[] = $this->sessionStoreStatus();
+        $statuses[] = $this->cleanupStatus();
 
         return $statuses;
     }
@@ -102,6 +106,23 @@ class McpSecurityStatus implements StatusProviderInterface
                 ])
                 : $this->localizationService->translate('mcp:status.sessions.ok', [$this->sessionStore->getDirectory()]),
             $exceeded ? ContextualFeedbackSeverity::WARNING : ContextualFeedbackSeverity::OK,
+        );
+    }
+
+    private function cleanupStatus(): Status
+    {
+        $lastRun = $this->registry->get(McpCleanupCommand::REGISTRY_NAMESPACE, McpCleanupCommand::REGISTRY_LAST_RUN, 0);
+        $lastRun = is_int($lastRun) ? $lastRun : 0;
+        $value = $lastRun > 0 ? date('Y-m-d H:i', $lastRun) : '-';
+        if ($lastRun > 0 && time() - $lastRun < McpCleanupCommand::MAX_AGE_SECONDS) {
+            return new Status($this->localizationService->translate('mcp:status.cleanup.title'), $value);
+        }
+
+        return new Status(
+            $this->localizationService->translate('mcp:status.cleanup.title'),
+            $value,
+            $this->localizationService->translate('mcp:status.cleanup.message'),
+            ContextualFeedbackSeverity::WARNING,
         );
     }
 }
